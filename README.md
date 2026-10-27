@@ -9,7 +9,7 @@
 [![مجاني](https://img.shields.io/badge/مجاني_100%25-22c55e?style=for-the-badge)](#)
 [![مفتوح المصدر](https://img.shields.io/badge/مفتوح_المصدر-111827?style=for-the-badge)](#)
 
-**[⬇️ تنزيل لويندوز](https://github.com/kerlif/ezoo-download/releases/tag/v1.0.7)** · **[⬇️ تنزيل للينكس (.deb)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload_1.0.7_amd64.deb)** · **[⬇️ تنزيل للينكس (AppImage)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload-1.0.7-x86_64.AppImage)** · **[⬇️ تنزيل للينكس (.rpm)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/ezoo-download-1.0.7-1.x86_64.rpm)**
+**[⬇️ تنزيل لويندوز (Setup.exe)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload-Setup.exe)** · **[⬇️ تنزيل للينكس (.deb)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload_1.0.7_amd64.deb)** · **[⬇️ تنزيل للينكس (AppImage)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload-1.0.7-x86_64.AppImage)** · **[⬇️ تنزيل للينكس (.rpm)](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/ezoo-download-1.0.7-1.x86_64.rpm)**
 
 </div>
 
@@ -54,7 +54,7 @@
 
 ### 🪟 ويندوز
 
-نزّل ملف الإعداد من [صفحة الإصدارات](https://github.com/kerlif/ezoo-download/releases/tag/v1.0.7) وثبّته — يُثبَّت للمستخدم الحالي ولا يحتاج صلاحيات المسؤول.
+نزّل [EzooDownload-Setup.exe](https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload-Setup.exe) وثبّته — يُثبَّت للمستخدم الحالي ولا يحتاج صلاحيات المسؤول.
 
 > قد تُظهر Windows SmartScreen تحذيرًا لأن البرنامج جديد وغير موقّع بشهادة رقمية بعد — الشيفرة المصدرية كاملة متاحة هنا للمراجعة.
 
