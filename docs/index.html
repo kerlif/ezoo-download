@@ -7,6 +7,7 @@
 <meta name="description" content="Ezoo Download: مدير تنزيلات سريع، مجاني، ومفتوح المصدر لويندوز ولينكس. تقسيم الاتصالات، استئناف التنزيل، إضافة للمتصفح، وffmpeg مدمج." />
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
 <link rel="stylesheet" href="style.css" />
+<script src="script.js" defer></script>
 </head>
 <body>
 
@@ -19,6 +20,7 @@
     <nav class="main-nav">
       <a href="#features">المزايا</a>
       <a href="#how">كيف يعمل</a>
+      <a href="#demo">جرّب</a>
       <a href="#screenshots">لقطات</a>
       <a href="#download">تنزيل</a>
       <a href="#faq">الأسئلة</a>
@@ -30,6 +32,7 @@
 <main>
   <!-- Hero -->
   <section class="hero">
+    <div class="hero-decor" aria-hidden="true"><span>↓</span><span>↓</span><span>↓</span><span>↓</span></div>
     <div class="wrap hero-inner">
       <div class="hero-text">
         <p class="version-badge">الإصدار 1.0.7 &nbsp;•&nbsp; مجاني 100% &nbsp;•&nbsp; مفتوح المصدر</p>
@@ -122,6 +125,48 @@
     </div>
   </section>
 
+  <!-- Interactive demo: segmented download simulation -->
+  <section id="demo" class="section">
+    <div class="wrap">
+      <h2>جرّب قوة التقسيم بنفسك</h2>
+      <p class="section-sub">محاكاة توضيحية تعمل داخل متصفحك — ليست تنزيلًا حقيقيًا. اختر عدد الاتصالات وحجم الملف، واضغط «ابدأ المحاكاة».</p>
+      <div class="demo" id="demo-panel">
+        <div class="demo-controls">
+          <label class="ctl">
+            <span>عدد الاتصالات: <strong id="threads-value">8</strong></span>
+            <input type="range" id="threads" min="1" max="16" value="8" step="1" />
+            <span class="ctl-hint">1 ← اتصال واحد · 16 ← أقصى تقسيم</span>
+          </label>
+          <label class="ctl">
+            <span>حجم الملف</span>
+            <select id="filesize">
+              <option value="100">100 ميجابايت</option>
+              <option value="500" selected>500 ميجابايت</option>
+              <option value="1024">1 جيجابايت</option>
+              <option value="2560">2.5 جيجابايت</option>
+            </select>
+          </label>
+          <div class="demo-buttons">
+            <button type="button" class="btn btn-primary" id="sim-start">▶ ابدأ المحاكاة</button>
+            <button type="button" class="btn btn-ghost" id="sim-reset">↺ إعادة</button>
+          </div>
+        </div>
+        <div class="demo-stats" role="status" aria-live="polite">
+          <div><strong id="stat-speed">0.0</strong><span>ميجابايت/ث</span></div>
+          <div><strong id="stat-progress">0%</strong><span>التقدم</span></div>
+          <div><strong id="stat-eta">—</strong><span>الوقت المتبقي</span></div>
+          <div><strong id="stat-active">0</strong><span>اتصالات نشطة</span></div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="speed-chart" height="120" aria-label="رسم بياني لسرعة التنزيل أثناء المحاكاة"></canvas>
+          <span class="chart-label">السرعة عبر الزمن</span>
+        </div>
+        <div class="lanes" id="lanes"></div>
+        <p class="demo-result" id="demo-result" hidden></p>
+      </div>
+    </div>
+  </section>
+
   <!-- Alternative -->
   <section class="section">
     <div class="wrap narrow">
@@ -193,6 +238,12 @@
         </article>
       </div>
       <p class="hero-note center">تحقق من سلامة الملفات عبر <a href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/SHA256SUMS.txt">SHA256SUMS.txt</a> · دليل لينكس الكامل في <a href="https://github.com/kerlif/ezoo-download/blob/main/packaging/linux/README-Linux.md">المستودع</a>.</p>
+      <div class="install-cmds">
+        <h3>أوامر التثبيت السريع (لينكس) — انقر «نسخ» ثم الصق في الطرفية</h3>
+        <div class="cmd-row"><code dir="ltr">sudo dpkg -i EzooDownload_1.0.7_amd64.deb</code><button type="button" class="copy-btn" data-copy="sudo dpkg -i EzooDownload_1.0.7_amd64.deb">نسخ</button></div>
+        <div class="cmd-row"><code dir="ltr">chmod +x EzooDownload-1.0.7-x86_64.AppImage &amp;&amp; ./EzooDownload-1.0.7-x86_64.AppImage</code><button type="button" class="copy-btn" data-copy="chmod +x EzooDownload-1.0.7-x86_64.AppImage &amp;&amp; ./EzooDownload-1.0.7-x86_64.AppImage">نسخ</button></div>
+        <div class="cmd-row"><code dir="ltr">sudo rpm -i ezoo-download-1.0.7-1.x86_64.rpm</code><button type="button" class="copy-btn" data-copy="sudo rpm -i ezoo-download-1.0.7-1.x86_64.rpm">نسخ</button></div>
+      </div>
     </div>
   </section>
 
