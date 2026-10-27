@@ -3,3 +3,17 @@
 build-cache/
 signing/
 __pycache__/
+tools/ffmpeg/win64/
+
+# Linux packaging outputs
+dist/
+*.AppImage
+*.deb
+*.rpm
+icons-out/
+
+# Linux packaging: the ffmpeg binary is downloaded at packaging time and
+# must never be committed (see packaging/linux/fetch-ffmpeg.sh)
+packaging/linux/ffmpeg-bin/
+packaging/linux/*.tar.xz
+ffmpeg-bin/

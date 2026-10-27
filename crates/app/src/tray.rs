@@ -1,7 +1,9 @@
-//! Icon next to the clock (Windows): the app keeps running there when its
-//! window is closed, like other download managers.
+//! Icon next to the clock (Windows and Linux): the app keeps running there
+//! when its window is closed, like other download managers. On Linux the
+//! icon is a StatusNotifierItem over D-Bus, so it shows on KDE, XFCE and
+//! GNOME (with the AppIndicator extension) alike.
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 pub enum TrayAction {
     Show,
     AddUrl,
@@ -15,7 +17,7 @@ pub enum TrayAction {
 }
 
 /// What was clicked on the small icon of a hidden download window.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadAction {
     Show,
@@ -24,7 +26,7 @@ pub enum DownloadAction {
 
 /// 32 x 32 RGBA picture for a hidden download: a blue "E" with a green
 /// bar under it showing how far it is (`None`: size unknown, no bar).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 pub fn download_icon(progress: Option<f32>) -> Vec<u8> {
     const N: usize = 32;
     let mut px = vec![0u8; N * N * 4];
@@ -68,7 +70,7 @@ pub fn download_icon(progress: Option<f32>) -> Vec<u8> {
     px
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod imp {
     use super::{DownloadAction, TrayAction};
     use std::collections::HashMap;
@@ -164,15 +166,15 @@ mod imp {
     impl Tray {
         pub fn new() -> Option<Tray> {
             let menu = Menu::new();
-            let show = MenuItem::new("Restore Ezoo Download", true, None);
-            let add = MenuItem::new("Add new download…", true, None);
-            let resume = MenuItem::new("Resume all downloads", true, None);
-            let stop = MenuItem::new("Stop all downloads", true, None);
-            let limiter = CheckMenuItem::new("Speed Limiter", true, false, None);
-            let sched = MenuItem::new("Scheduler…", true, None);
-            let options = MenuItem::new("Options…", true, None);
-            let about = MenuItem::new("About", true, None);
-            let exit = MenuItem::new("Exit", true, None);
+            let show = MenuItem::new(crate::i18n::t("Restore Ezoo Download"), true, None);
+            let add = MenuItem::new(crate::i18n::t("Add new download…"), true, None);
+            let resume = MenuItem::new(crate::i18n::t("Resume all downloads"), true, None);
+            let stop = MenuItem::new(crate::i18n::t("Stop all downloads"), true, None);
+            let limiter = CheckMenuItem::new(crate::i18n::t("Speed Limiter"), true, false, None);
+            let sched = MenuItem::new(crate::i18n::t("Scheduler…"), true, None);
+            let options = MenuItem::new(crate::i18n::t("Options…"), true, None);
+            let about = MenuItem::new(crate::i18n::t("About"), true, None);
+            let exit = MenuItem::new(crate::i18n::t("Exit"), true, None);
             menu.append(&show).ok()?;
             menu.append(&PredefinedMenuItem::separator()).ok()?;
             menu.append(&add).ok()?;
@@ -222,9 +224,15 @@ mod imp {
                     }
                     continue;
                 }
-                // left double click: the window (the menu is on the right button)
-                if let TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = ev {
-                    out.push(TrayAction::Show);
+                // left double click: the window (the menu is on the right
+                // button). Linux trays have no double click: one left click
+                // opens the window there.
+                match &ev {
+                    TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => out.push(TrayAction::Show),
+                    TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } if cfg!(target_os = "linux") => {
+                        out.push(TrayAction::Show);
+                    }
+                    _ => {}
                 }
             }
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
@@ -259,7 +267,7 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::{DownloadAction, TrayAction};
     pub fn show_download(_id: u64, _tip: &str, _progress: Option<f32>, _labels: (&str, &str)) -> bool {
@@ -285,7 +293,7 @@ mod imp {
 pub use imp::{remove_download, show_download, take_download_actions, update_download, Tray};
 
 /// Windows shows at most 127 characters in an icon's hint.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 fn short_tip(tip: &str) -> String {
     if tip.chars().count() <= 120 {
         tip.to_string()
@@ -295,7 +303,7 @@ fn short_tip(tip: &str) -> String {
 }
 
 /// The bar changes in steps of 1/24 (its width in dots).
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 fn step_of(p: f32) -> u32 {
     (p.clamp(0.0, 1.0) * 24.0).round() as u32
 }
