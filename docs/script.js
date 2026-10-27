@@ -119,6 +119,7 @@ document.querySelectorAll('.copy-btn').forEach((btn) => {
   const SPEEDS = []; // aggregate speed samples (newest last)
   let lanes = [];
   let running = false;
+  let everStarted = false; // manual start OR auto-start: auto-start fires only once
   let timer = null;
   let startedAt = 0;
   let elapsedBefore = 0; // ms accumulated before a pause
@@ -247,6 +248,7 @@ document.querySelectorAll('.copy-btn').forEach((btn) => {
 
   function start() {
     if (totalProgress() >= 1) reset(false);
+    everStarted = true;
     running = true;
     startedAt = performance.now();
     threadsInput.disabled = true;
@@ -267,6 +269,7 @@ document.querySelectorAll('.copy-btn').forEach((btn) => {
   function reset(clearResult) {
     stopTimer();
     running = false;
+    everStarted = true; // a reset is a manual interaction: never auto-start after it
     elapsedBefore = 0;
     SPEEDS.length = 0;
     sizeMB = parseFloat(sizeSelect.value);
@@ -299,4 +302,20 @@ document.querySelectorAll('.copy-btn').forEach((btn) => {
   threadsValue.textContent = threadsInput.value;
   buildLanes(0);
   drawChart();
+
+  // Auto-start once when the panel scrolls into view (defaults: 8 threads,
+  // 500 MB). Never re-fires: not after a manual start, pause, or reset,
+  // and never when the user prefers reduced motion.
+  if (!reducedMotion && 'IntersectionObserver' in window) {
+    const autoIO = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (everStarted) { autoIO.disconnect(); return; }
+        if (en.isIntersecting && !running && totalProgress() === 0 && document.visibilityState === 'visible') {
+          autoIO.disconnect();
+          start();
+        }
+      });
+    }, { threshold: 0.4 });
+    autoIO.observe(panel);
+  }
 })();
