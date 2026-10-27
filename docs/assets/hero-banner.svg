@@ -1,0 +1,30 @@
+<svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ezoo Download">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8A57F5"/>
+      <stop offset=".52" stop-color="#6A5CF6"/>
+      <stop offset="1" stop-color="#2E7BF6"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset=".5" stop-color="#ffffff" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" rx="36" fill="url(#bg)"/>
+  <circle cx="1050" cy="60" r="150" fill="none" stroke="#ffffff" stroke-opacity=".16" stroke-width="2"/>
+  <circle cx="1050" cy="60" r="100" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="2"/>
+  <circle cx="120" cy="360" r="90" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/>
+  <rect width="1200" height="400" rx="36" fill="url(#sheen)"/>
+  <!-- E-arrow mark -->
+  <g fill="#ffffff">
+    <rect x="104" y="92" width="46" height="216" rx="10"/>
+    <rect x="104" y="92" width="156" height="46" rx="10"/>
+    <rect x="104" y="262" width="156" height="46" rx="10"/>
+    <rect x="104" y="177" width="112" height="46" rx="10"/>
+    <polygon points="212,154 296,200 212,246"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="330" y="212" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="bold" fill="#ffffff" letter-spacing="1">Ezoo Download</text>
+  <text x="334" y="268" font-family="Arial, Helvetica, sans-serif" font-size="30" fill="#ffffff" fill-opacity=".88" letter-spacing="2">Free  •  Open Source  •  Windows &amp; Linux</text>
+</svg>
