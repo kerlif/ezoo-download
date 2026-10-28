@@ -1,276 +1,377 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Ezoo Download — مدير تنزيلات مجاني ومفتوح المصدر</title>
-<meta name="description" content="Ezoo Download: مدير تنزيلات سريع، مجاني، ومفتوح المصدر لويندوز ولينكس. تقسيم الاتصالات، استئناف التنزيل، إضافة للمتصفح، وffmpeg مدمج." />
+<title data-i18n-title="meta.title">Ezoo Download — مدير تنزيلات مجاني ومفتوح المصدر</title>
+<meta name="description" data-i18n-content="meta.description" content="Ezoo Download: مدير تنزيلات سريع، مجاني، ومفتوح المصدر لويندوز ولينكس. اتصالات تكيفية، استئناف التنزيل، إضافة للمتصفح، وffmpeg مدمج." />
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
 <link rel="stylesheet" href="style.css" />
 <script src="script.js" defer></script>
 </head>
 <body>
+<a class="skip-link" href="#main" data-i18n="a11y.skip">تخطَّ إلى المحتوى الرئيسي</a>
 
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="brand" href="#">
-      <img src="assets/logo.svg" alt="شعار Ezoo Download" width="36" height="36" />
+    <a class="brand" href="#top">
+      <img src="assets/logo.svg" alt="Ezoo Download" data-i18n-alt="brand.alt" width="36" height="36" />
       <span>Ezoo Download</span>
     </a>
-    <nav class="main-nav">
-      <a href="#features">المزايا</a>
-      <a href="#how">كيف يعمل</a>
-      <a href="#demo">جرّب</a>
-      <a href="#screenshots">لقطات</a>
-      <a href="#download">تنزيل</a>
-      <a href="#faq">الأسئلة</a>
+    <nav class="main-nav" aria-label="Ezoo Download">
+      <a href="#features" data-i18n="nav.features">المزايا</a>
+      <a href="#how" data-i18n="nav.how">كيف يعمل</a>
+      <a href="#download" data-i18n="nav.downloads">تنزيل</a>
+      <a href="#install" data-i18n="nav.install">التثبيت</a>
+      <a href="#screenshots" data-i18n="nav.screenshots">لقطات</a>
+      <a href="#faq" data-i18n="nav.faq">الأسئلة</a>
+      <a href="#privacy" data-i18n="nav.privacy">الخصوصية</a>
     </nav>
-    <a class="github-btn" href="https://github.com/kerlif/ezoo-download" target="_blank" rel="noopener">GitHub</a>
+    <div class="header-controls">
+      <div class="lang-switch" role="group" aria-label="Language / اللغة">
+        <button type="button" id="lang-ar" aria-pressed="true">العربية</button>
+        <button type="button" id="lang-en" aria-pressed="false">English</button>
+      </div>
+      <button type="button" id="theme-toggle" aria-pressed="false"><span aria-hidden="true">☾</span> <span data-i18n="theme.dark">داكن</span></button>
+      <a class="github-btn" href="https://github.com/kerlif/ezoo-download" target="_blank" rel="noopener">GitHub</a>
+    </div>
   </div>
 </header>
 
-<main>
+<main id="main">
   <!-- Hero -->
-  <section class="hero">
+  <section class="hero" id="top" aria-labelledby="hero-title">
     <div class="hero-decor" aria-hidden="true"><span>↓</span><span>↓</span><span>↓</span><span>↓</span></div>
     <div class="wrap hero-inner">
       <div class="hero-text">
-        <p class="version-badge">الإصدار 1.0.7 &nbsp;•&nbsp; مجاني 100% &nbsp;•&nbsp; مفتوح المصدر</p>
-        <h1>مدير تنزيلات سريع،<br />مجاني، ومفتوح المصدر.</h1>
-        <p class="hero-sub">قسّم ملفاتك على اتصالات متعددة، واستأنف التنزيل من حيث توقف، والتقط الروابط من المتصفح بضغطة واحدة — على ويندوز ولينكس، دون اشتراكات ودون إعلانات.</p>
+        <p class="version-badge" data-i18n="hero.badge">الإصدار 1.1.0 &nbsp;•&nbsp; مجاني 100% &nbsp;•&nbsp; مفتوح المصدر</p>
+        <h1 id="hero-title" data-i18n-html="hero.title">مدير تنزيلات سريع،<br />مجاني، ومفتوح المصدر.</h1>
+        <p class="hero-sub" data-i18n="hero.sub">اتصالات تتكيف مع ما يقدمه الخادم فعلًا، وحجم وجودة ظاهران قبل التأكيد، والتقاط الروابط من المتصفح بضغطة واحدة — على ويندوز ولينكس، دون اشتراكات ودون إعلانات.</p>
         <div class="hero-buttons">
-          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload_1.0.7_amd64.deb">⬇ تنزيل للينكس (.deb)</a>
-          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases/tag/v1.0.7">كل الإصدارات</a>
+          <a class="btn btn-primary" href="#download" data-i18n="hero.primary">⬇ تنزيل Ezoo Download</a>
+          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases" data-i18n="hero.secondary">كل الإصدارات وسجل التغييرات</a>
         </div>
-        <p class="hero-note">نسخ لينكس تتضمن ffmpeg مدمجًا — لا حاجة لتثبيت أي شيء إضافي. تحقق من البصمات في <a href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/SHA256SUMS.txt">SHA256SUMS.txt</a>.</p>
+        <p class="hero-note" data-i18n-html="hero.note">نسخ لينكس تتضمن ffmpeg مدمجًا — لا حاجة لتثبيت أي شيء إضافي. تحقق من البصمات في <a href="https://github.com/kerlif/ezoo-download/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a>.</p>
       </div>
       <div class="hero-shot">
         <div class="browser-frame">
-          <div class="browser-bar"><span></span><span></span><span></span></div>
-          <img src="screenshots/01-main-ar.png" alt="واجهة Ezoo Download الرئيسية" />
+          <div class="browser-bar" aria-hidden="true"><span></span><span></span><span></span></div>
+          <img src="screenshots/01-main-ar.png" alt="النافذة الرئيسية لبرنامج Ezoo Download: قائمة التنزيلات والتصنيفات وشريط الأدوات" data-i18n-alt="hero.shot.alt" width="962" height="502" />
         </div>
       </div>
     </div>
   </section>
 
   <!-- Trust strip -->
-  <section class="strip">
+  <section class="strip" aria-label="Ezoo Download">
     <div class="wrap strip-inner">
-      <div><strong>مجاني 100%</strong><span>دون إعلانات أو اشتراكات</span></div>
-      <div><strong>مفتوح المصدر</strong><span>مكتوب من الصفر بلغة Rust</span></div>
-      <div><strong>ويندوز + لينكس</strong><span>Setup.exe وdeb وAppImage وrpm</span></div>
-      <div><strong>8 لغات</strong><span>منها العربية</span></div>
+      <div><strong data-i18n="strip.1t">مجاني 100%</strong><span data-i18n="strip.1s">دون إعلانات أو اشتراكات</span></div>
+      <div><strong data-i18n="strip.2t">مفتوح المصدر</strong><span data-i18n="strip.2s">مكتوب بلغة Rust</span></div>
+      <div><strong data-i18n="strip.3t">ويندوز + لينكس</strong><span data-i18n="strip.3s">Setup.exe وdeb وAppImage وrpm وFlatpak</span></div>
+      <div><strong data-i18n="strip.4t">8 لغات</strong><span data-i18n="strip.4s">منها العربية</span></div>
     </div>
   </section>
 
   <!-- Features -->
-  <section id="features" class="section">
+  <section id="features" class="section" aria-labelledby="features-title">
     <div class="wrap">
-      <h2>كل ما تحتاجه من مدير تنزيلات</h2>
-      <p class="section-sub">واجهة بسيطة، وأداء يصل إلى أقصى سرعة يسمح بها اتصالك.</p>
+      <h2 id="features-title" data-i18n="features.title">كل ما تحتاجه من مدير تنزيلات</h2>
+      <p class="section-sub" data-i18n="features.sub">واجهة بسيطة، وأداء يتكيف مع اتصالك والخادم الذي تحمّل منه.</p>
       <div class="cards">
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          <h3>سرعة قصوى</h3>
-          <p>تقسيم كل ملف على ما يصل إلى 32 اتصالًا في الوقت نفسه.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 7v3h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3 data-i18n="f1t">اتصالات تكيفية</h3>
+          <p data-i18n="f1d">يقيس المحرك ما يقدمه الخادم فعلًا ويعدّل عدد الاتصالات أثناء التنزيل، ويتذكر أفضل عدد لكل مضيف محليًا فقط، وينقذ المقاطع المتوقفة باتصال جديد.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
-          <h3>استئناف حقيقي</h3>
-          <p>أوقف التنزيل وأغلق البرنامج، وسيكمل من حيث توقف عند عودتك.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3M8 11h6M11 8v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+          <h3 data-i18n="f2t">الحجم والجودة قبل التأكيد</h3>
+          <p data-i18n="f2d">نافذة التقاط الرابط تفحص الرابط أولًا وتُظهر المدة والجودات المتاحة وحجمًا تقديريًا (من البثوث HLS وDASH أيضًا)، وترفض البثوث المحمية بنظام DRM.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg></div>
-          <h3>فيديو وصوت</h3>
-          <p>من الصفحات وقوائم التشغيل، مع اختيار الجودة المناسبة لك.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+          <h3 data-i18n="f3t">التقاط من المتصفح</h3>
+          <p data-i18n="f3d">إضافة كروم وفايرفوكس ترسل الروابط إلى البرنامج عبر جسر محلي فقط (127.0.0.1:9614) — بضغطة واحدة من الصفحة، ودون أي خادم وسيط.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
-          <h3>إضافة للمتصفح</h3>
-          <p>كروم وفايرفوكس — التقاط الروابط من الصفحة بضغطة واحدة.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+          <h3 data-i18n="f4t">استئناف حقيقي</h3>
+          <p data-i18n="f4d">أوقف التنزيل وأغلق البرنامج، وسيكمل من حيث توقف عند عودتك. خريطة المقاطع محفوظة، وأي خريطة تالفة تُهمل ويُعاد التخطيط من الصفر.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
-          <h3>تنظيم تلقائي</h3>
-          <p>كل ملف يذهب إلى مجلده حسب نوعه، دون تدخل منك.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg></div>
+          <h3 data-i18n="f5t">فيديو وصوت</h3>
+          <p data-i18n="f5d">من الصفحات وقوائم التشغيل عبر yt-dlp — ولا يعمل إلا عندما تطلبه أنت — مع دمج الفيديو والصوت بـ ffmpeg المدمج في حزم لينكس.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
-          <h3>جدولة وقوائم انتظار</h3>
-          <p>شغّل التنزيلات في موعد محدد، وأوقف الجهاز عند الانتهاء.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+          <h3 data-i18n="f6t">جدولة وقوائم انتظار</h3>
+          <p data-i18n="f6d">شغّل التنزيلات في موعد محدد، وأوقف الجهاز عند الانتهاء، ورتّب التنزيلات في قوائم انتظار.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 7v3h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          <h3>تحديد السرعة</h3>
-          <p>حدّ عام للسرعة أو حدّ خاص بكل ملف، حسب ما يناسبك.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+          <h3 data-i18n="f7t">تنظيم وتحديد سرعة</h3>
+          <p data-i18n="f7d">كل ملف يذهب إلى مجلده حسب نوعه تلقائيًا، مع حدّ عام للسرعة أو حدّ خاص بكل ملف، و9 سمات منها الداكنة.</p>
         </article>
         <article class="card">
-          <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          <h3>خصوصيتك أولًا</h3>
-          <p>لا يجمع بياناتك ولا يرسل أي إحصاءات إلى أي جهة.</p>
+          <div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3 data-i18n="f8t">خصوصيتك أولًا</h3>
+          <p data-i18n="f8d">لا قياس عن بُعد ولا تحليلات ولا تقارير أعطال. الطلبات الصادرة الوحيدة هي تلك المذكورة في قسم الخصوصية أدناه — ولا شيء غيرها.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <!-- How it works -->
-  <section id="how" class="section alt">
+  <!-- How it works + simulator -->
+  <section id="how" class="section alt" aria-labelledby="how-title">
     <div class="wrap">
-      <h2>كيف يعمل؟ ثلاث خطوات فقط</h2>
+      <h2 id="how-title" data-i18n="how.title">كيف يعمل؟ ثلاث خطوات فقط</h2>
       <div class="steps">
-        <div class="step"><span class="step-num">1</span><h3>انسخ الرابط</h3><p>يلتقطه البرنامج تلقائيًا من الحافظة، أو أضِفه بنفسك — أو أرسله من إضافة المتصفح.</p></div>
-        <div class="step"><span class="step-num">2</span><h3>يقسّمه على اتصالات</h3><p>يحمّل الملف على اتصالات متعددة في الوقت نفسه ليصل إلى أقصى سرعة ممكنة.</p></div>
-        <div class="step"><span class="step-num">3</span><h3>استأنف متى شئت</h3><p>انقطع الاتصال؟ أغلقت الجهاز؟ يكمل التنزيل من حيث توقف دون أن يبدأ من جديد.</p></div>
+        <div class="step"><span class="step-num" aria-hidden="true">1</span><h3 data-i18n="s1t">انسخ الرابط</h3><p data-i18n="s1d">يلتقطه البرنامج تلقائيًا من الحافظة، أو أضِفه بنفسك — أو أرسله من إضافة المتصفح.</p></div>
+        <div class="step"><span class="step-num" aria-hidden="true">2</span><h3 data-i18n="s2t">يقسّمه على اتصالات تكيفية</h3><p data-i18n="s2d">يبدأ بعدد قليل من الاتصالات ويزيدها ما دامت السرعة ترتفع، ويقسّم المقاطع الكبيرة أثناء التنزيل ليصل إلى أقصى سرعة ممكنة.</p></div>
+        <div class="step"><span class="step-num" aria-hidden="true">3</span><h3 data-i18n="s3t">استأنف متى شئت</h3><p data-i18n="s3d">انقطع الاتصال؟ أغلقت الجهاز؟ يكمل التنزيل من حيث توقف دون أن يبدأ من جديد.</p></div>
       </div>
-    </div>
-  </section>
 
-  <!-- Interactive demo: segmented download simulation -->
-  <section id="demo" class="section">
-    <div class="wrap">
-      <h2>جرّب قوة التقسيم بنفسك</h2>
-      <p class="section-sub">محاكاة توضيحية تعمل داخل متصفحك — ليست تنزيلًا حقيقيًا. تبدأ تلقائيًا عندما تصل إليها بالإعدادات الافتراضية (8 اتصالات)، ويمكنك تغيير العدد والحجم وإعادة تشغيلها.</p>
-      <div class="demo" id="demo-panel">
-        <div class="demo-controls">
-          <label class="ctl">
-            <span>عدد الاتصالات: <strong id="threads-value">8</strong></span>
-            <input type="range" id="threads" min="1" max="16" value="8" step="1" />
-            <span class="ctl-hint">1 ← اتصال واحد · 16 ← أقصى تقسيم</span>
-          </label>
-          <label class="ctl">
-            <span>حجم الملف</span>
-            <select id="filesize">
-              <option value="100">100 ميجابايت</option>
-              <option value="500" selected>500 ميجابايت</option>
-              <option value="1024">1 جيجابايت</option>
-              <option value="2560">2.5 جيجابايت</option>
-            </select>
-          </label>
-          <div class="demo-buttons">
-            <button type="button" class="btn btn-primary" id="sim-start">▶ ابدأ المحاكاة</button>
-            <button type="button" class="btn btn-ghost" id="sim-reset">↺ إعادة</button>
+      <div id="demo" class="demo-wrap">
+        <h3 id="demo-title" data-i18n="sim.title">جرّب قوة التقسيم بنفسك</h3>
+        <p class="section-sub" data-i18n="sim.sub">محاكاة توضيحية تعمل داخل متصفحك — ليست تنزيلًا حقيقيًا. تبدأ تلقائيًا عندما تصل إليها بالإعدادات الافتراضية (8 اتصالات)، ويمكنك تغيير العدد والحجم وإعادة تشغيلها.</p>
+        <p class="sim-note" role="note"><strong data-i18n="sim.note">محاكاة فقط — لا يجري أي تنزيل حقيقي هنا.</strong></p>
+        <div class="demo" id="demo-panel">
+          <div class="demo-controls">
+            <label class="ctl">
+              <span><span data-i18n="sim.threads">عدد الاتصالات:</span> <strong id="threads-value">8</strong></span>
+              <input type="range" id="threads" min="1" max="16" value="8" step="1" />
+              <span class="ctl-hint" data-i18n="sim.threads-hint">1 ← اتصال واحد · 16 ← أقصى تقسيم</span>
+            </label>
+            <label class="ctl">
+              <span data-i18n="sim.size">حجم الملف</span>
+              <select id="filesize">
+                <option value="100" data-i18n="sim.size.100">100 ميجابايت</option>
+                <option value="500" selected data-i18n="sim.size.500">500 ميجابايت</option>
+                <option value="1024" data-i18n="sim.size.1024">1 جيجابايت</option>
+                <option value="2560" data-i18n="sim.size.2560">2.5 جيجابايت</option>
+              </select>
+            </label>
+            <div class="demo-buttons">
+              <button type="button" class="btn btn-primary" id="sim-start" data-i18n="sim.start">▶ ابدأ المحاكاة</button>
+              <button type="button" class="btn btn-ghost" id="sim-reset" data-i18n="sim.reset">↺ إعادة</button>
+            </div>
           </div>
+          <div class="demo-stats" role="status" aria-live="polite">
+            <div><strong id="stat-speed">0.0</strong><span data-i18n="stat.speed">ميجابايت/ث</span></div>
+            <div><strong id="stat-progress">0%</strong><span data-i18n="stat.progress">التقدم</span></div>
+            <div><strong id="stat-eta">—</strong><span data-i18n="stat.eta">الوقت المتبقي</span></div>
+            <div><strong id="stat-active">0</strong><span data-i18n="stat.active">اتصالات نشطة</span></div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="speed-chart" height="120" role="img" data-i18n-aria="chart.aria" aria-label="رسم بياني لسرعة التنزيل أثناء المحاكاة"></canvas>
+            <span class="chart-label" data-i18n="chart.label">السرعة عبر الزمن</span>
+          </div>
+          <div class="lanes" id="lanes"></div>
+          <p class="demo-result" id="demo-result" hidden></p>
         </div>
-        <div class="demo-stats" role="status" aria-live="polite">
-          <div><strong id="stat-speed">0.0</strong><span>ميجابايت/ث</span></div>
-          <div><strong id="stat-progress">0%</strong><span>التقدم</span></div>
-          <div><strong id="stat-eta">—</strong><span>الوقت المتبقي</span></div>
-          <div><strong id="stat-active">0</strong><span>اتصالات نشطة</span></div>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="speed-chart" height="120" aria-label="رسم بياني لسرعة التنزيل أثناء المحاكاة"></canvas>
-          <span class="chart-label">السرعة عبر الزمن</span>
-        </div>
-        <div class="lanes" id="lanes"></div>
-        <p class="demo-result" id="demo-result" hidden></p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Alternative -->
-  <section class="section">
-    <div class="wrap narrow">
-      <h2>بديل حقيقي — مجاني ومفتوح المصدر</h2>
-      <p>يؤدي Ezoo Download ما تؤديه برامج التنزيل المدفوعة مثل IDM — تقسيم الاتصالات، واستئناف التنزيل، والتقاط الروابط من المتصفح — مجانًا، ومفتوح المصدر، ومكتوبًا من الصفر (clean room) دون نسخ كود أي برنامج آخر.</p>
-      <table class="compare">
-        <thead>
-          <tr><th></th><th>Ezoo Download</th><th>برامج التنزيل المدفوعة التقليدية</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>السعر</td><td>مجاني بالكامل</td><td>اشتراك أو ترخيص مدفوع</td></tr>
-          <tr><td>الشيفرة المصدرية</td><td>مفتوحة وقابلة للمراجعة</td><td>مغلقة</td></tr>
-          <tr><td>الإعلانات</td><td>لا يوجد</td><td>حسب المنتج</td></tr>
-          <tr><td>الأنظمة</td><td>ويندوز + لينكس</td><td>ويندوز غالبًا</td></tr>
-          <tr><td>جمع البيانات</td><td>لا يجمع شيئًا</td><td>حسب سياسة المنتج</td></tr>
-        </tbody>
-      </table>
-      <p class="fineprint">Ezoo Download مشروع مستقل، غير تابع لـ IDM أو أي شركة أخرى، ولا يستخدم أيًا من أكوادها أو علاماتها.</p>
-    </div>
-  </section>
-
-  <!-- Screenshots -->
-  <section id="screenshots" class="section alt">
-    <div class="wrap">
-      <h2>ألقِ نظرة</h2>
-      <div class="shots">
-        <figure><img src="screenshots/01-main-ar.png" alt="النافذة الرئيسية" /><figcaption>النافذة الرئيسية</figcaption></figure>
-        <figure><img src="screenshots/02-progress-ar.png" alt="تقدّم التنزيل" /><figcaption>تقدّم التنزيل</figcaption></figure>
-        <figure><img src="screenshots/03-add-dialog-ar.png" alt="إضافة تحميل جديد" /><figcaption>إضافة تحميل جديد</figcaption></figure>
       </div>
     </div>
   </section>
 
   <!-- Download -->
-  <section id="download" class="section">
+  <section id="download" class="section" aria-labelledby="download-title">
     <div class="wrap">
-      <h2>نزّل Ezoo Download 1.0.7</h2>
-      <p class="section-sub">اختر نظامك — كل الملفات من صفحة الإصدارات الرسمية لهذا المستودع.</p>
-      <div class="dl-cards">
-        <article class="dl-card">
-          <h3>🪟 ويندوز 10 / 11</h3>
-          <p><code>EzooDownload-Setup.exe</code> — ملف إعداد للمستخدم الحالي، دون صلاحيات المسؤول.</p>
-          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload-Setup.exe">تنزيل Setup.exe</a>
+      <h2 id="download-title" data-i18n="dl.title">نزّل Ezoo Download 1.1.0</h2>
+      <p class="section-sub" data-i18n="dl.sub">اختر نظامك — كل الملفات من صفحة إصدارات هذا المستودع، وكل الروابط تشير إلى أحدث إصدار.</p>
+      <p class="os-note" id="os-note" role="status" data-i18n="os.unknown">تعذّر تحديد نظام تشغيلك تلقائيًا — كل المنصات مذكورة أدناه.</p>
+      <div class="dl-cards" id="dl-cards">
+        <article class="dl-card" data-os="windows">
+          <h3 data-i18n="dl.win.t">🪟 ويندوز 10 / 11</h3>
+          <p><code>EzooDownload-Setup.exe</code> <span data-i18n="dl.win.d">— ملف إعداد للمستخدم الحالي، دون صلاحيات المسؤول.</span></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-Setup.exe" data-i18n="dl.win.b">تنزيل Setup.exe</a>
         </article>
-        <article class="dl-card">
-          <h3>🐧 لينكس — Debian / Ubuntu</h3>
-          <p><code>EzooDownload_1.0.7_amd64.deb</code> — مع ffmpeg مدمج.</p>
-          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload_1.0.7_amd64.deb">تنزيل .deb</a>
+        <article class="dl-card" data-os="deb">
+          <h3 data-i18n="dl.deb.t">🐧 لينكس — Debian / Ubuntu</h3>
+          <p><code>EzooDownload_1.1.0_amd64.deb</code> <span data-i18n="dl.deb.d">— مع ffmpeg مدمج.</span></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload_1.1.0_amd64.deb" data-i18n="dl.deb.b">تنزيل .deb</a>
         </article>
-        <article class="dl-card">
-          <h3>🐧 لينكس — أي توزيعة</h3>
-          <p><code>EzooDownload-1.0.7-x86_64.AppImage</code> — دون تثبيت.</p>
-          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/EzooDownload-1.0.7-x86_64.AppImage">تنزيل AppImage</a>
+        <article class="dl-card" data-os="appimage">
+          <h3 data-i18n="dl.app.t">🐧 لينكس — أي توزيعة</h3>
+          <p><code>EzooDownload-1.1.0-x86_64.AppImage</code> <span data-i18n="dl.app.d">— دون تثبيت، مع ffmpeg مدمج.</span></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-1.1.0-x86_64.AppImage" data-i18n="dl.app.b">تنزيل AppImage</a>
         </article>
-        <article class="dl-card">
-          <h3>🐧 لينكس — Fedora / RHEL</h3>
-          <p><code>ezoo-download-1.0.7-1.x86_64.rpm</code> — مع ffmpeg مدمج.</p>
-          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/ezoo-download-1.0.7-1.x86_64.rpm">تنزيل .rpm</a>
+        <article class="dl-card" data-os="rpm">
+          <h3 data-i18n="dl.rpm.t">🐧 لينكس — Fedora / RHEL</h3>
+          <p><code>ezoo-download-1.1.0-1.x86_64.rpm</code> <span data-i18n="dl.rpm.d">— مع ffmpeg مدمج.</span></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/latest/download/ezoo-download-1.1.0-1.x86_64.rpm" data-i18n="dl.rpm.b">تنزيل .rpm</a>
         </article>
-        <article class="dl-card">
-          <h3>🌐 إضافة كروم</h3>
-          <p>موقّعة بالمفتاح الأصلي — نفس معرّف الإضافة.</p>
-          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/ezoo-download-chrome-1.0.7.crx">تنزيل .crx</a>
+        <article class="dl-card" data-os="flatpak">
+          <h3 data-i18n="dl.flat.t">📦 لينكس — Flatpak</h3>
+          <p><code>EzooDownload-x86_64.flatpak</code> <span data-i18n="dl.flat.d">— حزمة Flatpak واحدة (معرّف التطبيق io.github.kerlif.EzooDownload).</span></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak" data-i18n="dl.flat.b">تنزيل حزمة Flatpak</a>
         </article>
-        <article class="dl-card">
-          <h3>🦊 إضافة فايرفوكس</h3>
-          <p><code>ezoo-download-firefox-1.0.7.xpi</code></p>
-          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/ezoo-download-firefox-1.0.7.xpi">تنزيل .xpi</a>
+        <article class="dl-card" data-os="chrome">
+          <h3 data-i18n="dl.crx.t">🌐 إضافة كروم</h3>
+          <p><code>ezoo-download-chrome-1.1.0.crx</code> <span data-i18n="dl.crx.d">— موقّعة بالمفتاح الأصلي، بنفس معرّف الإضافة.</span></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases/latest/download/ezoo-download-chrome-1.1.0.crx" data-i18n="dl.crx.b">تنزيل .crx</a>
+          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases/latest/download/ezoo-download-chrome-1.1.0.zip" data-i18n="dl.zip.b">تنزيل .zip (تحميل يدوي)</a>
+        </article>
+        <article class="dl-card" data-os="firefox">
+          <h3 data-i18n="dl.xpi.t">🦊 إضافة فايرفوكس</h3>
+          <p><code>ezoo-download-firefox-1.1.0.xpi</code></p>
+          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
+          <a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases/latest/download/ezoo-download-firefox-1.1.0.xpi" data-i18n="dl.xpi.b">تنزيل .xpi</a>
         </article>
       </div>
-      <p class="hero-note center">تحقق من سلامة الملفات عبر <a href="https://github.com/kerlif/ezoo-download/releases/download/v1.0.7/SHA256SUMS.txt">SHA256SUMS.txt</a> · دليل لينكس الكامل في <a href="https://github.com/kerlif/ezoo-download/blob/main/packaging/linux/README-Linux.md">المستودع</a>.</p>
-      <div class="install-cmds">
-        <h3>أوامر التثبيت السريع (لينكس) — انقر «نسخ» ثم الصق في الطرفية</h3>
-        <div class="cmd-row"><code dir="ltr">sudo dpkg -i EzooDownload_1.0.7_amd64.deb</code><button type="button" class="copy-btn" data-copy="sudo dpkg -i EzooDownload_1.0.7_amd64.deb">نسخ</button></div>
-        <div class="cmd-row"><code dir="ltr">chmod +x EzooDownload-1.0.7-x86_64.AppImage &amp;&amp; ./EzooDownload-1.0.7-x86_64.AppImage</code><button type="button" class="copy-btn" data-copy="chmod +x EzooDownload-1.0.7-x86_64.AppImage &amp;&amp; ./EzooDownload-1.0.7-x86_64.AppImage">نسخ</button></div>
-        <div class="cmd-row"><code dir="ltr">sudo rpm -i ezoo-download-1.0.7-1.x86_64.rpm</code><button type="button" class="copy-btn" data-copy="sudo rpm -i ezoo-download-1.0.7-1.x86_64.rpm">نسخ</button></div>
+      <p class="hero-note center" data-i18n-html="dl.checks">تحقق من سلامة الملفات عبر <a href="https://github.com/kerlif/ezoo-download/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a> (لينكس) أو <a href="https://github.com/kerlif/ezoo-download/releases/latest/download/SHA256SUMS-windows.txt">SHA256SUMS-windows.txt</a> (ويندوز) · <a href="https://github.com/kerlif/ezoo-download/releases">كل الإصدارات وسجل التغييرات</a>.</p>
+    </div>
+  </section>
+
+  <!-- Install guides -->
+  <section id="install" class="section alt" aria-labelledby="install-title">
+    <div class="wrap">
+      <h2 id="install-title" data-i18n="install.title">دليل التثبيت</h2>
+      <p class="section-sub" data-i18n="install.sub">أوامر دقيقة لكل منصة — انقر «نسخ» ثم الصق في الطرفية.</p>
+      <div class="guides">
+        <article class="guide">
+          <h3 data-i18n="g.win.t">ويندوز 10 / 11 (64-bit)</h3>
+          <ol>
+            <li data-i18n-html="g.win.1">نزّل <code>EzooDownload-Setup.exe</code> من قسم التنزيل أعلاه.</li>
+            <li data-i18n-html="g.win.2">شغّل الملف — يُثبَّت للمستخدم الحالي ولا يحتاج إلى صلاحيات المسؤول.</li>
+            <li data-i18n-html="g.win.3">بعد التثبيت، افتح البرنامج من قائمة ابدأ. قد تُظهر SmartScreen تحذيرًا لأن البرنامج غير موقّع بشهادة رقمية.</li>
+          </ol>
+          <div class="cmd-row"><code dir="ltr">EzooDownload-Setup.exe</code><button type="button" class="copy-btn" data-copy="EzooDownload-Setup.exe" data-i18n="copy.btn">نسخ</button></div>
+        </article>
+        <article class="guide">
+          <h3 data-i18n="g.deb.t">لينكس — .deb (Debian / Ubuntu / Mint)</h3>
+          <ol>
+            <li data-i18n-html="g.deb.1">نزّل ملف <code>.deb</code> ثم ثبّته بالأمر أدناه.</li>
+            <li data-i18n-html="g.deb.2">إذا ظهرت رسالة نواقص في التبعيات، أكملها بالأمر الثاني.</li>
+          </ol>
+          <div class="cmd-row"><code dir="ltr">sudo dpkg -i EzooDownload_1.1.0_amd64.deb</code><button type="button" class="copy-btn" data-copy="sudo dpkg -i EzooDownload_1.1.0_amd64.deb" data-i18n="copy.btn">نسخ</button></div>
+          <div class="cmd-row"><code dir="ltr">sudo apt-get install -f</code><button type="button" class="copy-btn" data-copy="sudo apt-get install -f" data-i18n="copy.btn">نسخ</button></div>
+        </article>
+        <article class="guide">
+          <h3 data-i18n="g.rpm.t">لينكس — .rpm (Fedora / RHEL / openSUSE)</h3>
+          <ol>
+            <li data-i18n-html="g.rpm.1">نزّل ملف <code>.rpm</code> ثم ثبّته بأحد الأمرين أدناه.</li>
+          </ol>
+          <div class="cmd-row"><code dir="ltr">sudo rpm -i ezoo-download-1.1.0-1.x86_64.rpm</code><button type="button" class="copy-btn" data-copy="sudo rpm -i ezoo-download-1.1.0-1.x86_64.rpm" data-i18n="copy.btn">نسخ</button></div>
+          <div class="cmd-row"><code dir="ltr">sudo dnf install ./ezoo-download-1.1.0-1.x86_64.rpm</code><button type="button" class="copy-btn" data-copy="sudo dnf install ./ezoo-download-1.1.0-1.x86_64.rpm" data-i18n="copy.btn">نسخ</button></div>
+        </article>
+        <article class="guide">
+          <h3 data-i18n="g.app.t">لينكس — AppImage (أي توزيعة)</h3>
+          <ol>
+            <li data-i18n-html="g.app.1">اجعل الملف قابلًا للتنفيذ ثم شغّله — لا حاجة لأي تثبيت.</li>
+            <li data-i18n-html="g.app.2">إذا لم يعمل مباشرة، فغالبًا ينقص نظامك مكوّن FUSE: ثبّت <code>libfuse2</code>، أو فكّ الملف وشغّله من المجلد الناتج.</li>
+          </ol>
+          <div class="cmd-row"><code dir="ltr">chmod +x EzooDownload-1.1.0-x86_64.AppImage &amp;&amp; ./EzooDownload-1.1.0-x86_64.AppImage</code><button type="button" class="copy-btn" data-copy="chmod +x EzooDownload-1.1.0-x86_64.AppImage &amp;&amp; ./EzooDownload-1.1.0-x86_64.AppImage" data-i18n="copy.btn">نسخ</button></div>
+          <div class="cmd-row"><code dir="ltr">sudo apt install libfuse2</code><button type="button" class="copy-btn" data-copy="sudo apt install libfuse2" data-i18n="copy.btn">نسخ</button></div>
+          <div class="cmd-row"><code dir="ltr">./EzooDownload-1.1.0-x86_64.AppImage --appimage-extract &amp;&amp; ./squashfs-root/AppRun</code><button type="button" class="copy-btn" data-copy="./EzooDownload-1.1.0-x86_64.AppImage --appimage-extract &amp;&amp; ./squashfs-root/AppRun" data-i18n="copy.btn">نسخ</button></div>
+        </article>
+        <article class="guide">
+          <h3 data-i18n="g.flat.t">لينكس — Flatpak</h3>
+          <ol>
+            <li data-i18n-html="g.flat.1">نزّل ملف الحزمة <code>EzooDownload-x86_64.flatpak</code> — هذه الحزمة غير منشورة على Flathub، والتثبيت يكون من ملف الحزمة مباشرة.</li>
+            <li data-i18n="g.flat.2">ثبّت الحزمة بالأمر أدناه، ثم شغّل البرنامج بالأمر الثاني.</li>
+          </ol>
+          <div class="cmd-row"><code dir="ltr">flatpak install --user EzooDownload-x86_64.flatpak</code><button type="button" class="copy-btn" data-copy="flatpak install --user EzooDownload-x86_64.flatpak" data-i18n="copy.btn">نسخ</button></div>
+          <div class="cmd-row"><code dir="ltr">flatpak run io.github.kerlif.EzooDownload</code><button type="button" class="copy-btn" data-copy="flatpak run io.github.kerlif.EzooDownload" data-i18n="copy.btn">نسخ</button></div>
+        </article>
+        <article class="guide">
+          <h3 data-i18n="g.ext.t">إضافة المتصفح (كروم / فايرفوكس)</h3>
+          <ol>
+            <li data-i18n-html="g.ext.1">كروم (وEdge وBrave وOpera): فعّل <strong>Developer mode</strong> في صفحة <code>chrome://extensions</code>، ثم اسحب ملف <code>.crx</code> وأفلته في الصفحة. إذا عرض كروم تحذيرًا لإضافة غير منشورة في المتجر، اختر <strong>Keep / إبقاء</strong>.</li>
+            <li data-i18n-html="g.ext.2">بديل كروم: حمّل ملف <code>.zip</code> غير المعبّأ من <code>chrome://extensions</code> بزر <strong>Load unpacked</strong>.</li>
+            <li data-i18n-html="g.ext.3">فايرفوكس: جرّب الإضافة مؤقتًا من <code>about:debugging#/runtime/this-firefox</code> ← <strong>Load Temporary Add-on</strong> ← اختر ملف <code>.xpi</code> (تبقى حتى إغلاق فايرفوكس). التثبيت الدائم يشترط توقيع Mozilla؛ يمكن استخدامها دائمًا على Firefox Developer Edition / Nightly بعد تعطيل <code>xpinstall.signatures.required</code> في <code>about:config</code>.</li>
+            <li data-i18n="g.ext.4">بعد تثبيت الإضافة، افتح البرنامج وستصل الروابط إليه تلقائيًا عبر الجسر المحلي.</li>
+          </ol>
+          <div class="cmd-row"><code dir="ltr">bilpkcfhiogfelpdfpgmnjkpblgmcbkd</code><button type="button" class="copy-btn" data-copy="bilpkcfhiogfelpdfpgmnjkpblgmcbkd" data-i18n="copy.btn">نسخ</button></div>
+          <p class="guide-note" data-i18n="g.ext.note">هذا هو معرّف إضافة كروم الثابت — نفس المفتاح يوقّع كل إصدار.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screenshots -->
+  <section id="screenshots" class="section" aria-labelledby="shots-title">
+    <div class="wrap">
+      <h2 id="shots-title" data-i18n="shots.title">ألقِ نظرة</h2>
+      <p class="section-sub" data-i18n="shots.note">لقطات من الإصدار الحالي للبرنامج؛ لقطات جديدة بواجهة 1.1.0 تصل مع تحديث لاحق.</p>
+      <div class="shots">
+        <figure><img src="screenshots/01-main-ar.png" alt="النافذة الرئيسية لبرنامج Ezoo Download بالعربية: قائمة التنزيلات الفارغة والتصنيفات على الجانب" data-i18n-alt="shots.1.alt" width="962" height="502" loading="lazy" /><figcaption data-i18n="shots.1.cap">النافذة الرئيسية</figcaption></figure>
+        <figure><img src="screenshots/02-progress-ar.png" alt="نافذة تقدم التنزيل في Ezoo Download بالعربية مع شريط التقدم والسرعة" data-i18n-alt="shots.2.alt" width="962" height="502" loading="lazy" /><figcaption data-i18n="shots.2.cap">تقدّم التنزيل</figcaption></figure>
+        <figure><img src="screenshots/03-add-dialog-ar.png" alt="نافذة إضافة تحميل جديد في Ezoo Download بالعربية مع حقل الرابط وخيارات الاتصالات" data-i18n-alt="shots.3.alt" width="962" height="502" loading="lazy" /><figcaption data-i18n="shots.3.cap">إضافة تحميل جديد</figcaption></figure>
       </div>
     </div>
   </section>
 
   <!-- FAQ -->
-  <section id="faq" class="section alt">
+  <section id="faq" class="section alt" aria-labelledby="faq-title">
     <div class="wrap narrow">
-      <h2>الأسئلة الشائعة</h2>
+      <h2 id="faq-title" data-i18n="faq.title">الأسئلة الشائعة</h2>
       <details>
-        <summary>هل البرنامج مجاني فعلًا؟</summary>
-        <p>نعم — مجاني بالكامل، دون إعلانات، ودون مزايا محجوبة خلف اشتراك.</p>
+        <summary data-i18n="faq.1q">هل البرنامج مجاني فعلًا؟</summary>
+        <p data-i18n="faq.1a">نعم — مجاني بالكامل، دون إعلانات، ودون مزايا محجوبة خلف اشتراك.</p>
       </details>
       <details>
-        <summary>هل الشيفرة مفتوحة المصدر؟</summary>
-        <p>نعم. البرنامج مكتوب من الصفر بلغة Rust دون نسخ كود أي برنامج آخر، والشيفرة كاملة في <a href="https://github.com/kerlif/ezoo-download">المستودع</a>.</p>
+        <summary data-i18n="faq.2q">هل الشيفرة مفتوحة المصدر؟</summary>
+        <p data-i18n-html="faq.2a">نعم. البرنامج مكتوب بلغة Rust، وترخيصه MIT، والشيفرة كاملة في <a href="https://github.com/kerlif/ezoo-download">المستودع</a>.</p>
       </details>
       <details>
-        <summary>هل يعمل على لينكس؟</summary>
-        <p>نعم — .deb وAppImage و.rpm، مع أيقونة شريط وتشغيل تلقائي وffmpeg مدمج داخل الحزمة.</p>
+        <summary data-i18n="faq.3q">على أي أنظمة يعمل؟</summary>
+        <p data-i18n="faq.3a">ويندوز 10 / 11 (64-bit) ولينكس x86_64: حزم .deb و.rpm وAppImage وFlatpak. لا توجد نسخة macOS.</p>
       </details>
       <details>
-        <summary>ماذا لو انقطع الاتصال أثناء التنزيل؟</summary>
-        <p>يستأنف البرنامج من حيث توقف تلقائيًا، ويمكنك إيقافه واستئنافه يدويًا في أي وقت.</p>
+        <summary data-i18n="faq.4q">ماذا لو انقطع الاتصال أثناء التنزيل؟</summary>
+        <p data-i18n="faq.4a">يستأنف البرنامج من حيث توقف تلقائيًا، ويمكنك إيقافه واستئنافه يدويًا في أي وقت — حتى بعد إغلاق البرنامج وإعادة فتحه.</p>
       </details>
       <details>
-        <summary>هل يجمع البرنامج بياناتي؟</summary>
-        <p>لا. لا يجمع بيانات استخدام ولا يرسل إحصاءات إلى أي جهة.</p>
+        <summary data-i18n="faq.5q">هل يجمع البرنامج بياناتي؟</summary>
+        <p data-i18n-html="faq.5a">لا. لا يجمع بيانات استخدام ولا يرسل إحصاءات إلى أي جهة. القائمة الكاملة للطلبات الصادرة موجودة في <a href="#privacy">قسم الخصوصية</a> أدناه.</p>
       </details>
+      <details>
+        <summary data-i18n="faq.6q">كيف تتم التحديثات؟</summary>
+        <p data-i18n="faq.6a">يفحص البرنامج إصدارات هذا المستودع عند التشغيل وكل 24 ساعة (يمكن إيقاف الفحص من الإعدادات)، ويعرض التحديث فقط بعد التحقق من توقيع ملف version.json وبصمة الملف. نسخ .deb و.rpm وFlatpak تُعلِم فقط ولا تُحدِّث نفسها.</p>
+      </details>
+      <details>
+        <summary data-i18n="faq.7q">هل اختيار جودة في نافذة الالتقاط ينزّل تلك الجودة؟</summary>
+        <p data-i18n="faq.7a">ليس بعد: المحدد يعرض كل الجودات المتاحة مع حجم تقديري لكل منها، لكن التنزيل يأخذ أفضل جودة حاليًا. اختيار الجودة للتنزيل نفسه عملٌ مخطط له لاحقًا.</p>
+      </details>
+      <details>
+        <summary data-i18n="faq.8q">لماذا يرفض البرنامج بعض روابط الفيديو؟</summary>
+        <p data-i18n="faq.8a">البثوث المحمية بأنظمة DRM (مثل Widevine وPlayReady وFairPlay) مرفوضة عمدًا: يمنعها البرنامج ولا يحاول تجاوزها.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- Privacy -->
+  <section id="privacy" class="section" aria-labelledby="privacy-title">
+    <div class="wrap narrow">
+      <h2 id="privacy-title" data-i18n="privacy.title">الخصوصية: ما الذي يتصل به البرنامج فعلًا؟</h2>
+      <p data-i18n="privacy.intro">لا قياس عن بُعد، ولا تحليلات، ولا تقارير أعطال، في أي مكان من البرنامج. هذه هي القائمة الكاملة للطلبات الصادرة — ولا شيء خارجها:</p>
+      <ul class="privacy-list">
+        <li data-i18n-html="privacy.1"><strong>فحص التحديثات</strong> (تلقائي، عند التشغيل وكل 24 ساعة، ويمكن إيقافه): طلب واحد إلى <code>api.github.com</code> لمعرفة أحدث إصدار، ثم جلب ملف <code>version.json</code> الموقّع وملف البصمات. الترويسة الوحيدة المُرسلة هي اسم البرنامج وإصداره؛ ولا تُرسل أي بيانات عن المستخدم أو الجهاز.</li>
+        <li data-i18n-html="privacy.2"><strong>مُحدِّث الأدوات</strong> (تلقائي، مرة يوميًا على الأكثر): يجلب نسخة <code>yt-dlp</code> وملف <code>aria2</code> من إصداراتهما على GitHub ويتحقق من بصمتيهما قبل الاستخدام. لا يُجلب ffmpeg أبدًا — فهو مدمج في الحزمة.</li>
+        <li data-i18n-html="privacy.3"><strong>التنزيلات نفسها</strong> (بأمرك): تذهب إلى خادم الرابط الذي أضفته فقط، بطلبات <code>Range</code> للتقسيم والاستئناف.</li>
+        <li data-i18n-html="privacy.4"><strong>فحص الرابط في نافذة الالتقاط</strong> (بأمرك، نحو 5 ثوانٍ لكل مرحلة): طلب <code>HEAD</code> وطلب بايت واحد بنطاق <code>Range</code>، وقراءة قوائم <code>.m3u8</code> / <code>.mpd</code> — كلها إلى خادم الرابط نفسه فقط، ولا يُستدعى أي خدمة بيانات أو صور مصغرة خارجية.</li>
+        <li data-i18n-html="privacy.5"><strong>تعلّم كل مضيف</strong>: عدد الاتصالات الأفضل ومتوسط حجم المقطع لكل مضيف، محفوظة محليًا فقط في ملف الإعدادات (اسم المضيف فقط، دون روابط أو أسماء ملفات، وتُحذف بعد 30 يومًا). لا يُرسل منها أي شيء.</li>
+        <li data-i18n-html="privacy.6"><strong>جسر الإضافة</strong>: يستقبل فقط، على <code>127.0.0.1:9614</code> في جهازك، ولا يصدر أي حركة شبكة.</li>
+        <li data-i18n-html="privacy.7"><strong>yt-dlp</strong>: يعمل فقط عندما تطلب خيارات الفيديو أو قوائم التشغيل أو تحديثه من قائمة Help — ويتصل حينها بمواقع الفيديو نفسها، وهذا سلوك yt-dlp لا سلوك البرنامج.</li>
+      </ul>
+      <p class="center" data-i18n-html="privacy.link">القائمة الكاملة والمفصلة في <a href="https://github.com/kerlif/ezoo-download/blob/main/docs/PRIVACY.md">docs/PRIVACY.md</a>.</p>
+    </div>
+  </section>
+
+  <!-- License + credits -->
+  <section id="license" class="section alt" aria-labelledby="license-title">
+    <div class="wrap narrow">
+      <h2 id="license-title" data-i18n="license.title">الترخيص والشكر</h2>
+      <p data-i18n-html="license.body">البرنامج مرخّص بترخيص MIT، © 2026 <strong>Ahmed Ezzat</strong> (Ezoo Tech) — المشروع الأصلي في <a href="https://github.com/AhmedEzo686/ezoo-download">AhmedEzo686/ezoo-download</a>. هذه النسخة تطوير منفصل (fork) في <a href="https://github.com/kerlif/ezoo-download">kerlif/ezoo-download</a> أضاف دعم لينكس والاتصالات التكيفية وفحص التحديثات وحزمة Flatpak، مع بقاء كل الحقوق والشكر للمؤلف الأصلي.</p>
+      <p data-i18n-html="license.fonts">خطوط هذا الموقع: Carlito وNoto Sans Arabic (ترخيص SIL Open Font License 1.1) — نصا الترخيص في <a href="assets/fonts/OFL-Carlito.txt">OFL-Carlito.txt</a> و<a href="assets/fonts/OFL-NotoSansArabic.txt">OFL-NotoSansArabic.txt</a>. الموقع بلا أطر عمل ولا متتبعات ولا نصوص برمجية من جهات خارجية.</p>
+      <p class="center"><a class="btn btn-ghost" href="https://github.com/kerlif/ezoo-download/releases" data-i18n="license.changelog">سجل التغييرات — صفحة الإصدارات</a></p>
     </div>
   </section>
 </main>
@@ -278,14 +379,15 @@
 <footer class="site-footer">
   <div class="wrap footer-inner">
     <div class="footer-brand">
-      <img src="assets/logo.svg" alt="شعار Ezoo Download" width="28" height="28" />
+      <img src="assets/logo.svg" alt="Ezoo Download" data-i18n-alt="brand.alt" width="28" height="28" />
       <span>Ezoo Download</span>
     </div>
-    <p>المشروع الأصلي: Ahmed Ezzat (Ezoo Tech) · التطوير المنفصل ودعم لينكس: kerlif · © 2026</p>
-    <nav>
+    <p data-i18n-html="footer.credits">MIT © 2026 Ahmed Ezzat (Ezoo Tech) · تطوير منفصل ودعم لينكس: kerlif · المشروع الأصلي: <a href="https://github.com/AhmedEzo686/ezoo-download">AhmedEzo686/ezoo-download</a></p>
+    <nav aria-label="Ezoo Download">
       <a href="https://github.com/kerlif/ezoo-download">GitHub</a>
-      <a href="https://github.com/kerlif/ezoo-download/releases">الإصدارات</a>
-      <a href="https://github.com/kerlif/ezoo-download/issues">الإبلاغ عن مشكلة</a>
+      <a href="https://github.com/kerlif/ezoo-download/releases" data-i18n="footer.releases">الإصدارات</a>
+      <a href="https://github.com/kerlif/ezoo-download/issues" data-i18n="footer.issues">الإبلاغ عن مشكلة</a>
+      <a href="#license" data-i18n="footer.license">الترخيص</a>
     </nav>
   </div>
 </footer>

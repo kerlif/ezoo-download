@@ -157,6 +157,20 @@ the resolution and date.
     real Flatpak run checking `command -v ffmpeg` in the
     sandbox plus one real video+audio merge.
 
+14. **Site font binaries + Lighthouse measurement (Phase 9).**
+    The four WOFF2 site fonts (`docs/assets/fonts/`, manifest with
+    SHA-256 in `docs/README.md`) could not be pushed through the
+    GitHub connector (UTF-8 only) and are escalated to the parent
+    for browser upload, together with the six Phase 3 `.ttf`
+    binaries (the pre-existing pre-tag blocker). Until they land,
+    the site renders with the declared system-font fallback stack.
+    Separately, Lighthouse could not run in the Phase 9
+    environment (loopback navigation blocked in Chromium;
+    `file://` URLs rejected by Lighthouse), so the ≥90
+    accessibility + performance gate is unmeasured: re-run
+    Lighthouse against the live Pages URL after the merge to
+    `main`, in both languages, and record the scores in
+    `docs/README.md`.
 ## Resolved
 
 4. **Flatpak yt-dlp** (resolved 2026-10-28, Phase 8). Decision:
