@@ -19,7 +19,24 @@ on the site.
 | `assets/logo.svg`, `assets/hero-banner.svg` | Brand art (the hero banner SVG is currently unused) |
 | `assets/fonts/*.woff2` | Site fonts (see Fonts below) |
 | `assets/fonts/OFL-*.txt` | OFL license texts for the site fonts |
-| `screenshots/*.png` | The three v1.0.7-era Arabic screenshots (Phase 10 refreshes them) |
+| `screenshots/*.png` | App + site screenshots, all captured in Phase 10 (2026-10-28) from the running v1.1.0 release build under Xvfb and from headless Chromium against this tree — see the table below. The three v1.0.7-era shots were replaced; the rest are new. Binary upload via the browser is still pending (see Open Question 15), so the live Pages site shows the old shots until they land. |
+
+### Screenshots (Phase 10)
+
+| File | Size (px) | Bytes | What it shows |
+|---|---|---|---|
+| `01-main-ar.png` | 962×502 | 68,432 | Main window, dark theme, Arabic RTL, empty list |
+| `02-progress-ar.png` | 962×502 | 65,750 | Main window, dark theme, Arabic RTL: a live 48 MB download at 24.54%, 1.01 MB/s, 35 s left |
+| `03-add-dialog-ar.png` | 640×488 | 42,318 | Add dialog, dark theme, Arabic RTL: HLS master playlist — duration 00:00:10, 720p quality line (200 kbps video + 32 kbps sampled audio), ≈283.20 KB bitrate estimate |
+| `04-main-en-light.png` | 962×502 | 64,096 | Main window, light theme, English LTR, empty list |
+| `05-main-en-dark.png` | 962×502 | 64,050 | Main window, dark theme, English LTR, empty list |
+| `06-main-ar-light.png` | 962×502 | 68,399 | Main window, light theme, Arabic RTL, empty list |
+| `07-add-dialog-dash-ar.png` | 640×488 | 42,220 | Add dialog, dark theme, Arabic RTL: multi-Period DASH manifest — duration 00:01:00, 1080p line (3000 + 128 kbps), ≈22.37 MB bitrate estimate |
+| `08-details-ar.png` | 560×572 | 41,282 | Download details/progress window, dark theme, Arabic RTL: 38% of 48 MB at 1.02 MB/s with the per-connection segment bar and legend |
+| `09-site-ar-light.png` | 1280×900 | 238,630 | This site, Arabic RTL, light theme (hero still shows the old `01` shot — it refreshes when the new PNGs land) |
+| `10-site-en-dark.png` | 1280×900 | 304,732 | This site, English LTR, dark theme |
+
+Only `01`–`03` are referenced by `index.html` (hero + gallery); `04`–`10` are documentation shots kept with the release. The Flatpak metainfo (`packaging/flatpak/io.github.kerlif.EzooDownload.metainfo.xml`, Phase 8 file) still declares 962×502 for `03` — its dimensions must be corrected to 640×488 when the screenshots are uploaded (Open Question 15).
 
 ## Bilingual + themes
 
@@ -156,7 +173,13 @@ hostname could be added), while Lighthouse rejects `file://` URLs
 
 **Follow-up:** run Lighthouse (accessibility + performance) against
 the live Pages URL once the branch merges to `main`, in both
-languages, and record the scores here. Until then Phase 9 is
+languages, and record the scores here. Phase 10 (2026-10-28)
+re-captured the site from this tree in headless Chromium (Arabic
+light + English dark, viewport 1280×900, `localStorage` presets
+applied exactly as the site's own toggles persist them) and both
+renders were inspected visually with no layout defects; that
+re-capture does not replace the Lighthouse measurement, which is
+still pending. Until then Phase 9 is
 recorded as PASSED-WITH-EXCEPTION in `docs/PHASES.md`.
 
 ## Credits

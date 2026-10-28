@@ -171,6 +171,26 @@ the resolution and date.
     Lighthouse against the live Pages URL after the merge to
     `main`, in both languages, and record the scores in
     `docs/README.md`.
+15. **Screenshot binaries + metainfo dimensions + Windows screenshots
+    (Phase 10).** The ten Phase 10 screenshots
+    (`docs/screenshots/01`–`10`, manifest with SHA-256 in
+    `docs/RELEASE-REPORT.md` §10) could not be pushed through the
+    GitHub connector (UTF-8 only) and are escalated to the parent
+    for browser upload, together with the six Phase 3 `.ttf` and
+    four Phase 9 `.woff2` binaries (Open Question 14): until they
+    land, the remote tree still carries the v1.0.7-era shots and
+    the live site renders with system-font fallbacks. The new
+    `03-add-dialog-ar.png` is 640×488 (native dialog crop) while
+    the Flatpak metainfo (Phase 8 file, not edited in Phase 10)
+    still declares 962×502 for it — correct the `<image>` width /
+    height for `03` to 640 / 488 in the same browser pass that
+    uploads the PNGs. Windows screenshots were NOT captured: no
+    Windows machine or Windows CI run was available to this phase
+    (a small, untested, continue-on-error amendment is staged at
+    `~/workspace/ezoo/workflow-escalations/phase10/` for the
+    coordinator to accept or reject); until Windows shots exist,
+    the release report states them as PENDING. Default: ship the
+    Linux screenshots, capture Windows shots on Windows.
 ## Resolved
 
 4. **Flatpak yt-dlp** (resolved 2026-10-28, Phase 8). Decision:
