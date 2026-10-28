@@ -6,10 +6,6 @@ the resolution and date.
 
 ## Open
 
-1. **Flatpak yt-dlp.** The spec offers two options (pinned module updated
-   with each release, or user-install instruction). Default: decided in
-   Phase 8 after the manifest is drafted; documented in the manifest and
-   `docs/PRIVACY.md`.
 2. **Wayland verification of the dialog fix.** No Wayland compositor is
    available in this environment, so the Phase 6 lazy-dialog fix can only
    be verified under Xvfb/X11 plus code-level proof from the Slint/winit
@@ -145,7 +141,38 @@ the resolution and date.
     Resolution needs: a decision if per-platform hashes should be
     signed in a later phase.
 
+13. **Flatpak ffmpeg binary presence.** The Flatpak manifest uses
+    the Freedesktop runtime's codec libraries (codecs-extra,
+    auto-installed with runtime 25.08+) and bundles no ffmpeg
+    binary, because the `ffmpeg-full` extension no longer exists
+    on the 25.08/26.08 branches (see `docs/FLATPAK.md` §5). The
+    app's muxer needs an `ffmpeg` *binary* on `PATH`
+    (`mux.rs::find_tool`). Whether the 26.08 runtime puts one
+    there could not be established from documentation and no
+    Flatpak run was possible in Phase 8. Default: ship the
+    Flatpak as prepared; if a real run shows no `ffmpeg` on
+    `PATH`, merging fails gracefully with the existing
+    "ffmpeg is missing" error and the follow-up is a
+    static-ffmpeg module in the manifest. Resolution needs: a
+    real Flatpak run checking `command -v ffmpeg` in the
+    sandbox plus one real video+audio merge.
+
 ## Resolved
+
+4. **Flatpak yt-dlp** (resolved 2026-10-28, Phase 8). Decision:
+    option (b) — no fixed yt-dlp is shipped inside the Flatpak —
+    as implemented by the app's existing automatic fetch, not by
+    a manual user install: `tools.rs::yt_dlp` downloads the
+    current hash-checked `yt-dlp_linux` standalone build into
+    the sandbox data directory when none exists, and runs
+    `yt-dlp -U` daily thereafter (see `docs/FLATPAK.md` §6 and
+    `docs/PRIVACY.md`). A pinned module (option (a)) was
+    rejected: a read-only `/app` copy could not be updated by
+    the app's own updater, would duplicate the existing
+    hash-checked fetch, and would freeze the extractor at
+    release time. Missing-yt-dlp behaviour is the existing
+    graceful error in `ytdlp.rs`; no download behaviour
+    changed.
 
 1. **InstaArabi font license** (resolved 2026-10-28, font-licensing
    investigation). Verdict: REPLACE. Evidence: embedded name table reads

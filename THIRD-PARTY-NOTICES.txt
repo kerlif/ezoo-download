@@ -23,6 +23,13 @@ FFmpeg - https://github.com/FFmpeg/FFmpeg
   ffmpeg-version.txt next to the binary. A later version may switch the
   Linux packages to the user's system ffmpeg install instead.
 
+  Flatpak: the Flatpak build bundles NO ffmpeg binary. It uses the
+  Freedesktop runtime's FFmpeg/codec libraries (the codecs-extra
+  extension, installed automatically with runtime 25.08 and later;
+  see docs/FLATPAK.md §5). Whether the runtime puts an ffmpeg
+  executable on the sandbox PATH for the muxer is unverified as of
+  v1.1.0 — see Open Question 13 in docs/OPEN-QUESTIONS.md.
+
 LAME - https://lame.sourceforge.io
   Built into that ffmpeg program to make MP3 files. GNU Lesser General Public
   License (see lame-COPYING.txt in the "tools" folder).

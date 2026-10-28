@@ -110,3 +110,24 @@ it is telemetry, and none of it was added or changed by Phase 7
 Not app traffic: the Firefox add-on update manifest
 (`firefox-updates.json`, a static file on the release) is fetched
 by Firefox itself on its own schedule, never by this program.
+
+## Flatpak (Phase 8)
+
+The Flatpak build adds no new outbound request of any kind, and no
+new network destination:
+
+- Downloads, probing, per-host learning, the tools updater and the
+  update checker behave exactly as inventoried above. The tools
+  updater's yt-dlp fetch (hash-checked `yt-dlp_linux` from the
+  yt-dlp releases page) is the Flatpak's yt-dlp supply: no yt-dlp
+  is shipped inside the Flatpak, and no manual user install is
+  needed — see `docs/FLATPAK.md` §6 (Open Question 1, resolved).
+- The browser-extension bridge stays local-only: `--share=network`
+  shares the host network namespace, so the host browser's POST to
+  `127.0.0.1:9614` reaches the sandboxed app over the same
+  loopback. Documented expectation, not a tested fact — no
+  Flatpak run was possible in Phase 8; see `docs/FLATPAK.md` §7.
+- The Flatpak's ffmpeg/codec libraries come from the Freedesktop
+  runtime (codecs-extra extension, installed automatically with
+  the runtime); no ffmpeg binary is bundled by the Flatpak
+  manifest — see `docs/FLATPAK.md` §5 and Open Question 13.

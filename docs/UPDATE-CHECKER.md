@@ -264,3 +264,15 @@ two things are missing:
    The `sign_update` example refuses to run unless the secret's key
    matches the public key in `selfupdate.rs`, so a wrong secret
    fails the build loudly instead of shipping a bad signature.
+
+## 11. Phase 8 note — signature reconciliation (no minisign)
+
+The Phase 8 spec's "minisign signature" wording is reconciled
+here: the independent signature for the release manifest IS this
+Ed25519/`ring` mechanism (the allowed equivalent per Open
+Question 3). No second signature scheme and no minisign
+dependency were introduced. The Flatpak bundle is covered by the
+release's `SHA256SUMS.txt` (the Linux workflow's checksum step
+now includes the `.flatpak`); Flatpak copies are notify-only
+(§8) and never consume the signed manifest for self-install.
+Full Flatpak + CI design: `docs/FLATPAK.md`.
