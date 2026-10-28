@@ -34,7 +34,7 @@ fn queue_rows(ui: &Ui) -> Vec<QueueRow> {
 
 /// Open the window on a queue (None = the one selected in the sidebar).
 pub(crate) fn open(ui: &Ui, queue: Option<u64>) {
-    let Some(d) = ui.sched.upgrade() else { return };
+    let Some(d) = ensure_sched(ui) else { return };
     let s = ui.ctx.mgr.settings();
     let wanted = queue
         .or_else(|| ui.ctx.main.upgrade().map(|m| m.get_current_queue() as u64))
@@ -292,8 +292,24 @@ pub(crate) fn delete_queue(ui: &Ui, id: u64) {
     }
 }
 
-pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.sched.upgrade() else { return };
+/// The Scheduler dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_sched(ui: &Ui) -> Option<SchedulerDialog> {
+    if let Some(d) = ui.sched.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = SchedulerDialog::new() else {
+        return None;
+    };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire(ui, &d);
+    ui.sched.store(d);
+    ui.sched.upgrade()
+}
+
+pub(crate) fn wire(ui: &Ui, d: &SchedulerDialog) {
     {
         let ui = ui.clone();
         d.on_pick_queue(move |i| {

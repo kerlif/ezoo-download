@@ -16,6 +16,8 @@ use crate::message;
 use crate::open_window;
 use crate::{Ctx, Ui};
 #[cfg(windows)]
+use crate::{Theme, UpdateDialog};
+#[cfg(windows)]
 use slint::ComponentHandle;
 #[cfg(windows)]
 use std::path::PathBuf;
@@ -174,9 +176,35 @@ pub fn check_now(ui: &Ui) {
     }
 }
 
+/// The update dialog, created (and wired exactly once) on first use.
+/// On Linux it is never created: `check_now` answers with a message.
+#[cfg(windows)]
+pub(crate) fn ensure_updater(ui: &Ui) -> Option<UpdateDialog> {
+    if let Some(d) = ui.updater.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = UpdateDialog::new() else {
+        return None;
+    };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    {
+        let w = d.as_weak();
+        d.on_close_window(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+    ui.updater.store(d);
+    ui.updater.upgrade()
+}
+
 #[cfg(windows)]
 fn check_now_windows(ui: &Ui) {
-    let Some(d) = ui.updater.upgrade() else {
+    let Some(d) = ensure_updater(ui) else {
         return;
     };
     open_window!(d);

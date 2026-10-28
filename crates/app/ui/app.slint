@@ -1200,7 +1200,7 @@ export component MainWindow inherits ThemedWindow {
         }
 
         VerticalLayout {
-            // ---- toolbar (buttons that don't fit a narrow window are cut off)
+            // ---- toolbar: sized to fit a 960 px window with nothing cut off
             Rectangle {
                 height: root.toolbar-small ? 42px : 64px;
                 min-width: 0px;
@@ -1302,7 +1302,7 @@ export component MainWindow inherits ThemedWindow {
                         icon: "startqueue";
                         text: @tr("Start Queue");
                         small: root.toolbar-small;
-                        width: root.toolbar-small ? 34px : 62px;
+                        width: root.toolbar-small ? 34px : 56px;
                         clicked => {
                             root.qmenu-start = true;
                             root.qmenu-x = self.x;
@@ -1313,7 +1313,7 @@ export component MainWindow inherits ThemedWindow {
                         icon: "stopqueue";
                         text: @tr("Stop Queue");
                         small: root.toolbar-small;
-                        width: root.toolbar-small ? 34px : 62px;
+                        width: root.toolbar-small ? 34px : 56px;
                         clicked => {
                             root.qmenu-start = false;
                             root.qmenu-x = self.x;
@@ -1351,7 +1351,7 @@ export component MainWindow inherits ThemedWindow {
                     VerticalLayout {
                         alignment: center;
                         LineEdit {
-                            width: 96px;
+                            width: 88px;
                             placeholder-text: @tr("Filter the list…");
                             text <=> root.search;
                             edited(t) => {
@@ -2906,6 +2906,8 @@ export component DetailsDialog inherits ThemedWindow {
                 font-size: 11px * Theme.font-scale;
                 color: Theme.muted;
             }
+            // every segment as its span, colored by its state (see the
+            // legend below): downloading, done, stalled, or idle
             Rectangle {
                 height: 20px;
                 border-width: 1px;
@@ -2913,22 +2915,97 @@ export component DetailsDialog inherits ThemedWindow {
                 background: Theme.panel;
                 clip: true;
                 for s in root.segs: Rectangle {
+                    // the segment's whole span, so idle segments show too
+                    x: Theme.rtl ? parent.width - 1px - (parent.width - 2px) * s.end : 1px + (parent.width - 2px) * s.start;
+                    y: 1px;
+                    width: (parent.width - 2px) * (s.end - s.start);
+                    height: parent.height - 2px;
+                    background: Theme.bar-bg;
+                }
+                for s in root.segs: Rectangle {
                     x: Theme.rtl ? parent.width - 1px - (parent.width - 2px) * s.start - self.width : 1px + (parent.width - 2px) * s.start;
                     y: 1px;
                     width: (parent.width - 2px) * (s.done - s.start);
                     height: parent.height - 2px;
-                    background: Theme.accent;
+                    background: s.state == 2 ? Theme.ok : s.state == 3 ? Theme.warn : s.state == 1 ? Theme.accent : Theme.muted;
                     animate width {
                         duration: 100ms;
                         easing: linear;
                     }
                 }
-                for s in root.segs: Rectangle {
-                    x: Theme.rtl ? parent.width - 2px - (parent.width - 2px) * s.start : 1px + (parent.width - 2px) * s.start;
-                    y: 0;
-                    width: 1px;
-                    height: parent.height;
-                    background: Theme.err;
+            }
+            // what each color of the bar means (mirrored in Arabic: HRow
+            // runs right to left, the swatches stay with their labels)
+            HRow {
+                spacing: 12px;
+                padding-top: 4px;
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.accent;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Receiving data…");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                }
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.ok;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Finished");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                }
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.warn;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Stalled");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                }
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.muted;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Waiting");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
                 }
             }
             Rectangle {

@@ -12,7 +12,7 @@ use swiftget_engine::DetailsEdit;
 // ---------------------------------------------------------------- columns
 
 pub(crate) fn open_columns(ui: &Ui) {
-    let Some(d) = ui.columns.upgrade() else {
+    let Some(d) = ensure_columns(ui) else {
         return;
     };
     d.set_cols(cols_from(&ui.ctx.mgr.settings()));
@@ -35,7 +35,7 @@ fn cols_to_list(c: &Cols) -> Vec<String> {
 // ---------------------------------------------------------------- categories
 
 pub(crate) fn open_category(ui: &Ui, name: Option<String>) {
-    let Some(d) = ui.category.upgrade() else {
+    let Some(d) = ensure_category(ui) else {
         return;
     };
     let s = ui.ctx.mgr.settings();
@@ -190,7 +190,7 @@ pub(crate) fn delete_category(ui: &Ui, name: &str) {
 // ---------------------------------------------------------------- find
 
 pub(crate) fn open_find(ui: &Ui) {
-    if let Some(d) = ui.find.upgrade() {
+    if let Some(d) = ensure_find(ui) {
         d.set_message(SharedString::new());
         open_window!(d);
     }
@@ -198,7 +198,7 @@ pub(crate) fn open_find(ui: &Ui) {
 
 /// Select the next download (after the selected one) that matches.
 pub(crate) fn find_next(ui: &Ui) {
-    let (Some(d), Some(m)) = (ui.find.upgrade(), ui.ctx.main.upgrade()) else {
+    let (Some(d), Some(m)) = (ensure_find(ui), ui.ctx.main.upgrade()) else {
         return;
     };
     let needle = d.get_text().to_string();
@@ -262,7 +262,7 @@ pub(crate) fn find_next(ui: &Ui) {
 // ---------------------------------------------------------------- properties
 
 pub(crate) fn open_properties(ui: &Ui, id: u64) {
-    let (Some(d), Some(v)) = (ui.props.upgrade(), ui.ctx.mgr.get(id)) else {
+    let (Some(d), Some(v)) = (ensure_props(ui), ui.ctx.mgr.get(id)) else {
         return;
     };
     ui.props_id.set(Some(id));
@@ -400,7 +400,7 @@ fn save_properties(ui: &Ui) {
 // ---------------------------------------------------------------- duplicate link
 
 pub(crate) fn ask_duplicate(ui: &Ui, p: PendingAdd) {
-    let Some(d) = ui.dup.upgrade() else { return };
+    let Some(d) = ensure_dup(ui) else { return };
     let v = ui.ctx.mgr.get(p.existing);
     d.set_file_name(
         v.as_ref()
@@ -420,7 +420,7 @@ pub(crate) fn ask_duplicate(ui: &Ui, p: PendingAdd) {
 const COUNTDOWN: i32 = 30;
 
 pub(crate) fn start_countdown(ui: &Ui, action: AfterDone) {
-    let Some(d) = ui.countdown.upgrade() else {
+    let Some(d) = ensure_countdown(ui) else {
         return;
     };
     let text = match action {
@@ -558,7 +558,7 @@ pub(crate) fn show_tip_when_free(ui: Ui) {
 }
 
 pub(crate) fn show_tip(ui: &Ui, from_menu: bool) {
-    let Some(d) = ui.tips.upgrade() else { return };
+    let Some(d) = ensure_tips(ui) else { return };
     let mut s = ui.ctx.mgr.settings();
     let i = s.tip_index as usize % TIPS.len();
     d.set_tip(t(TIPS[i]).into());
@@ -575,7 +575,7 @@ pub(crate) fn show_tip(ui: &Ui, from_menu: bool) {
 // ---------------------------------------------------------------- refresh download address
 
 pub(crate) fn open_refresh(ui: &Ui, id: u64) {
-    let (Some(d), Some(v)) = (ui.refresh_dlg.upgrade(), ui.ctx.mgr.get(id)) else {
+    let (Some(d), Some(v)) = (ensure_refresh(ui), ui.ctx.mgr.get(id)) else {
         return;
     };
     if v.status == Status::Completed {
@@ -695,240 +695,299 @@ pub(crate) fn import_list(ui: &Ui, kind: &str) {
 
 // ---------------------------------------------------------------- wiring
 
-pub(crate) fn wire(ui: &Ui) {
-    if let Some(d) = ui.columns.upgrade() {
-        {
-            let ui = ui.clone();
-            d.on_save(move || {
-                let Some(d) = ui.columns.upgrade() else {
-                    return;
+// ---------------------------------------------------------------- lazy creation
+
+/// Create a dialog on first use (the Wayland fix): apply the saved
+/// look at creation and wire its callbacks exactly once.
+macro_rules! ensure_dialog {
+    ($ui:ident, $field:ident, $ty:ty, $wire:ident) => {{
+        if let Some(d) = $ui.$field.upgrade() {
+            Some(d)
+        } else if let Ok(d) = <$ty>::new() {
+            crate::set_theme_of(
+                d.global::<Theme>(),
+                &crate::Look::of(&$ui.ctx.mgr.settings()),
+            );
+            $wire($ui, &d);
+            $ui.$field.store(d);
+            $ui.$field.upgrade()
+        } else {
+            None
+        }
+    }};
+}
+
+pub(crate) fn ensure_columns(ui: &Ui) -> Option<ColumnsDialog> {
+    ensure_dialog!(ui, columns, ColumnsDialog, wire_columns)
+}
+
+pub(crate) fn ensure_category(ui: &Ui) -> Option<CategoryDialog> {
+    ensure_dialog!(ui, category, CategoryDialog, wire_category)
+}
+
+pub(crate) fn ensure_find(ui: &Ui) -> Option<FindDialog> {
+    ensure_dialog!(ui, find, FindDialog, wire_find)
+}
+
+pub(crate) fn ensure_props(ui: &Ui) -> Option<PropertiesDialog> {
+    ensure_dialog!(ui, props, PropertiesDialog, wire_props)
+}
+
+pub(crate) fn ensure_dup(ui: &Ui) -> Option<DuplicateDialog> {
+    ensure_dialog!(ui, dup, DuplicateDialog, wire_dup)
+}
+
+pub(crate) fn ensure_countdown(ui: &Ui) -> Option<CountdownDialog> {
+    ensure_dialog!(ui, countdown, CountdownDialog, wire_countdown)
+}
+
+pub(crate) fn ensure_tips(ui: &Ui) -> Option<TipDialog> {
+    ensure_dialog!(ui, tips, TipDialog, wire_tips)
+}
+
+pub(crate) fn ensure_refresh(ui: &Ui) -> Option<RefreshDialog> {
+    ensure_dialog!(ui, refresh_dlg, RefreshDialog, wire_refresh)
+}
+
+fn wire_columns(ui: &Ui, d: &ColumnsDialog) {
+    {
+        let ui = ui.clone();
+        d.on_save(move || {
+            let Some(d) = ui.columns.upgrade() else {
+                return;
+            };
+            let mut s = ui.ctx.mgr.settings();
+            s.columns = cols_to_list(&d.get_cols());
+            let _ = ui.ctx.mgr.set_settings(s.clone());
+            apply_view_settings(&ui, &s);
+            let _ = d.hide();
+        });
+    }
+    {
+        let w = d.as_weak();
+        d.on_reset(move || {
+            if let Some(d) = w.upgrade() {
+                let s = Settings {
+                    columns: DEFAULT_COLUMNS.iter().map(|c| c.to_string()).collect(),
+                    ..Default::default()
                 };
-                let mut s = ui.ctx.mgr.settings();
-                s.columns = cols_to_list(&d.get_cols());
-                let _ = ui.ctx.mgr.set_settings(s.clone());
-                apply_view_settings(&ui, &s);
+                d.set_cols(cols_from(&s));
+            }
+        });
+    }
+    {
+        let w = d.as_weak();
+        d.on_cancel(move || {
+            if let Some(d) = w.upgrade() {
                 let _ = d.hide();
-            });
-        }
-        {
-            let w = d.as_weak();
-            d.on_reset(move || {
-                if let Some(d) = w.upgrade() {
-                    let s = Settings {
-                        columns: DEFAULT_COLUMNS.iter().map(|c| c.to_string()).collect(),
-                        ..Default::default()
-                    };
-                    d.set_cols(cols_from(&s));
-                }
-            });
-        }
-        {
-            let w = d.as_weak();
-            d.on_cancel(move || {
-                if let Some(d) = w.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
+            }
+        });
     }
-    if let Some(d) = ui.category.upgrade() {
-        {
-            let w = d.as_weak();
-            d.on_browse(move || {
-                let Some(d) = w.upgrade() else { return };
-                if let Some(dir) = crate::winfx::file_box().pick_folder() {
-                    d.set_folder(dir.display().to_string().into());
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_save(move || save_category(&ui));
-        }
-        {
-            let w = d.as_weak();
-            d.on_cancel(move || {
-                if let Some(d) = w.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
+}
+
+fn wire_category(ui: &Ui, d: &CategoryDialog) {
+    {
+        let w = d.as_weak();
+        d.on_browse(move || {
+            let Some(d) = w.upgrade() else { return };
+            if let Some(dir) = crate::winfx::file_box().pick_folder() {
+                d.set_folder(dir.display().to_string().into());
+            }
+        });
     }
-    if let Some(d) = ui.find.upgrade() {
-        {
-            let ui = ui.clone();
-            d.on_find_next(move || find_next(&ui));
-        }
-        {
-            let w = d.as_weak();
-            d.on_close_window(move || {
-                if let Some(d) = w.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
+    {
+        let ui = ui.clone();
+        d.on_save(move || save_category(&ui));
     }
-    if let Some(d) = ui.props.upgrade() {
-        {
-            let w = d.as_weak();
-            d.on_browse(move || {
-                let Some(d) = w.upgrade() else { return };
-                let current = PathBuf::from(d.get_save_to().as_str());
-                let mut dlg = crate::winfx::file_box();
-                if let Some(dir) = current.parent().filter(|p| p.exists()) {
-                    dlg = dlg.set_directory(dir);
-                }
-                if let Some(name) = current.file_name() {
-                    dlg = dlg.set_file_name(name.to_string_lossy());
-                }
-                if let Some(p) = dlg.save_file() {
-                    d.set_save_to(p.display().to_string().into());
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_open_file(move || {
-                if let Some(v) = ui.props_id.get().and_then(|id| ui.ctx.mgr.get(id)) {
-                    crate::open_download(&v.save_path);
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_save(move || save_properties(&ui));
-        }
-        {
-            let w = d.as_weak();
-            d.on_cancel(move || {
-                if let Some(d) = w.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
-    }
-    if let Some(d) = ui.dup.upgrade() {
-        {
-            let ui = ui.clone();
-            d.on_ok(move || {
-                let Some(d) = ui.dup.upgrade() else { return };
-                let choice = d.get_choice().clamp(1, 3) as u32;
-                if d.get_remember() {
-                    let mut s = ui.ctx.mgr.settings();
-                    s.duplicate_action = choice;
-                    let _ = ui.ctx.mgr.set_settings(s);
-                }
+    {
+        let w = d.as_weak();
+        d.on_cancel(move || {
+            if let Some(d) = w.upgrade() {
                 let _ = d.hide();
-                if let Some(p) = ui.pending.borrow_mut().take() {
-                    apply_duplicate(&ui, p, choice);
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_cancel(move || {
-                ui.pending.borrow_mut().take();
-                if let Some(d) = ui.dup.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
+            }
+        });
     }
-    if let Some(d) = ui.countdown.upgrade() {
-        {
-            let ui = ui.clone();
-            d.on_now(move || power_now(&ui));
-        }
-        {
-            let ui = ui.clone();
-            d.on_stop(move || {
-                ui.power.borrow_mut().take();
-                if let Some(d) = ui.countdown.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.window().on_close_requested(move || {
-                ui.power.borrow_mut().take();
-                slint::CloseRequestResponse::HideWindow
-            });
-        }
+}
+
+fn wire_find(ui: &Ui, d: &FindDialog) {
+    {
+        let ui = ui.clone();
+        d.on_find_next(move || find_next(&ui));
     }
-    if let Some(d) = ui.tips.upgrade() {
-        {
-            let ui = ui.clone();
-            d.on_next(move || {
+    {
+        let w = d.as_weak();
+        d.on_close_window(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+}
+
+fn wire_props(ui: &Ui, d: &PropertiesDialog) {
+    {
+        let w = d.as_weak();
+        d.on_browse(move || {
+            let Some(d) = w.upgrade() else { return };
+            let current = PathBuf::from(d.get_save_to().as_str());
+            let mut dlg = crate::winfx::file_box();
+            if let Some(dir) = current.parent().filter(|p| p.exists()) {
+                dlg = dlg.set_directory(dir);
+            }
+            if let Some(name) = current.file_name() {
+                dlg = dlg.set_file_name(name.to_string_lossy());
+            }
+            if let Some(p) = dlg.save_file() {
+                d.set_save_to(p.display().to_string().into());
+            }
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.on_open_file(move || {
+            if let Some(v) = ui.props_id.get().and_then(|id| ui.ctx.mgr.get(id)) {
+                crate::open_download(&v.save_path);
+            }
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.on_save(move || save_properties(&ui));
+    }
+    {
+        let w = d.as_weak();
+        d.on_cancel(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+}
+
+fn wire_dup(ui: &Ui, d: &DuplicateDialog) {
+    {
+        let ui = ui.clone();
+        d.on_ok(move || {
+            let Some(d) = ui.dup.upgrade() else { return };
+            let choice = d.get_choice().clamp(1, 3) as u32;
+            if d.get_remember() {
                 let mut s = ui.ctx.mgr.settings();
-                s.tip_index = (s.tip_index + 1) % TIPS.len() as u32;
+                s.duplicate_action = choice;
                 let _ = ui.ctx.mgr.set_settings(s);
-                show_tip(&ui, true);
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_close_window(move || {
-                let Some(d) = ui.tips.upgrade() else { return };
-                let mut s = ui.ctx.mgr.settings();
-                if s.show_tips != d.get_show_on_start() {
-                    s.show_tips = d.get_show_on_start();
-                    let _ = ui.ctx.mgr.set_settings(s);
-                }
-                let _ = d.hide();
-            });
-        }
+            }
+            let _ = d.hide();
+            if let Some(p) = ui.pending.borrow_mut().take() {
+                apply_duplicate(&ui, p, choice);
+            }
+        });
     }
-    if let Some(d) = ui.refresh_dlg.upgrade() {
-        {
-            let w = d.as_weak();
-            d.on_open_page(move || {
-                if let Some(d) = w.upgrade() {
-                    let page = d.get_page().to_string();
-                    // only a web page: the address came from the browser or
-                    // a list file and must never start a program
-                    if is_web_address(&page) {
-                        let _ = open::that(page.trim());
-                    }
+    {
+        let ui = ui.clone();
+        d.on_cancel(move || {
+            ui.pending.borrow_mut().take();
+            if let Some(d) = ui.dup.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+}
+
+fn wire_countdown(ui: &Ui, d: &CountdownDialog) {
+    {
+        let ui = ui.clone();
+        d.on_now(move || power_now(&ui));
+    }
+    {
+        let ui = ui.clone();
+        d.on_stop(move || {
+            ui.power.borrow_mut().take();
+            if let Some(d) = ui.countdown.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.window().on_close_requested(move || {
+            ui.power.borrow_mut().take();
+            slint::CloseRequestResponse::HideWindow
+        });
+    }
+}
+
+fn wire_tips(ui: &Ui, d: &TipDialog) {
+    {
+        let ui = ui.clone();
+        d.on_next(move || {
+            let mut s = ui.ctx.mgr.settings();
+            s.tip_index = (s.tip_index + 1) % TIPS.len() as u32;
+            let _ = ui.ctx.mgr.set_settings(s);
+            show_tip(&ui, true);
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.on_close_window(move || {
+            let Some(d) = ui.tips.upgrade() else { return };
+            let mut s = ui.ctx.mgr.settings();
+            if s.show_tips != d.get_show_on_start() {
+                s.show_tips = d.get_show_on_start();
+                let _ = ui.ctx.mgr.set_settings(s);
+            }
+            let _ = d.hide();
+        });
+    }
+}
+
+fn wire_refresh(ui: &Ui, d: &RefreshDialog) {
+    {
+        let w = d.as_weak();
+        d.on_open_page(move || {
+            if let Some(d) = w.upgrade() {
+                let page = d.get_page().to_string();
+                // only a web page: the address came from the browser or
+                // a list file and must never start a program
+                if is_web_address(&page) {
+                    let _ = open::that(page.trim());
                 }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_use_url(move || {
-                let Some(d) = ui.refresh_dlg.upgrade() else {
-                    return;
-                };
-                let url = d.get_new_url().trim().to_string();
-                if !(url.starts_with("http://") || url.starts_with("https://")) {
-                    return;
-                }
-                if let Some(id) = ui.refresh_id.get() {
-                    refresh_received(
-                        &ui,
-                        id,
-                        &url,
-                        ui.ctx.mgr.get(id).map(|v| v.headers).unwrap_or_default(),
-                    );
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.on_stop_waiting(move || {
-                ui.refresh_id.set(None);
-                if let Some(d) = ui.refresh_dlg.upgrade() {
-                    let _ = d.hide();
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            d.window().on_close_requested(move || {
-                ui.refresh_id.set(None);
-                slint::CloseRequestResponse::HideWindow
-            });
-        }
+            }
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.on_use_url(move || {
+            let Some(d) = ui.refresh_dlg.upgrade() else {
+                return;
+            };
+            let url = d.get_new_url().trim().to_string();
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                return;
+            }
+            if let Some(id) = ui.refresh_id.get() {
+                refresh_received(
+                    &ui,
+                    id,
+                    &url,
+                    ui.ctx.mgr.get(id).map(|v| v.headers).unwrap_or_default(),
+                );
+            }
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.on_stop_waiting(move || {
+            ui.refresh_id.set(None);
+            if let Some(d) = ui.refresh_dlg.upgrade() {
+                let _ = d.hide();
+            }
+        });
+    }
+    {
+        let ui = ui.clone();
+        d.window().on_close_requested(move || {
+            ui.refresh_id.set(None);
+            slint::CloseRequestResponse::HideWindow
+        });
     }
 }
 

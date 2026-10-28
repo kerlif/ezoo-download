@@ -613,6 +613,15 @@ msgstr "Fermer"
 msgid "Start positions and download progress by connections"
 msgstr "Positions de départ et progression par connexion"
 
+msgid "Receiving data…"
+msgstr "Réception des données…"
+
+msgid "Stalled"
+msgstr "Bloquée"
+
+msgid "Waiting"
+msgstr "En attente"
+
 msgid "N."
 msgstr "N°"
 

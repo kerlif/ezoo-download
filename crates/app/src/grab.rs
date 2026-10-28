@@ -132,7 +132,7 @@ fn reset(ui: &Ui, d: &GrabberDialog, links_mode: bool) {
 
 /// Tasks > Run site grabber.
 pub(crate) fn open_grabber(ui: &Ui) {
-    let Some(d) = ui.grabber.upgrade() else {
+    let Some(d) = ensure_grabber(ui) else {
         return;
     };
     if d.window().is_visible() && !d.get_links_mode() {
@@ -146,7 +146,7 @@ pub(crate) fn open_grabber(ui: &Ui) {
 
 /// "Download all links with Ezoo Download" from the browser.
 pub(crate) fn open_links(ui: &Ui, l: api::LinksRequest) {
-    let Some(d) = ui.grabber.upgrade() else {
+    let Some(d) = ensure_grabber(ui) else {
         return;
     };
     reset(ui, &d, true);
@@ -214,10 +214,24 @@ pub(crate) fn poll(ui: &Ui) {
     }
 }
 
-pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.grabber.upgrade() else {
-        return;
+/// The Grabber dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_grabber(ui: &Ui) -> Option<GrabberDialog> {
+    if let Some(d) = ui.grabber.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = GrabberDialog::new() else {
+        return None;
     };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire(ui, &d);
+    ui.grabber.store(d);
+    ui.grabber.upgrade()
+}
+
+pub(crate) fn wire(ui: &Ui, d: &GrabberDialog) {
     {
         let w = d.as_weak();
         d.on_template_changed(move |t| {

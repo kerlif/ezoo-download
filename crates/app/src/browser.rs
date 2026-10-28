@@ -228,7 +228,7 @@ fn firefox_xpi() -> Option<PathBuf> {
 }
 
 pub(crate) fn open(ui: &Ui) {
-    let Some(d) = ui.browsers.upgrade() else {
+    let Some(d) = ensure_browsers(ui) else {
         return;
     };
     let list = detect();
@@ -312,10 +312,24 @@ fn add(ui: &Ui, i: usize) {
     d.set_steps(steps.into());
 }
 
-pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.browsers.upgrade() else {
-        return;
+/// The browser-extension dialog, created (and wired once) on first use.
+pub(crate) fn ensure_browsers(ui: &Ui) -> Option<BrowserDialog> {
+    if let Some(d) = ui.browsers.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = BrowserDialog::new() else {
+        return None;
     };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire(ui, &d);
+    ui.browsers.store(d);
+    ui.browsers.upgrade()
+}
+
+pub(crate) fn wire(ui: &Ui, d: &BrowserDialog) {
     {
         let ui = ui.clone();
         d.on_add(move |i| add(&ui, i.max(0) as usize));

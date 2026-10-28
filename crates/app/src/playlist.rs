@@ -11,7 +11,7 @@ const QUALITIES: [&str; 9] = [
 ];
 
 pub(crate) fn open(ui: &Ui) {
-    let Some(d) = ui.playlist.upgrade() else {
+    let Some(d) = ensure_playlist(ui) else {
         return;
     };
     if !d.window().is_visible() {
@@ -33,7 +33,7 @@ pub(crate) fn open(ui: &Ui) {
 /// The browser's "Download all" on a playlist page: the window with that
 /// list, already looking up its videos.
 pub(crate) fn open_url(ui: &Ui, url: &str) {
-    let Some(d) = ui.playlist.upgrade() else {
+    let Some(d) = ensure_playlist(ui) else {
         return;
     };
     d.set_url(url.into());
@@ -63,10 +63,24 @@ fn checked_text(rows: &VecModel<LinkRow>) -> String {
     tf("{} of {} videos checked", &[&n, &rows.row_count()])
 }
 
-pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.playlist.upgrade() else {
-        return;
+/// The Playlist dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_playlist(ui: &Ui) -> Option<PlaylistDialog> {
+    if let Some(d) = ui.playlist.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = PlaylistDialog::new() else {
+        return None;
     };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire(ui, &d);
+    ui.playlist.store(d);
+    ui.playlist.upgrade()
+}
+
+pub(crate) fn wire(ui: &Ui, d: &PlaylistDialog) {
     let rows = ui.playlist_rows.clone();
     d.set_entries(ModelRc::from(rows.clone()));
     {

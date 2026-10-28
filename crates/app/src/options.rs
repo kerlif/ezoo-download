@@ -19,7 +19,7 @@ fn key_index(k: &str) -> i32 {
 }
 
 pub(crate) fn open(ui: &Ui, tab: i32) {
-    let Some(d) = ui.settings_dlg.upgrade() else {
+    let Some(d) = ensure_settings(ui) else {
         return;
     };
     let s = ui.ctx.mgr.settings();
@@ -284,10 +284,24 @@ fn look_of(d: &SettingsDialog) -> crate::Look {
     }
 }
 
-pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.settings_dlg.upgrade() else {
-        return;
+/// The Options dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_settings(ui: &Ui) -> Option<SettingsDialog> {
+    if let Some(d) = ui.settings_dlg.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = SettingsDialog::new() else {
+        return None;
     };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire(ui, &d);
+    ui.settings_dlg.store(d);
+    ui.settings_dlg.upgrade()
+}
+
+pub(crate) fn wire(ui: &Ui, d: &SettingsDialog) {
     {
         let ui = ui.clone();
         d.on_preview_look(move || {

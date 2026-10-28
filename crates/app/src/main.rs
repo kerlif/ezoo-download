@@ -83,13 +83,66 @@ pub(crate) struct PendingOpen {
     extra: VideoExtra,
 }
 
+/// A dialog window that is created only when first opened.
+///
+/// The Wayland fix (docs/BASELINE.md §4): a Slint `Window` component that
+/// exists at startup gets a native winit window on Wayland even though it
+/// was never shown, so every eagerly created dialog appeared as a flat
+/// tab. A dialog that does not exist cannot be registered, so each dialog
+/// is created lazily by its `ensure_*` function (create + wire callbacks
+/// exactly once, then keep the handle). `upgrade()` keeps the meaning it
+/// had for a `Weak`: `None` until the dialog exists, which is also why
+/// `apply_look`/`set_language` never force-create a dialog to theme it.
+///
+/// The holder itself must stay `Send` (`Ctx` travels to background
+/// threads), so it keeps only a Slint `Weak`, which is thread-safe.
+/// The strong handle is intentionally leaked at creation: a dialog
+/// lives for the rest of the run once opened, exactly as the eager
+/// `let batch = BatchDialog::new()` locals in `main()` kept them alive
+/// until quit before. Every `Clone` of `Ui`/`Ctx` shares the holder.
+pub(crate) struct LazyWeak<T: ComponentHandle> {
+    inner: Arc<Mutex<Option<Weak<T>>>>,
+}
+
+// manual: the dialog types are not Clone, only the shared holder is
+impl<T: ComponentHandle> Clone for LazyWeak<T> {
+    fn clone(&self) -> Self {
+        LazyWeak {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T: ComponentHandle> Default for LazyWeak<T> {
+    fn default() -> Self {
+        LazyWeak {
+            inner: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl<T: ComponentHandle> LazyWeak<T> {
+    pub(crate) fn upgrade(&self) -> Option<T> {
+        self.inner.lock().unwrap().as_ref().and_then(Weak::upgrade)
+    }
+
+    /// Keep the created dialog alive and remember it; later `upgrade()`
+    /// calls return it. Runs on the UI thread, at creation only.
+    pub(crate) fn store(&self, dialog: T) {
+        let weak = dialog.as_weak();
+        // the dialog is never dropped again (see the struct docs)
+        std::mem::forget(dialog);
+        *self.inner.lock().unwrap() = Some(weak);
+    }
+}
+
 /// Everything background threads need. All fields are Send.
 #[derive(Clone)]
 pub(crate) struct Ctx {
     mgr: Arc<Manager>,
     rt: tokio::runtime::Handle,
     main: Weak<MainWindow>,
-    add: Weak<AddDialog>,
+    add: LazyWeak<AddDialog>,
     add_state: Arc<Mutex<AddState>>,
 }
 
@@ -120,38 +173,38 @@ pub(crate) struct Ui {
     cats: Rc<VecModel<CatRow>>,
     /// one progress window per download
     progress: Rc<RefCell<HashMap<u64, ProgressWin>>>,
-    batch: Weak<BatchDialog>,
-    settings_dlg: Weak<SettingsDialog>,
-    complete: Weak<CompleteDialog>,
+    batch: LazyWeak<BatchDialog>,
+    settings_dlg: LazyWeak<SettingsDialog>,
+    complete: LazyWeak<CompleteDialog>,
     complete_id: Rc<Cell<Option<u64>>>,
-    columns: Weak<ColumnsDialog>,
-    category: Weak<CategoryDialog>,
+    columns: LazyWeak<ColumnsDialog>,
+    category: LazyWeak<CategoryDialog>,
     /// category being edited (None = a new one)
     editing_category: Rc<RefCell<Option<String>>>,
-    find: Weak<FindDialog>,
-    props: Weak<PropertiesDialog>,
+    find: LazyWeak<FindDialog>,
+    props: LazyWeak<PropertiesDialog>,
     props_id: Rc<Cell<Option<u64>>>,
-    dup: Weak<DuplicateDialog>,
+    dup: LazyWeak<DuplicateDialog>,
     pending: Rc<RefCell<Option<PendingAdd>>>,
-    countdown: Weak<CountdownDialog>,
+    countdown: LazyWeak<CountdownDialog>,
     /// (action, seconds left)
     power: Rc<RefCell<Option<(AfterDone, i32)>>>,
-    sched: Weak<SchedulerDialog>,
+    sched: LazyWeak<SchedulerDialog>,
     sched_state: Rc<RefCell<scheduler::SchedState>>,
-    grabber: Weak<GrabberDialog>,
+    grabber: LazyWeak<GrabberDialog>,
     grab_state: Rc<RefCell<grab::GrabUi>>,
-    tips: Weak<TipDialog>,
-    refresh_dlg: Weak<RefreshDialog>,
+    tips: LazyWeak<TipDialog>,
+    refresh_dlg: LazyWeak<RefreshDialog>,
     /// download waiting for a new address from the browser
     refresh_id: Rc<Cell<Option<u64>>>,
     options_lists: Rc<RefCell<options::Lists>>,
     sel: Rc<RefCell<Selection>>,
-    playlist: Weak<PlaylistDialog>,
+    playlist: LazyWeak<PlaylistDialog>,
     playlist_rows: Rc<VecModel<LinkRow>>,
-    torrent: Weak<TorrentDialog>,
+    torrent: LazyWeak<TorrentDialog>,
     torrent_rows: Rc<VecModel<LinkRow>>,
-    browsers: Weak<BrowserDialog>,
-    updater: Weak<UpdateDialog>,
+    browsers: LazyWeak<BrowserDialog>,
+    updater: LazyWeak<UpdateDialog>,
     /// the download list's columns (order + widths) as the header shows them
     columns_model: Rc<VecModel<ColDef>>,
     browser_list: Rc<RefCell<Vec<browser::Browser>>>,
@@ -252,41 +305,16 @@ fn main() -> anyhow::Result<()> {
     // yt-dlp and ffmpeg: put back if missing, update silently once a day
     swiftget_engine::tools::spawn_updater(rt.handle(), mgr.client(), data_dir.clone());
 
+    // Only the main window is created at startup. Every dialog is
+    // created lazily by its ensure_* function when first opened (the
+    // Wayland fix: a dialog that does not exist gets no native window).
     let main = MainWindow::new()?;
-    let add = AddDialog::new()?;
-    let batch = BatchDialog::new()?;
-    let settings_dlg = SettingsDialog::new()?;
-    let complete = CompleteDialog::new()?;
-    let columns = ColumnsDialog::new()?;
-    let category = CategoryDialog::new()?;
-    let find = FindDialog::new()?;
-    let props = PropertiesDialog::new()?;
-    let dup = DuplicateDialog::new()?;
-    let countdown = CountdownDialog::new()?;
-    let sched = SchedulerDialog::new()?;
-    let grabber = GrabberDialog::new()?;
-    let tips = TipDialog::new()?;
-    let refresh_dlg = RefreshDialog::new()?;
-    let playlist_dlg = PlaylistDialog::new()?;
-    let torrent_dlg = TorrentDialog::new()?;
-    let browsers_dlg = BrowserDialog::new()?;
-    let updater_dlg = UpdateDialog::new()?;
-    let about_dlg = AboutDialog::new()?;
-    {
-        let w = about_dlg.as_weak();
-        about_dlg.on_close_window(move || {
-            if let Some(d) = w.upgrade() {
-                let _ = d.hide();
-            }
-        });
-        ABOUT.with(|a| *a.borrow_mut() = Some(about_dlg.as_weak()));
-    }
 
     let ctx = Ctx {
         mgr: mgr.clone(),
         rt: rt.handle().clone(),
         main: main.as_weak(),
-        add: add.as_weak(),
+        add: LazyWeak::default(),
         add_state: Arc::new(Mutex::new(AddState::default())),
     };
     let ctx_exit = ctx.clone();
@@ -296,35 +324,35 @@ fn main() -> anyhow::Result<()> {
         queues: Rc::new(VecModel::default()),
         cats: Rc::new(VecModel::default()),
         progress: Rc::new(RefCell::new(HashMap::new())),
-        batch: batch.as_weak(),
-        settings_dlg: settings_dlg.as_weak(),
-        complete: complete.as_weak(),
+        batch: LazyWeak::default(),
+        settings_dlg: LazyWeak::default(),
+        complete: LazyWeak::default(),
         complete_id: Rc::new(Cell::new(None)),
-        columns: columns.as_weak(),
-        category: category.as_weak(),
+        columns: LazyWeak::default(),
+        category: LazyWeak::default(),
         editing_category: Rc::new(RefCell::new(None)),
-        find: find.as_weak(),
-        props: props.as_weak(),
+        find: LazyWeak::default(),
+        props: LazyWeak::default(),
         props_id: Rc::new(Cell::new(None)),
-        dup: dup.as_weak(),
+        dup: LazyWeak::default(),
         pending: Rc::new(RefCell::new(None)),
-        countdown: countdown.as_weak(),
+        countdown: LazyWeak::default(),
         power: Rc::new(RefCell::new(None)),
-        sched: sched.as_weak(),
+        sched: LazyWeak::default(),
         sched_state: Rc::new(RefCell::new(scheduler::SchedState::default())),
-        grabber: grabber.as_weak(),
+        grabber: LazyWeak::default(),
         grab_state: Rc::new(RefCell::new(grab::GrabUi::default())),
-        tips: tips.as_weak(),
-        refresh_dlg: refresh_dlg.as_weak(),
+        tips: LazyWeak::default(),
+        refresh_dlg: LazyWeak::default(),
         refresh_id: Rc::new(Cell::new(None)),
         options_lists: Rc::new(RefCell::new(options::Lists::default())),
         sel: Rc::new(RefCell::new(Selection::default())),
-        playlist: playlist_dlg.as_weak(),
+        playlist: LazyWeak::default(),
         playlist_rows: Rc::new(VecModel::default()),
-        torrent: torrent_dlg.as_weak(),
+        torrent: LazyWeak::default(),
         torrent_rows: Rc::new(VecModel::default()),
-        browsers: browsers_dlg.as_weak(),
-        updater: updater_dlg.as_weak(),
+        browsers: LazyWeak::default(),
+        updater: LazyWeak::default(),
         columns_model: Rc::new(VecModel::default()),
         browser_list: Rc::new(RefCell::new(Vec::new())),
     };
@@ -354,19 +382,16 @@ fn main() -> anyhow::Result<()> {
         apply_view_settings(&ui, &s);
     }
 
+    // The Ui for the Add dialog's lazy creation from contexts that only
+    // hold a Ctx (clipboard / browser bridge); see ensure_add.
+    LAZY_UI.with(|u| *u.borrow_mut() = Some(ui.clone()));
     wire_main(&ui);
     // a new version of the program itself: from GitHub, installed silently
     update::spawn(&ui.ctx);
-    wire_add(&ui);
-    wire_batch(&ui);
-    wire_complete(&ui);
-    options::wire(&ui);
-    scheduler::wire(&ui);
-    grab::wire(&ui);
-    extra::wire(&ui);
-    playlist::wire(&ui);
+    // Dialog callbacks are wired by each dialog's ensure_* function when
+    // the dialog is first created (exactly once); nothing is wired here,
+    // so no dialog exists before it is opened.
     torrent_ui::wire(&ui);
-    browser::wire(&ui);
 
     // ------------------------------------------------------------ browser + clipboard
     if let Some(server) = server {
@@ -427,11 +452,13 @@ fn main() -> anyhow::Result<()> {
                         }
                         return;
                     }
+                    // not created yet = not open (a missing dialog
+                    // must not block the clipboard from opening it)
                     let busy = ctx
                         .add
                         .upgrade()
                         .map(|d| d.window().is_visible())
-                        .unwrap_or(true);
+                        .unwrap_or(false);
                     if !busy {
                         open_add_dialog(
                             &ctx,
@@ -1058,14 +1085,8 @@ fn wire_main(ui: &Ui) {
         let ui2 = ui.clone();
         main.on_check_app_update(move || update::check_now(&ui2));
     }
-    if let Some(d) = ui.updater.upgrade() {
-        let w = d.as_weak();
-        d.on_close_window(move || {
-            if let Some(d) = w.upgrade() {
-                let _ = d.hide();
-            }
-        });
-    }
+    // the update dialog's close callback is wired by
+    // update::ensure_updater when the dialog is first created
     main.on_about(about);
     main.on_quit(|| {
         let _ = slint::quit_event_loop();
@@ -1193,17 +1214,41 @@ fn multi_action(ui: &Ui, ids: &[u64], action: &str) {
     }
 }
 
-fn about() {
+/// The About dialog, created (and wired once) on first use.
+fn ensure_about() -> Option<AboutDialog> {
     ABOUT.with(|a| {
-        if let Some(d) = a.borrow().as_ref().and_then(|w| w.upgrade()) {
-            d.set_version(env!("CARGO_PKG_VERSION").into());
-            open_window!(d);
+        if let Some(d) = a.borrow().upgrade() {
+            return Some(d);
         }
-    });
+        let Ok(d) = AboutDialog::new() else {
+            return None;
+        };
+        // the saved theme/language, not the Slint defaults, from the start
+        if let Some(ui) = LAZY_UI.with(|u| u.borrow().clone()) {
+            set_theme_of(d.global::<Theme>(), &Look::of(&ui.ctx.mgr.settings()));
+        }
+        let w = d.as_weak();
+        d.on_close_window(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+        });
+        a.borrow_mut().store(d);
+        a.borrow().upgrade()
+    })
+}
+
+fn about() {
+    if let Some(d) = ensure_about() {
+        d.set_version(env!("CARGO_PKG_VERSION").into());
+        open_window!(d);
+    }
 }
 
 thread_local! {
-    static ABOUT: RefCell<Option<Weak<AboutDialog>>> = const { RefCell::new(None) };
+    static ABOUT: RefCell<LazyWeak<AboutDialog>> = RefCell::new(LazyWeak::default());
+    /// The Ui for lazy dialog creation from contexts holding only a Ctx.
+    static LAZY_UI: RefCell<Option<Ui>> = const { RefCell::new(None) };
 }
 
 fn tray_action(ui: &Ui, action: tray::TrayAction) {
@@ -1352,10 +1397,33 @@ fn handle_api(ui: &Ui, event: api::ApiEvent) {
 
 // ===================================================================== download file info
 
-fn wire_add(ui: &Ui) {
-    let Some(add) = ui.ctx.add.upgrade() else {
-        return;
+/// The "Download File Info" dialog, created (and wired exactly once) on
+/// first use. The look is applied at creation so it never opens with the
+/// Slint defaults when the saved theme is dark or the language is Arabic.
+pub(crate) fn ensure_add(ui: &Ui) -> Option<AddDialog> {
+    if let Some(d) = ui.ctx.add.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = AddDialog::new() else {
+        return None;
     };
+    set_theme_of(d.global::<Theme>(), &Look::of(&ui.ctx.mgr.settings()));
+    wire_add(ui, &d);
+    ui.ctx.add.store(d);
+    ui.ctx.add.upgrade()
+}
+
+/// The same, from a context holding only the shared `Ctx` (clipboard /
+/// browser bridge): the `Ui` kept for this purpose in `main()` wires it.
+fn ensure_add_ctx(ctx: &Ctx) -> Option<AddDialog> {
+    if let Some(d) = ctx.add.upgrade() {
+        return Some(d);
+    }
+    let ui = LAZY_UI.with(|u| u.borrow().clone())?;
+    ensure_add(&ui)
+}
+
+fn wire_add(ui: &Ui, add: &AddDialog) {
     {
         let ctx = ui.ctx.clone();
         add.on_check_url(move || {
@@ -1474,10 +1542,21 @@ fn wire_add(ui: &Ui) {
 
 // ===================================================================== batch
 
-fn wire_batch(ui: &Ui) {
-    let Some(batch) = ui.batch.upgrade() else {
-        return;
+/// The batch dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_batch(ui: &Ui) -> Option<BatchDialog> {
+    if let Some(d) = ui.batch.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = BatchDialog::new() else {
+        return None;
     };
+    set_theme_of(d.global::<Theme>(), &Look::of(&ui.ctx.mgr.settings()));
+    wire_batch(ui, &d);
+    ui.batch.store(d);
+    ui.batch.upgrade()
+}
+
+fn wire_batch(ui: &Ui, batch: &BatchDialog) {
     {
         let w = batch.as_weak();
         batch.on_paste(move || {
@@ -1663,10 +1742,21 @@ fn batch_preview(d: &BatchDialog) -> String {
 
 // ===================================================================== download complete
 
-fn wire_complete(ui: &Ui) {
-    let Some(complete) = ui.complete.upgrade() else {
-        return;
+/// The "Download complete" dialog, created (and wired once) on first use.
+pub(crate) fn ensure_complete(ui: &Ui) -> Option<CompleteDialog> {
+    if let Some(d) = ui.complete.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = CompleteDialog::new() else {
+        return None;
     };
+    set_theme_of(d.global::<Theme>(), &Look::of(&ui.ctx.mgr.settings()));
+    wire_complete(ui, &d);
+    ui.complete.store(d);
+    ui.complete.upgrade()
+}
+
+fn wire_complete(ui: &Ui, complete: &CompleteDialog) {
     {
         let ui = ui.clone();
         complete.on_open_file(move || {
@@ -1701,7 +1791,7 @@ fn wire_complete(ui: &Ui) {
 }
 
 pub(crate) fn show_complete(ui: &Ui, id: u64) {
-    if let (Some(v), Some(d)) = (ui.ctx.mgr.get(id), ui.complete.upgrade()) {
+    if let (Some(v), Some(d)) = (ui.ctx.mgr.get(id), ensure_complete(ui)) {
         ui.complete_id.set(Some(id));
         d.set_name(v.file_name.clone().into());
         d.set_url(v.url.clone().into());
@@ -2037,7 +2127,7 @@ pub(crate) fn apply_look(ui: &Ui, look: &Look) {
         ui.updater
     );
     ABOUT.with(|a| {
-        if let Some(d) = a.borrow().as_ref().and_then(|w| w.upgrade()) {
+        if let Some(d) = a.borrow().upgrade() {
             set_theme_of(d.global::<Theme>(), look);
         }
     });
@@ -2144,7 +2234,7 @@ pub(crate) fn apply_view_settings(ui: &Ui, s: &Settings) {
 }
 
 fn open_batch(ui: &Ui, text: String) {
-    let Some(d) = ui.batch.upgrade() else { return };
+    let Some(d) = ensure_batch(ui) else { return };
     let s = ui.ctx.mgr.settings();
     d.set_queue_names(queue_names(&s));
     let current = ui
@@ -2202,7 +2292,7 @@ pub(crate) fn open_add_dialog(
         torrent_ui::open_source(&url);
         return;
     }
-    let Some(d) = ctx.add.upgrade() else { return };
+    let Some(d) = ensure_add_ctx(ctx) else { return };
     let s = ctx.mgr.settings();
     if d.window().is_visible() {
         let mut st = ctx.add_state.lock().unwrap();
@@ -3775,7 +3865,8 @@ fn fill_details(d: &DetailsDialog, model: &VecModel<SegView>, v: &DownloadView) 
     d.set_progress(pct);
     d.set_state(state_of(v.status));
 
-    // connections, in file order
+    // connections, in file order, each with its state from the engine's
+    // segment table (read-only: finished / stalled / downloading / idle)
     let base = v
         .segments
         .iter()
@@ -3783,26 +3874,36 @@ fn fill_details(d: &DetailsDialog, model: &VecModel<SegView>, v: &DownloadView) 
         .map(|s| s.2)
         .max()
         .unwrap_or(0);
-    let mut segs: Vec<(u64, u64, u64, bool)> = v.segments.clone();
+    let mut segs: Vec<(u64, u64, u64, bool, bool)> = v.segments.clone();
     segs.sort_by_key(|s| s.0);
     let rows: Vec<SegView> = if base == 0 {
         Vec::new()
     } else {
         segs.iter()
             .enumerate()
-            .map(|(i, (start, pos, end, active))| SegView {
-                start: *start as f32 / base as f32,
-                done: *pos as f32 / base as f32,
-                number: (i + 1).to_string().into(),
-                downloaded: fmt_size(pos.saturating_sub(*start)).into(),
-                info: if pos >= end {
-                    t("Finished").into()
-                } else if *active && v.status.is_running() {
-                    t("Receiving data…").into()
-                } else {
-                    t("Waiting").into()
-                },
-                busy: pos < end && *active && v.status.is_running(),
+            .map(|(i, (start, pos, end, active, takeover))| {
+                let finished = pos >= end;
+                let state = swiftget_engine::segment_state(
+                    finished,
+                    *takeover,
+                    *active,
+                    v.status.is_running(),
+                );
+                SegView {
+                    start: *start as f32 / base as f32,
+                    end: *end as f32 / base as f32,
+                    done: *pos as f32 / base as f32,
+                    number: (i + 1).to_string().into(),
+                    downloaded: fmt_size(pos.saturating_sub(*start)).into(),
+                    info: match state {
+                        2 => t("Finished").into(),
+                        3 => t("Stalled").into(),
+                        1 => t("Receiving data…").into(),
+                        _ => t("Waiting").into(),
+                    },
+                    busy: state == 1,
+                    state,
+                }
             })
             .collect()
     };

@@ -472,5 +472,9 @@
  "Audio MP3": "Audio MP3",
  "Hide next to the clock": "Masquer près de l'horloge",
  "What's new in Ezoo Download": "Nouveautés de Ezoo Download",
- "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \\\"Download all links with Ezoo Download\\\": every link you see there is collected.": "Certaines pages créent leurs liens uniquement dans le navigateur (par scripts, ou en texte simple). Pour elles : ouvrez la page dans le navigateur, faites un clic droit et choisissez \\\"Download all links with Ezoo Download\\\" : chaque lien visible est collecté."
+ "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \\\"Download all links with Ezoo Download\\\": every link you see there is collected.": "Certaines pages créent leurs liens uniquement dans le navigateur (par scripts, ou en texte simple). Pour elles : ouvrez la page dans le navigateur, faites un clic droit et choisissez \\\"Download all links with Ezoo Download\\\" : chaque lien visible est collecté.",
+ "Stalled": "Bloquée",
+ "Receiving data…": "Réception des données…",
+ "Waiting": "En attente",
+ "needs-review": "Stalled; Receiving data…; Waiting"
 }

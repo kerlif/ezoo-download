@@ -253,5 +253,6 @@
  "Fixed videos that could not be downloaded on some computers because of the Windows temporary folder.": "Исправлены видео, которые не скачивались на некоторых компьютерах из-за временной папки Windows.",
  "The Grabber also finds links written as plain text, and the menu next to the clock is in the program's language.": "Сборщик находит и ссылки, написанные простым текстом, а меню у часов теперь на языке программы.",
  "The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.": "Ограничение скорости остаётся ровным при многих подключениях, а буфер обмена ловит и добавленные вами типы файлов.",
- "needs-review": "estimated from bitrate; estimated from sampled segments"
+ "needs-review": "estimated from bitrate; estimated from sampled segments; Stalled",
+ "Stalled": "Зависший"
 }

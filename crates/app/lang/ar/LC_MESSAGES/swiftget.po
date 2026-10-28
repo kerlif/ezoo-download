@@ -613,6 +613,15 @@ msgstr "إغلاق"
 msgid "Start positions and download progress by connections"
 msgstr "مواضع البدء وتقدّم التحميل لكل اتصال"
 
+msgid "Receiving data…"
+msgstr "جارٍ استقبال البيانات…"
+
+msgid "Stalled"
+msgstr "متوقف"
+
+msgid "Waiting"
+msgstr "في الانتظار"
+
 msgid "N."
 msgstr "رقم"
 

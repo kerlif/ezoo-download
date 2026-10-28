@@ -2463,7 +2463,7 @@ fn view_of(e: &Entry, with_parts: bool) -> DownloadView {
             .lock()
             .unwrap()
             .iter()
-            .map(|s| (s.start, s.pos, s.end, s.active))
+            .map(|s| (s.start, s.pos, s.end, s.active, s.takeover))
             .collect()
     };
     DownloadView {

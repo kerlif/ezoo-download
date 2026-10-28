@@ -337,8 +337,11 @@ pub struct DownloadView {
     pub resumable: bool,
     pub parts_total: u32,
     pub parts_done: u32,
-    /// (start, pos, end, active) of every segment, for the connections view
-    pub segments: Vec<(u64, u64, u64, bool)>,
+    /// (start, pos, end, active, takeover) of every segment, for the
+    /// connections view. `takeover` is the stall monitor's flag: the
+    /// segment's connection is being closed and the segment re-requested
+    /// from `pos`. Read-only exposure of the engine's segment table.
+    pub segments: Vec<(u64, u64, u64, bool, bool)>,
     pub queue: Option<u64>,
     pub finished_at: Option<DateTime<Utc>>,
     pub description: Option<String>,
@@ -370,6 +373,22 @@ impl DownloadView {
     }
 }
 
+/// Per-segment state for the connections view, from the segment table
+/// alone (no new engine data): 0 idle, 1 downloading, 2 done, 3 stalled.
+/// A flagged segment stays stalled until a worker claims it again, which
+/// clears the flag; a finished segment is done even if it was flagged.
+pub fn segment_state(finished: bool, takeover: bool, active: bool, running: bool) -> i32 {
+    if finished {
+        2
+    } else if takeover {
+        3
+    } else if active && running {
+        1
+    } else {
+        0
+    }
+}
+
 /// Human readable size: 1.5 MB
 pub fn fmt_size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -394,5 +413,24 @@ pub fn fmt_duration(secs: u64) -> String {
         format!("{m}m {s:02}s")
     } else {
         format!("{s}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::segment_state;
+
+    #[test]
+    fn segment_state_covers_every_table_combination() {
+        // done wins over a stale flag; a flag wins over active/running
+        assert_eq!(segment_state(true, true, true, true), 2);
+        assert_eq!(segment_state(true, false, false, false), 2);
+        assert_eq!(segment_state(false, true, true, true), 3);
+        assert_eq!(segment_state(false, true, false, false), 3);
+        assert_eq!(segment_state(false, false, true, true), 1);
+        // active but paused/queued: idle, not downloading
+        assert_eq!(segment_state(false, false, true, false), 0);
+        assert_eq!(segment_state(false, false, false, true), 0);
+        assert_eq!(segment_state(false, false, false, false), 0);
     }
 }

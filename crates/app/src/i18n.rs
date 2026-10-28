@@ -140,6 +140,7 @@ const AR: &[(&str, &str)] = &[
     ("No", "لا"),
     ("Finished", "انتهى"),
     ("Waiting", "في الانتظار"),
+    ("Stalled", "متوقف"),
     ("{} downloading  ·  {}/s", "{} قيد التحميل  ·  {}/ث"),
     ("Ready  ·  {} files in the list", "جاهز  ·  {} ملف في القائمة"),
     ("Speed limiter: on ({} KB/s)", "محدد السرعة: يعمل ({} كيلو/ث)"),

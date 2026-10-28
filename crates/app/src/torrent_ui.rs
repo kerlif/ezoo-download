@@ -20,7 +20,7 @@ pub(crate) fn open_source(source: &str) {
 }
 
 pub(crate) fn open(ui: &Ui, source: Option<&str>) {
-    let Some(d) = ui.torrent.upgrade() else {
+    let Some(d) = ensure_torrent(ui) else {
         return;
     };
     match source {
@@ -70,11 +70,30 @@ fn selection(rows: &VecModel<LinkRow>) -> Option<String> {
     )
 }
 
+/// Remember the Ui for `open_source` (called from contexts holding
+/// only a magnet link). The dialog itself stays lazy.
 pub(crate) fn wire(ui: &Ui) {
     OPENER.with(|o| *o.borrow_mut() = Some(ui.clone()));
-    let Some(d) = ui.torrent.upgrade() else {
-        return;
+}
+
+/// The Torrent dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_torrent(ui: &Ui) -> Option<TorrentDialog> {
+    if let Some(d) = ui.torrent.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = TorrentDialog::new() else {
+        return None;
     };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire_dialog(ui, &d);
+    ui.torrent.store(d);
+    ui.torrent.upgrade()
+}
+
+fn wire_dialog(ui: &Ui, d: &TorrentDialog) {
     let rows = ui.torrent_rows.clone();
     d.set_files(ModelRc::from(rows.clone()));
     {

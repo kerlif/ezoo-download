@@ -613,6 +613,15 @@ msgstr "Kapat"
 msgid "Start positions and download progress by connections"
 msgstr "Bağlantılara göre başlangıç konumları ve ilerleme"
 
+msgid "Receiving data…"
+msgstr "Veri alınıyor…"
+
+msgid "Stalled"
+msgstr "Takıldı"
+
+msgid "Waiting"
+msgstr "Bekliyor"
+
 msgid "N."
 msgstr "No."
 

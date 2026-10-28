@@ -13,8 +13,18 @@ the resolution and date.
 2. **Wayland verification of the dialog fix.** No Wayland compositor is
    available in this environment, so the Phase 6 lazy-dialog fix can only
    be verified under Xvfb/X11 plus code-level proof from the Slint/winit
-   sources. Default: ship the fix, verify on X11, and mark real KDE
-   Plasma (Wayland) verification as PENDING in the release report.
+   sources. FIX SHIPPED 2026-10-28: every dialog's Slint `Window` is now
+   created lazily on first open (`LazyWeak` + `ensure_*` in `main.rs` and
+   the dialog-owning modules; callbacks wired exactly once; `apply_look`
+   / `set_language` never force-create). X11 EVIDENCE (Xvfb, 1024x640,
+   release build, screenshots in /tmp): at startup exactly ONE mapped
+   toplevel (main window; plus one unmapped 1x1 helper window from the
+   tray/winit stack); Ctrl+N/Ctrl+B/Ctrl+F each add exactly one mapped
+   dialog toplevel; closing unmaps it; re-opening reuses the same window
+   id; a live throttled download opened the progress window with the
+   per-connection segment bar. Default: ship the fix, verify on X11, and
+   mark real KDE Plasma (Wayland) verification as PENDING in the release
+   report.
    Resolution needs: running the v1.1.0 build on KDE Plasma (Wayland)
    and confirming dialogs open one at a time as floating windows.
 3. **Fork update-signing keypair.** The fork's `version.json` ships with an
@@ -85,6 +95,18 @@ the resolution and date.
    Default: keep the probe reading. Resolution needs: a decision if
    the literal wait-for-a-rise reading was intended instead, in
    which case scaling would effectively be off for capped servers.
+
+10. **Phase 6 "Stalled" translations marked needs-review.** The new
+    segment-state label "Stalled" (Rust `t()` string in the connections
+    view, plus the segment-bar legend in Slint) is translated
+    best-effort into the six non-English, non-Arabic locales
+    (fr "Bloquée", es "Bloqueada", de "Blockiert", pt "Bloqueada",
+    tr "Takıldı", ru "Зависший") and marked `needs-review` in
+    `crates/app/lang/rs/*.json` and `crates/app/lang/ui/*.json`
+    (the legend's "Receiving data…" / "Waiting" Slint strings in
+    `ui/*.json` are marked too). Default: ship them as written; the
+    state is also shown by the segment bar's colour. Resolution
+    needs: a native speaker's check of those strings.
 
 ## Resolved
 
