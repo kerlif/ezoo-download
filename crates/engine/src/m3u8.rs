@@ -110,11 +110,16 @@ pub fn parse_media(base: &str, text: &str) -> anyhow::Result<MediaPlaylist> {
             seq = v.trim().parse().unwrap_or(0);
         } else if let Some(attrs) = line.strip_prefix("#EXT-X-KEY:") {
             let a = parse_attrs(attrs);
-            let method = a.get("METHOD").map(|s| s.to_ascii_uppercase()).unwrap_or_default();
+            let method = a
+                .get("METHOD")
+                .map(|s| s.to_ascii_uppercase())
+                .unwrap_or_default();
             key = match method.as_str() {
                 "NONE" | "" => None,
                 "AES-128" => {
-                    let uri = a.get("URI").ok_or_else(|| anyhow!("AES-128 key without URI"))?;
+                    let uri = a
+                        .get("URI")
+                        .ok_or_else(|| anyhow!("AES-128 key without URI"))?;
                     Some(Key {
                         uri: resolve(base, uri)?,
                         iv: a.get("IV").and_then(|v| parse_iv(v)),
@@ -155,13 +160,19 @@ mod tests {
             huge.push_str(&format!("p{i}.ts\n"));
         }
         assert!(parse_media("https://x.example/a/list.m3u8", &huge).is_err());
-        assert!(parse_media("https://x.example/a/list.m3u8", &"#".repeat(MAX_PLAYLIST_BYTES + 1)).is_err());
+        assert!(parse_media(
+            "https://x.example/a/list.m3u8",
+            &"#".repeat(MAX_PLAYLIST_BYTES + 1)
+        )
+        .is_err());
         assert!(parse_media("https://x.example/a/list.m3u8", "#EXTM3U\np1.ts\n").is_ok());
     }
 
     #[test]
     fn attrs_with_quotes() {
-        let a = parse_attrs("METHOD=AES-128,URI=\"https://k/key?a=1,2\",IV=0x00000000000000000000000000000001");
+        let a = parse_attrs(
+            "METHOD=AES-128,URI=\"https://k/key?a=1,2\",IV=0x00000000000000000000000000000001",
+        );
         assert_eq!(a["METHOD"], "AES-128");
         assert_eq!(a["URI"], "https://k/key?a=1,2");
         assert_eq!(parse_iv(&a["IV"]).unwrap()[15], 1);
@@ -170,7 +181,9 @@ mod tests {
     #[test]
     fn master_picks_highest_bandwidth() {
         let m = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\nlow/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\nhigh/index.m3u8\n";
-        let u = best_variant("https://cdn.x/v/master.m3u8", m).unwrap().unwrap();
+        let u = best_variant("https://cdn.x/v/master.m3u8", m)
+            .unwrap()
+            .unwrap();
         assert_eq!(u, "https://cdn.x/v/high/index.m3u8");
     }
 
@@ -182,7 +195,10 @@ mod tests {
         assert_eq!(p.parts.len(), 2);
         assert_eq!(p.parts[1].url, "https://cdn.x/v/b.ts");
         assert_eq!(p.parts[1].sequence, 8);
-        assert_eq!(p.parts[0].key.as_ref().unwrap().uri, "https://cdn.x/v/key.bin");
+        assert_eq!(
+            p.parts[0].key.as_ref().unwrap().uri,
+            "https://cdn.x/v/key.bin"
+        );
     }
 
     #[test]

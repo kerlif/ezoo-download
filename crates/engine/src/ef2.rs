@@ -9,6 +9,7 @@
 //! >
 //! ```
 
+/// One entry of an .ef2 download list: a URL with its request data.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Ef2Item {
     pub url: String,
@@ -19,6 +20,7 @@ pub struct Ef2Item {
     pub description: Option<String>,
 }
 
+/// Parse .ef2 list text into entries.
 pub fn parse(text: &str) -> Vec<Ef2Item> {
     let mut out = Vec::new();
     let mut cur: Option<Ef2Item> = None;
@@ -37,11 +39,18 @@ pub fn parse(text: &str) -> Vec<Ef2Item> {
         let Some(item) = cur.as_mut() else {
             // a plain text list: one address per line
             if line.starts_with("http://") || line.starts_with("https://") {
-                out.push(Ef2Item { url: line.to_string(), ..Default::default() });
+                out.push(Ef2Item {
+                    url: line.to_string(),
+                    ..Default::default()
+                });
             }
             continue;
         };
-        if item.url.is_empty() && (line.starts_with("http://") || line.starts_with("https://") || line.starts_with("ftp://")) {
+        if item.url.is_empty()
+            && (line.starts_with("http://")
+                || line.starts_with("https://")
+                || line.starts_with("ftp://"))
+        {
             item.url = line.to_string();
             continue;
         }
@@ -63,6 +72,7 @@ pub fn parse(text: &str) -> Vec<Ef2Item> {
     out
 }
 
+/// Render entries as .ef2 list text.
 pub fn write(items: &[Ef2Item]) -> String {
     let mut s = String::new();
     for i in items {
@@ -101,7 +111,10 @@ mod tests {
                 user_agent: Some("UA/1".into()),
                 ..Default::default()
             },
-            Ef2Item { url: "https://example.org/y.mp4".into(), ..Default::default() },
+            Ef2Item {
+                url: "https://example.org/y.mp4".into(),
+                ..Default::default()
+            },
         ];
         assert_eq!(parse(&write(&items)), items);
         let plain = parse("https://example.net/1.pdf\nnot a link\nhttps://example.net/2.pdf");

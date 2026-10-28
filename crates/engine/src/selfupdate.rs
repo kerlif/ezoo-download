@@ -32,7 +32,8 @@ pub fn current() -> &'static str {
 }
 
 /// Public half of the release signing key (Ed25519, 32 bytes, hex).
-pub const UPDATE_PUBLIC_KEY: &str = "4bd5c564c841b012b39426755d585c48012f9360e193cd81d141f85ad9b58406";
+pub const UPDATE_PUBLIC_KEY: &str =
+    "4bd5c564c841b012b39426755d585c48012f9360e193cd81d141f85ad9b58406";
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Release {
@@ -47,7 +48,11 @@ pub struct Release {
 
 /// What the release signature covers.
 pub fn signed_message(version: &str, sha256: &str) -> String {
-    format!("ezoo-download-update\n{}\n{}\n", version.trim(), sha256.trim().to_ascii_lowercase())
+    format!(
+        "ezoo-download-update\n{}\n{}\n",
+        version.trim(),
+        sha256.trim().to_ascii_lowercase()
+    )
 }
 
 pub fn from_hex(s: &str) -> Option<Vec<u8>> {
@@ -55,7 +60,10 @@ pub fn from_hex(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) {
         return None;
     }
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 /// The signature of `r` was made with the key whose public half is `public_hex`.
@@ -80,7 +88,10 @@ impl Release {
         if self.url.starts_with(&own) {
             self.url.clone()
         } else {
-            format!("https://github.com/{REPO}/releases/download/v{}/{SETUP_NAME}", self.version)
+            format!(
+                "https://github.com/{REPO}/releases/download/v{}/{SETUP_NAME}",
+                self.version
+            )
         }
     }
 }
@@ -129,7 +140,10 @@ pub fn parse_signed(text: &str) -> anyhow::Result<Release> {
 pub async fn check(client: &reqwest::Client) -> anyhow::Result<Option<Release>> {
     let text = client
         .get(version_url())
-        .header(reqwest::header::USER_AGENT, crate::config::DEFAULT_USER_AGENT)
+        .header(
+            reqwest::header::USER_AGENT,
+            crate::config::DEFAULT_USER_AGENT,
+        )
         .header(reqwest::header::CACHE_CONTROL, "no-cache")
         .send()
         .await?
@@ -145,7 +159,10 @@ pub async fn check(client: &reqwest::Client) -> anyhow::Result<Option<Release>> 
 }
 
 pub fn sha256_hex(data: &[u8]) -> String {
-    Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(data)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn file_sha256(path: &Path) -> anyhow::Result<String> {
@@ -168,7 +185,11 @@ const MAX_SETUP_BYTES: u64 = 500 << 20;
 
 /// Download the installer of `r` into `dir` and check its SHA-256.
 /// A copy that was already downloaded and checked is reused.
-pub async fn download(client: &reqwest::Client, r: &Release, dir: &Path) -> anyhow::Result<PathBuf> {
+pub async fn download(
+    client: &reqwest::Client,
+    r: &Release,
+    dir: &Path,
+) -> anyhow::Result<PathBuf> {
     download_with_progress(client, r, dir, &|_, _| {}).await
 }
 
@@ -180,7 +201,10 @@ pub async fn download_with_progress(
     progress: &(dyn Fn(u64, Option<u64>) + Send + Sync),
 ) -> anyhow::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
-    let dest = dir.join(format!("EzooDownload-Setup-{}.exe", r.version.trim_start_matches('v')));
+    let dest = dir.join(format!(
+        "EzooDownload-Setup-{}.exe",
+        r.version.trim_start_matches('v')
+    ));
     if dest.exists() {
         if file_sha256(&dest)?.eq_ignore_ascii_case(&r.sha256) {
             return Ok(dest);
@@ -195,7 +219,10 @@ pub async fn download_with_progress(
     }
     let mut resp = client
         .get(r.setup_url())
-        .header(reqwest::header::USER_AGENT, crate::config::DEFAULT_USER_AGENT)
+        .header(
+            reqwest::header::USER_AGENT,
+            crate::config::DEFAULT_USER_AGENT,
+        )
         .send()
         .await?
         .error_for_status()?;
@@ -240,8 +267,16 @@ pub fn run_installer(setup: &Path, sha256: &str, visible: bool) -> anyhow::Resul
     }
     let mut cmd = std::process::Command::new(setup);
     cmd.arg(if visible { "/SILENT" } else { "/VERYSILENT" });
-    cmd.args(["/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/AUTOUPDATE=1"]);
-    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+    cmd.args([
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/CLOSEAPPLICATIONS",
+        "/AUTOUPDATE=1",
+    ]);
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf))
+    {
         cmd.arg(format!("/DIR={}", dir.display()));
     }
     cmd.spawn()?;
@@ -276,9 +311,18 @@ mod tests {
     #[test]
     fn parse_and_url() {
         let sha = sha256_hex(b"abc");
-        assert_eq!(sha, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-        let r = parse(&format!("\u{feff}{{\"version\":\"1.0.1\",\"sha256\":\"{sha}\"}}")).unwrap();
-        assert_eq!(r.setup_url(), format!("https://github.com/{REPO}/releases/download/v1.0.1/{SETUP_NAME}"));
+        assert_eq!(
+            sha,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let r = parse(&format!(
+            "\u{feff}{{\"version\":\"1.0.1\",\"sha256\":\"{sha}\"}}"
+        ))
+        .unwrap();
+        assert_eq!(
+            r.setup_url(),
+            format!("https://github.com/{REPO}/releases/download/v1.0.1/{SETUP_NAME}")
+        );
         let r2 = parse(&format!("{{\"version\":\"1.0.1\",\"url\":\"https://example.invalid/setup\",\"sha256\":\"{sha}\"}}")).unwrap();
         assert!(r2.setup_url().starts_with("https://github.com/"));
         assert!(parse("{\"version\":\"1.0.1\",\"sha256\":\"zz\"}").is_err());
@@ -287,8 +331,18 @@ mod tests {
     fn signed(version: &str, sha: &str) -> (String, String) {
         use ring::signature::{Ed25519KeyPair, KeyPair};
         let kp = Ed25519KeyPair::from_seed_unchecked(&[7u8; 32]).unwrap();
-        let public: String = kp.public_key().as_ref().iter().map(|b| format!("{b:02x}")).collect();
-        let sig: String = kp.sign(signed_message(version, sha).as_bytes()).as_ref().iter().map(|b| format!("{b:02x}")).collect();
+        let public: String = kp
+            .public_key()
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let sig: String = kp
+            .sign(signed_message(version, sha).as_bytes())
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
         (public, sig)
     }
 
@@ -296,13 +350,42 @@ mod tests {
     fn signatures() {
         let sha = sha256_hex(b"setup");
         let (public, sig) = signed("1.0.5", &sha);
-        let good = Release { version: "1.0.5".into(), url: String::new(), sha256: sha.clone(), sig: sig.clone() };
+        let good = Release {
+            version: "1.0.5".into(),
+            url: String::new(),
+            sha256: sha.clone(),
+            sig: sig.clone(),
+        };
         assert!(signature_ok(&good, &public));
         // another version, another file, no signature, a broken one: refused
-        assert!(!signature_ok(&Release { version: "1.0.6".into(), ..good.clone() }, &public));
-        assert!(!signature_ok(&Release { sha256: sha256_hex(b"evil"), ..good.clone() }, &public));
-        assert!(!signature_ok(&Release { sig: String::new(), ..good.clone() }, &public));
-        assert!(!signature_ok(&Release { sig: "zz".repeat(64), ..good.clone() }, &public));
+        assert!(!signature_ok(
+            &Release {
+                version: "1.0.6".into(),
+                ..good.clone()
+            },
+            &public
+        ));
+        assert!(!signature_ok(
+            &Release {
+                sha256: sha256_hex(b"evil"),
+                ..good.clone()
+            },
+            &public
+        ));
+        assert!(!signature_ok(
+            &Release {
+                sig: String::new(),
+                ..good.clone()
+            },
+            &public
+        ));
+        assert!(!signature_ok(
+            &Release {
+                sig: "zz".repeat(64),
+                ..good.clone()
+            },
+            &public
+        ));
         // signed with another key: refused by the key in the program
         assert!(!signature_ok(&good, UPDATE_PUBLIC_KEY));
         let text = format!("{{\"version\":\"1.0.5\",\"sha256\":\"{sha}\",\"sig\":\"{sig}\"}}");

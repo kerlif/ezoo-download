@@ -27,8 +27,14 @@ pub fn effective(setting: &str) -> &'static str {
     if let Some((code, _)) = LANGS.iter().find(|(c, _)| *c == setting) {
         return code;
     }
-    let sys = sys_locale::get_locale().unwrap_or_default().to_ascii_lowercase();
-    LANGS.iter().map(|(c, _)| *c).find(|c| sys.starts_with(c)).unwrap_or("en")
+    let sys = sys_locale::get_locale()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    LANGS
+        .iter()
+        .map(|(c, _)| *c)
+        .find(|c| sys.starts_with(c))
+        .unwrap_or("en")
 }
 
 /// Place of a language in LANGS (0 = English for anything unknown).
@@ -51,7 +57,6 @@ pub fn is_rtl() -> bool {
     current() == "ar"
 }
 
-#[allow(dead_code)]
 pub fn is_arabic() -> bool {
     current() == "ar"
 }
@@ -594,7 +599,11 @@ mod tests {
             let m = table(code).expect("table");
             assert!(m.len() > 150, "{code}: only {} texts", m.len());
             for (en, tr) in m {
-                assert_eq!(en.matches("{}").count(), tr.matches("{}").count(), "{code}: {en}");
+                assert_eq!(
+                    en.matches("{}").count(),
+                    tr.matches("{}").count(),
+                    "{code}: {en}"
+                );
             }
         }
         assert_eq!(index_of("xx"), 0);

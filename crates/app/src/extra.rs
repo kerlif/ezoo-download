@@ -2,30 +2,42 @@
 //! Duplicate link, shut down countdown, Tip of the day, Refresh download
 //! address, and Export / Import of the list.
 
+use crate::i18n::{t, tf};
 use crate::open_window;
 use crate::*;
 use swiftget_engine::config::{CategoryDef, ALL_COLUMNS, DEFAULT_COLUMNS};
 use swiftget_engine::ef2::{self, Ef2Item};
 use swiftget_engine::DetailsEdit;
-use crate::i18n::{t, tf};
 
 // ---------------------------------------------------------------- columns
 
 pub(crate) fn open_columns(ui: &Ui) {
-    let Some(d) = ui.columns.upgrade() else { return };
+    let Some(d) = ui.columns.upgrade() else {
+        return;
+    };
     d.set_cols(cols_from(&ui.ctx.mgr.settings()));
     open_window!(d);
 }
 
 fn cols_to_list(c: &Cols) -> Vec<String> {
-    let flags = [c.q, c.size, c.status, c.eta, c.speed, c.last, c.desc, c.added, c.saveto, c.referer, c.parent];
-    ALL_COLUMNS.iter().zip(flags).filter(|(_, on)| *on).map(|(k, _)| k.to_string()).collect()
+    let flags = [
+        c.q, c.size, c.status, c.eta, c.speed, c.last, c.desc, c.added, c.saveto, c.referer,
+        c.parent,
+    ];
+    ALL_COLUMNS
+        .iter()
+        .zip(flags)
+        .filter(|(_, on)| *on)
+        .map(|(k, _)| k.to_string())
+        .collect()
 }
 
 // ---------------------------------------------------------------- categories
 
 pub(crate) fn open_category(ui: &Ui, name: Option<String>) {
-    let Some(d) = ui.category.upgrade() else { return };
+    let Some(d) = ui.category.upgrade() else {
+        return;
+    };
     let s = ui.ctx.mgr.settings();
     *ui.editing_category.borrow_mut() = name.clone();
     d.set_message(SharedString::new());
@@ -44,23 +56,39 @@ pub(crate) fn open_category(ui: &Ui, name: Option<String>) {
             d.set_name("General".into());
             d.set_exts("(every other file type)".into());
             d.set_sites(SharedString::new());
-            d.set_folder(s.category_dirs.get("General").map(|p| p.display().to_string()).unwrap_or_default().into());
+            d.set_folder(
+                s.category_dirs
+                    .get("General")
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+                    .into(),
+            );
         }
         Some(n) => {
-            let Some(c) = s.categories.iter().find(|c| c.name == n) else { return };
+            let Some(c) = s.categories.iter().find(|c| c.name == n) else {
+                return;
+            };
             d.set_is_new(false);
             d.set_builtin(c.builtin);
             d.set_name(c.name.clone().into());
             d.set_exts(c.exts.join(" ").into());
             d.set_sites(c.sites.join(" ").into());
-            d.set_folder(s.category_dirs.get(n).map(|p| p.display().to_string()).unwrap_or_default().into());
+            d.set_folder(
+                s.category_dirs
+                    .get(n)
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+                    .into(),
+            );
         }
     }
     open_window!(d);
 }
 
 fn save_category(ui: &Ui) {
-    let Some(d) = ui.category.upgrade() else { return };
+    let Some(d) = ui.category.upgrade() else {
+        return;
+    };
     let mut s = ui.ctx.mgr.settings();
     let editing = ui.editing_category.borrow().clone();
     let name = d.get_name().trim().to_string();
@@ -69,7 +97,9 @@ fn save_category(ui: &Ui) {
         return;
     }
     let taken = name.eq_ignore_ascii_case("General")
-        || s.categories.iter().any(|c| c.name.eq_ignore_ascii_case(&name) && Some(&c.name) != editing.as_ref());
+        || s.categories
+            .iter()
+            .any(|c| c.name.eq_ignore_ascii_case(&name) && Some(&c.name) != editing.as_ref());
     if taken && editing.as_deref() != Some("General") {
         d.set_message(t("A category with this name already exists").into());
         return;
@@ -77,10 +107,19 @@ fn save_category(ui: &Ui) {
     let exts: Vec<String> = d
         .get_exts()
         .split(|c: char| c.is_whitespace() || c == ',' || c == ';')
-        .map(|e| e.trim().trim_start_matches("*.").trim_start_matches('.').to_lowercase())
+        .map(|e| {
+            e.trim()
+                .trim_start_matches("*.")
+                .trim_start_matches('.')
+                .to_lowercase()
+        })
         .filter(|e| !e.is_empty() && !e.starts_with('('))
         .collect();
-    let sites: Vec<String> = d.get_sites().split_whitespace().map(|x| x.to_lowercase()).collect();
+    let sites: Vec<String> = d
+        .get_sites()
+        .split_whitespace()
+        .map(|x| x.to_lowercase())
+        .collect();
     let folder = d.get_folder().trim().to_string();
     match editing.as_deref() {
         Some("General") => {}
@@ -104,7 +143,12 @@ fn save_category(ui: &Ui) {
             for c in s.categories.iter_mut() {
                 c.exts.retain(|e| !exts.contains(e));
             }
-            s.categories.push(CategoryDef { name: name.clone(), exts, sites, builtin: false });
+            s.categories.push(CategoryDef {
+                name: name.clone(),
+                exts,
+                sites,
+                builtin: false,
+            });
         }
     }
     if folder.is_empty() {
@@ -123,7 +167,9 @@ fn save_category(ui: &Ui) {
 
 pub(crate) fn delete_category(ui: &Ui, name: &str) {
     let mut s = ui.ctx.mgr.settings();
-    let Some(c) = s.categories.iter().find(|c| c.name == name) else { return };
+    let Some(c) = s.categories.iter().find(|c| c.name == name) else {
+        return;
+    };
     if c.builtin || name == "General" {
         message(&t("This category comes with Ezoo Download and can't be deleted (you can change its file types in Properties)."));
         return;
@@ -152,7 +198,9 @@ pub(crate) fn open_find(ui: &Ui) {
 
 /// Select the next download (after the selected one) that matches.
 pub(crate) fn find_next(ui: &Ui) {
-    let (Some(d), Some(m)) = (ui.find.upgrade(), ui.ctx.main.upgrade()) else { return };
+    let (Some(d), Some(m)) = (ui.find.upgrade(), ui.ctx.main.upgrade()) else {
+        return;
+    };
     let needle = d.get_text().to_string();
     if needle.trim().is_empty() {
         open_find(ui);
@@ -160,7 +208,13 @@ pub(crate) fn find_next(ui: &Ui) {
     }
     let case = d.get_match_case();
     let whole = d.get_whole();
-    let norm = |s: &str| if case { s.to_string() } else { s.to_lowercase() };
+    let norm = |s: &str| {
+        if case {
+            s.to_string()
+        } else {
+            s.to_lowercase()
+        }
+    };
     let needle = norm(needle.trim());
     let hit = |hay: &str| {
         let hay = norm(hay);
@@ -175,15 +229,26 @@ pub(crate) fn find_next(ui: &Ui) {
         m.set_view("all".into());
         refresh(ui);
     }
-    let ids: Vec<u64> = (0..ui.rows.row_count()).filter_map(|i| ui.rows.row_data(i)).map(|r| r.id as u64).collect();
-    let start = ids.iter().position(|id| *id as i32 == m.get_selected_id()).map(|p| p + 1).unwrap_or(0);
+    let ids: Vec<u64> = (0..ui.rows.row_count())
+        .filter_map(|i| ui.rows.row_data(i))
+        .map(|r| r.id as u64)
+        .collect();
+    let start = ids
+        .iter()
+        .position(|id| *id as i32 == m.get_selected_id())
+        .map(|p| p + 1)
+        .unwrap_or(0);
     for k in 0..ids.len() {
         let id = ids[(start + k) % ids.len()];
-        let Some(v) = ui.ctx.mgr.get(id) else { continue };
+        let Some(v) = ui.ctx.mgr.get(id) else {
+            continue;
+        };
         let found = (d.get_in_name() && hit(&v.file_name))
             || (d.get_in_desc() && hit(v.description.as_deref().unwrap_or("")))
             || (d.get_in_address()
-                && (hit(&v.url) || hit(v.referer()) || hit(v.parent_page.as_deref().unwrap_or(""))));
+                && (hit(&v.url)
+                    || hit(v.referer())
+                    || hit(v.parent_page.as_deref().unwrap_or(""))));
         if found {
             select_single(ui, id);
             d.set_message(tf("Found: {}", &[&v.file_name]).into());
@@ -197,7 +262,9 @@ pub(crate) fn find_next(ui: &Ui) {
 // ---------------------------------------------------------------- properties
 
 pub(crate) fn open_properties(ui: &Ui, id: u64) {
-    let (Some(d), Some(v)) = (ui.props.upgrade(), ui.ctx.mgr.get(id)) else { return };
+    let (Some(d), Some(v)) = (ui.props.upgrade(), ui.ctx.mgr.get(id)) else {
+        return;
+    };
     ui.props_id.set(Some(id));
     let done = v.status == Status::Completed;
     d.set_file_name(v.file_name.clone().into());
@@ -205,7 +272,12 @@ pub(crate) fn open_properties(ui: &Ui, id: u64) {
     d.set_ext(filename::extension(&v.file_name).to_uppercase().into());
     let ext = filename::extension(&v.file_name).to_uppercase();
     d.set_type_text(
-        if ext.is_empty() { t(&v.category) } else { tf("{} file  ·  {}", &[&ext, &t(&v.category)]) }.into(),
+        if ext.is_empty() {
+            t(&v.category)
+        } else {
+            tf("{} file  ·  {}", &[&ext, &t(&v.category)])
+        }
+        .into(),
     );
     d.set_status(
         match v.status {
@@ -224,7 +296,13 @@ pub(crate) fn open_properties(ui: &Ui, id: u64) {
         .into(),
     );
     d.set_added(fmt_time(v.added_at).into());
-    d.set_last_try(v.finished_at.or(v.last_try).map(fmt_time).unwrap_or_default().into());
+    d.set_last_try(
+        v.finished_at
+            .or(v.last_try)
+            .map(fmt_time)
+            .unwrap_or_default()
+            .into(),
+    );
     d.set_result(
         match (&v.error, v.status) {
             (Some(e), _) => crate::err_text(e),
@@ -239,17 +317,37 @@ pub(crate) fn open_properties(ui: &Ui, id: u64) {
     d.set_referer(v.referer().to_string().into());
     d.set_description(v.description.clone().unwrap_or_default().into());
     d.set_use_login(v.headers.auth.is_some());
-    d.set_user(v.headers.auth.as_ref().map(|a| a.0.clone()).unwrap_or_default().into());
-    d.set_password(v.headers.auth.as_ref().map(|a| a.1.clone()).unwrap_or_default().into());
+    d.set_user(
+        v.headers
+            .auth
+            .as_ref()
+            .map(|a| a.0.clone())
+            .unwrap_or_default()
+            .into(),
+    );
+    d.set_password(
+        v.headers
+            .auth
+            .as_ref()
+            .map(|a| a.1.clone())
+            .unwrap_or_default()
+            .into(),
+    );
     d.set_message(SharedString::new());
     open_window!(d);
 }
 
 fn save_properties(ui: &Ui) {
-    let (Some(d), Some(id)) = (ui.props.upgrade(), ui.props_id.get()) else { return };
+    let (Some(d), Some(id)) = (ui.props.upgrade(), ui.props_id.get()) else {
+        return;
+    };
     let Some(v) = ui.ctx.mgr.get(id) else { return };
-    let auth = (d.get_use_login() && !d.get_user().trim().is_empty())
-        .then(|| (d.get_user().trim().to_string(), d.get_password().to_string()));
+    let auth = (d.get_use_login() && !d.get_user().trim().is_empty()).then(|| {
+        (
+            d.get_user().trim().to_string(),
+            d.get_password().to_string(),
+        )
+    });
     let edit = DetailsEdit {
         url: (v.status != Status::Completed).then(|| d.get_url().trim().to_string()),
         referer: Some(d.get_referer().trim().to_string()),
@@ -274,7 +372,10 @@ fn save_properties(ui: &Ui) {
             Ok(())
         } else {
             let dir = target.parent().map(Path::to_path_buf).unwrap_or_default();
-            let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             if name.is_empty() {
                 Err(anyhow::anyhow!("type a file name"))
             } else {
@@ -282,7 +383,13 @@ fn save_properties(ui: &Ui) {
             }
         };
         if let Err(e) = result {
-            d.set_message(tf("Could not change where it is saved: {}", &[&format!("{e:#}")]).into());
+            d.set_message(
+                tf(
+                    "Could not change where it is saved: {}",
+                    &[&format!("{e:#}")],
+                )
+                .into(),
+            );
             return;
         }
     }
@@ -295,7 +402,12 @@ fn save_properties(ui: &Ui) {
 pub(crate) fn ask_duplicate(ui: &Ui, p: PendingAdd) {
     let Some(d) = ui.dup.upgrade() else { return };
     let v = ui.ctx.mgr.get(p.existing);
-    d.set_file_name(v.as_ref().map(|v| v.file_name.clone()).unwrap_or_default().into());
+    d.set_file_name(
+        v.as_ref()
+            .map(|v| v.file_name.clone())
+            .unwrap_or_default()
+            .into(),
+    );
     d.set_existing_status(v.as_ref().map(|v| v.status.label()).unwrap_or("").into());
     d.set_choice(1);
     d.set_remember(false);
@@ -308,7 +420,9 @@ pub(crate) fn ask_duplicate(ui: &Ui, p: PendingAdd) {
 const COUNTDOWN: i32 = 30;
 
 pub(crate) fn start_countdown(ui: &Ui, action: AfterDone) {
-    let Some(d) = ui.countdown.upgrade() else { return };
+    let Some(d) = ui.countdown.upgrade() else {
+        return;
+    };
     let text = match action {
         AfterDone::Shutdown => "shut down the computer",
         AfterDone::Hibernate => "hibernate the computer",
@@ -337,7 +451,9 @@ pub(crate) fn tick_countdown(ui: &Ui) {
 }
 
 fn power_now(ui: &Ui) {
-    let Some((action, _)) = ui.power.borrow_mut().take() else { return };
+    let Some((action, _)) = ui.power.borrow_mut().take() else {
+        return;
+    };
     if let Some(d) = ui.countdown.upgrade() {
         let _ = d.hide();
     }
@@ -352,7 +468,9 @@ fn power_now(ui: &Ui) {
 /// http:// or https:// with a host: safe to hand to the browser.
 pub(crate) fn is_web_address(s: &str) -> bool {
     url::Url::parse(s.trim())
-        .map(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some_and(|h| !h.is_empty()))
+        .map(|u| {
+            matches!(u.scheme(), "http" | "https") && u.host_str().is_some_and(|h| !h.is_empty())
+        })
         .unwrap_or(false)
 }
 
@@ -383,9 +501,18 @@ thread_local! {
 /// Arabic), with a word about supporting the free program.
 pub(crate) fn whats_new(ui: &Ui) {
     let Ok(d) = WhatsNewDialog::new() else { return };
-    crate::set_theme_of(d.global::<Theme>(), &crate::Look::of(&ui.ctx.mgr.settings()));
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
     d.set_rtl(crate::i18n::is_arabic());
-    d.set_heading(tf("Ezoo Download was updated to version {} by itself.", &[&env!("CARGO_PKG_VERSION")]).into());
+    d.set_heading(
+        tf(
+            "Ezoo Download was updated to version {} by itself.",
+            &[&env!("CARGO_PKG_VERSION")],
+        )
+        .into(),
+    );
     let items: Vec<SharedString> = WHATS_NEW.iter().map(|l| t(l).into()).collect();
     d.set_items(ModelRc::new(VecModel::from(items)));
     d.on_open_link(|u| {
@@ -399,7 +526,9 @@ pub(crate) fn whats_new(ui: &Ui) {
             let _ = d.hide();
         }
         // let the window go after this click
-        slint::Timer::single_shot(std::time::Duration::from_millis(1), || WHATS_NEW_WIN.with(|x| *x.borrow_mut() = None));
+        slint::Timer::single_shot(std::time::Duration::from_millis(1), || {
+            WHATS_NEW_WIN.with(|x| *x.borrow_mut() = None)
+        });
     });
     open_window!(d);
     WHATS_NEW_WIN.with(|x| *x.borrow_mut() = Some(d));
@@ -425,7 +554,9 @@ const TIPS: [&str; 14] = [
 /// The tip at start, once no message box is open (they must not mix).
 pub(crate) fn show_tip_when_free(ui: Ui) {
     if modal_open() {
-        slint::Timer::single_shot(std::time::Duration::from_millis(700), move || show_tip_when_free(ui));
+        slint::Timer::single_shot(std::time::Duration::from_millis(700), move || {
+            show_tip_when_free(ui)
+        });
         return;
     }
     show_tip(&ui, false);
@@ -449,7 +580,9 @@ pub(crate) fn show_tip(ui: &Ui, from_menu: bool) {
 // ---------------------------------------------------------------- refresh download address
 
 pub(crate) fn open_refresh(ui: &Ui, id: u64) {
-    let (Some(d), Some(v)) = (ui.refresh_dlg.upgrade(), ui.ctx.mgr.get(id)) else { return };
+    let (Some(d), Some(v)) = (ui.refresh_dlg.upgrade(), ui.ctx.mgr.get(id)) else {
+        return;
+    };
     if v.status == Status::Completed {
         return;
     }
@@ -479,8 +612,15 @@ pub(crate) fn refresh_received(ui: &Ui, id: u64, url: &str, headers: RequestHead
 pub(crate) fn export_list(mgr: &Arc<Manager>, kind: &str) {
     let ef2 = kind == "ef2";
     let Some(path) = crate::winfx::file_box()
-        .set_file_name(if ef2 { "ezoo-download-list.ef2" } else { "ezoo-download-links.txt" })
-        .add_filter(if ef2 { "Download list" } else { "Text file" }, &[if ef2 { "ef2" } else { "txt" }])
+        .set_file_name(if ef2 {
+            "ezoo-download-list.ef2"
+        } else {
+            "ezoo-download-links.txt"
+        })
+        .add_filter(
+            if ef2 { "Download list" } else { "Text file" },
+            &[if ef2 { "ef2" } else { "txt" }],
+        )
         .save_file()
     else {
         return;
@@ -490,7 +630,11 @@ pub(crate) fn export_list(mgr: &Arc<Manager>, kind: &str) {
             .snapshot()
             .into_iter()
             .map(|v| Ef2Item {
-                url: v.parent_page.clone().filter(|_| v.kind == DownloadKind::Dash).unwrap_or(v.url.clone()),
+                url: v
+                    .parent_page
+                    .clone()
+                    .filter(|_| v.kind == DownloadKind::Dash)
+                    .unwrap_or(v.url.clone()),
                 referer: v.headers.referer.clone(),
                 cookies: v.headers.cookies.clone(),
                 user_agent: v.headers.user_agent.clone(),
@@ -510,7 +654,10 @@ pub(crate) fn export_list(mgr: &Arc<Manager>, kind: &str) {
 pub(crate) fn import_list(ui: &Ui, kind: &str) {
     let ef2 = kind == "ef2";
     let Some(path) = crate::winfx::file_box()
-        .add_filter(if ef2 { "Download list" } else { "Text file" }, &[if ef2 { "ef2" } else { "txt" }])
+        .add_filter(
+            if ef2 { "Download list" } else { "Text file" },
+            &[if ef2 { "ef2" } else { "txt" }],
+        )
         .pick_file()
     else {
         return;
@@ -558,7 +705,9 @@ pub(crate) fn wire(ui: &Ui) {
         {
             let ui = ui.clone();
             d.on_save(move || {
-                let Some(d) = ui.columns.upgrade() else { return };
+                let Some(d) = ui.columns.upgrade() else {
+                    return;
+                };
                 let mut s = ui.ctx.mgr.settings();
                 s.columns = cols_to_list(&d.get_cols());
                 let _ = ui.ctx.mgr.set_settings(s.clone());
@@ -570,7 +719,10 @@ pub(crate) fn wire(ui: &Ui) {
             let w = d.as_weak();
             d.on_reset(move || {
                 if let Some(d) = w.upgrade() {
-                    let s = Settings { columns: DEFAULT_COLUMNS.iter().map(|c| c.to_string()).collect(), ..Default::default() };
+                    let s = Settings {
+                        columns: DEFAULT_COLUMNS.iter().map(|c| c.to_string()).collect(),
+                        ..Default::default()
+                    };
                     d.set_cols(cols_from(&s));
                 }
             });
@@ -749,13 +901,20 @@ pub(crate) fn wire(ui: &Ui) {
         {
             let ui = ui.clone();
             d.on_use_url(move || {
-                let Some(d) = ui.refresh_dlg.upgrade() else { return };
+                let Some(d) = ui.refresh_dlg.upgrade() else {
+                    return;
+                };
                 let url = d.get_new_url().trim().to_string();
                 if !(url.starts_with("http://") || url.starts_with("https://")) {
                     return;
                 }
                 if let Some(id) = ui.refresh_id.get() {
-                    refresh_received(&ui, id, &url, ui.ctx.mgr.get(id).map(|v| v.headers).unwrap_or_default());
+                    refresh_received(
+                        &ui,
+                        id,
+                        &url,
+                        ui.ctx.mgr.get(id).map(|v| v.headers).unwrap_or_default(),
+                    );
                 }
             });
         }

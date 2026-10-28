@@ -7,45 +7,63 @@
 //! "checking…", "this is the newest version", or the download of
 //! the new one with its progress, then its setup runs in front of the user.
 
-use crate::i18n::tf;
 #[cfg(windows)]
 use crate::i18n::t;
+use crate::i18n::tf;
+#[cfg(windows)]
 use crate::message;
-use crate::{Ctx, Ui};
 #[cfg(windows)]
 use crate::open_window;
+use crate::{Ctx, Ui};
 #[cfg(windows)]
 use slint::ComponentHandle;
+#[cfg(windows)]
 use std::path::PathBuf;
+#[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(windows)]
 use std::sync::Arc;
+#[cfg(windows)]
 use std::time::Duration;
-use swiftget_engine::{selfupdate, Manager, Status};
+use swiftget_engine::selfupdate;
+#[cfg(windows)]
+use swiftget_engine::{Manager, Status};
 
 /// one check / download at a time (automatic or from the menu)
+#[cfg(windows)]
 static BUSY: AtomicBool = AtomicBool::new(false);
 
+#[cfg(windows)]
 fn update_dir() -> PathBuf {
     swiftget_engine::default_data_dir().join("update")
 }
 
+#[cfg(windows)]
 fn downloading(mgr: &Manager) -> bool {
-    mgr.snapshot()
-        .iter()
-        .any(|v| matches!(v.status, Status::Connecting | Status::Downloading | Status::Assembling))
+    mgr.snapshot().iter().any(|v| {
+        matches!(
+            v.status,
+            Status::Connecting | Status::Downloading | Status::Assembling
+        )
+    })
 }
 
 /// Start the installer and close the program (downloads resume next time).
+#[cfg(windows)]
 fn apply(setup: PathBuf, sha256: String) {
     apply_as(setup, sha256, false)
 }
 
+#[cfg(windows)]
 fn apply_as(setup: PathBuf, sha256: String, visible: bool) {
     match selfupdate::run_installer(&setup, &sha256, visible) {
         Ok(()) => {
             let _ = slint::quit_event_loop();
         }
-        Err(e) => message(&tf("Could not start the update:\n\n{}", &[&format!("{e:#}")])),
+        Err(e) => message(&tf(
+            "Could not start the update:\n\n{}",
+            &[&format!("{e:#}")],
+        )),
     }
 }
 
@@ -56,7 +74,6 @@ pub fn spawn(ctx: &Ctx) {
         // downloading the new file from the GitHub Releases page (Help >
         // Check for updates says so too). No silent self-installer here.
         let _ = ctx;
-        return;
     }
     #[cfg(windows)]
     {
@@ -64,7 +81,9 @@ pub fn spawn(ctx: &Ctx) {
         if let Ok(rd) = std::fs::read_dir(update_dir()) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.contains(&format!("-{}.", selfupdate::current())) || name.ends_with(".download") {
+                if name.contains(&format!("-{}.", selfupdate::current()))
+                    || name.ends_with(".download")
+                {
                     let _ = std::fs::remove_file(e.path());
                 }
             }
@@ -88,11 +107,12 @@ pub fn spawn(ctx: &Ctx) {
                 first = false;
                 tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
             }
-    });
+        });
     }
 }
 
 /// One check. true = the installer was started.
+#[cfg(windows)]
 async fn round(mgr: &Arc<Manager>, at_start: bool) -> bool {
     let client = mgr.client();
     let Ok(Some(rel)) = selfupdate::check(&client).await else {
@@ -115,6 +135,7 @@ async fn round(mgr: &Arc<Manager>, at_start: bool) -> bool {
 
 /// What the update window shows: written by the check / download (async
 /// side), copied to the window by a timer on the UI thread.
+#[cfg(windows)]
 #[derive(Clone, Default)]
 struct Shown {
     state: i32,
@@ -130,6 +151,7 @@ thread_local! {
     static WINDOW_TIMER: slint::Timer = slint::Timer::default();
 }
 
+#[cfg(windows)]
 fn size_text(n: u64) -> String {
     let mb = n as f64 / (1024.0 * 1024.0);
     format!("{mb:.1} MB")
@@ -145,7 +167,6 @@ pub fn check_now(ui: &Ui) {
             "New versions for Linux are published on the GitHub Releases page of the project:\n{}\n\nThe .deb updates with the package manager, the AppImage by downloading the new file.",
             &[&format!("https://github.com/{}/releases", selfupdate::REPO)],
         ));
-        return;
     }
     #[cfg(windows)]
     {
@@ -155,7 +176,9 @@ pub fn check_now(ui: &Ui) {
 
 #[cfg(windows)]
 fn check_now_windows(ui: &Ui) {
-    let Some(d) = ui.updater.upgrade() else { return };
+    let Some(d) = ui.updater.upgrade() else {
+        return;
+    };
     open_window!(d);
     let set = |state: i32, heading: String, detail: String| {
         d.set_state(state);
@@ -164,35 +187,55 @@ fn check_now_windows(ui: &Ui) {
         d.set_progress(-1.0);
     };
     if BUSY.swap(true, Ordering::SeqCst) {
-        set(0, t("A new version is being prepared. It is installed by itself when it is ready."), String::new());
+        set(
+            0,
+            t("A new version is being prepared. It is installed by itself when it is ready."),
+            String::new(),
+        );
         return;
     }
-    set(0, t("Checking for updates…"), tf("This is version {}.", &[&selfupdate::current()]));
-    let shared = Arc::new(std::sync::Mutex::new(Shown { state: 0, progress: -1.0, ..Default::default() }));
+    set(
+        0,
+        t("Checking for updates…"),
+        tf("This is version {}.", &[&selfupdate::current()]),
+    );
+    let shared = Arc::new(std::sync::Mutex::new(Shown {
+        state: 0,
+        progress: -1.0,
+        ..Default::default()
+    }));
     {
         // UI thread: show what the async side wrote
         let (shared, weak) = (shared.clone(), d.as_weak());
         WINDOW_TIMER.with(|timer| {
-            timer.start(slint::TimerMode::Repeated, Duration::from_millis(100), move || {
-                let now = shared.lock().unwrap().clone();
-                if let Some(d) = weak.upgrade() {
-                    if now.state != 0 || !now.heading.is_empty() {
-                        d.set_state(now.state);
-                        d.set_heading(now.heading.clone().into());
-                        d.set_detail(now.detail.clone().into());
-                        d.set_progress(now.progress);
+            timer.start(
+                slint::TimerMode::Repeated,
+                Duration::from_millis(100),
+                move || {
+                    let now = shared.lock().unwrap().clone();
+                    if let Some(d) = weak.upgrade() {
+                        if now.state != 0 || !now.heading.is_empty() {
+                            d.set_state(now.state);
+                            d.set_heading(now.heading.clone().into());
+                            d.set_detail(now.detail.clone().into());
+                            d.set_progress(now.progress);
+                        }
                     }
-                }
-                if let Some((setup, sha)) = shared.lock().unwrap().install.take() {
-                    apply_as(setup, sha, true);
-                }
-                if now.done {
-                    WINDOW_TIMER.with(|t| t.stop());
-                }
-            });
+                    if let Some((setup, sha)) = shared.lock().unwrap().install.take() {
+                        apply_as(setup, sha, true);
+                    }
+                    if now.done {
+                        WINDOW_TIMER.with(|t| t.stop());
+                    }
+                },
+            );
         });
     }
-    let tell = move |shared: &std::sync::Mutex<Shown>, state: i32, heading: String, detail: String, progress: f32| {
+    let tell = move |shared: &std::sync::Mutex<Shown>,
+                     state: i32,
+                     heading: String,
+                     detail: String,
+                     progress: f32| {
         let mut s = shared.lock().unwrap();
         s.state = state;
         s.heading = heading;
@@ -207,11 +250,26 @@ fn check_now_windows(ui: &Ui) {
         };
         let rel = match selfupdate::check(&client).await {
             Err(e) => {
-                tell(&shared, 4, t("Could not check for updates"), format!("{e:#}"), -1.0);
+                tell(
+                    &shared,
+                    4,
+                    t("Could not check for updates"),
+                    format!("{e:#}"),
+                    -1.0,
+                );
                 return finish(&shared);
             }
             Ok(None) => {
-                tell(&shared, 1, t("Ezoo Download is up to date"), tf("Version {} is the newest version.", &[&selfupdate::current()]), -1.0);
+                tell(
+                    &shared,
+                    1,
+                    t("Ezoo Download is up to date"),
+                    tf(
+                        "Version {} is the newest version.",
+                        &[&selfupdate::current()],
+                    ),
+                    -1.0,
+                );
                 return finish(&shared);
             }
             Ok(Some(rel)) => rel,
@@ -231,7 +289,10 @@ fn check_now_windows(ui: &Ui) {
         let (s2, h2) = (shared.clone(), heading.clone());
         let progress = move |done: u64, total: Option<u64>| {
             let (detail, p) = match total {
-                Some(t) if t > 0 => (format!("{} / {}", size_text(done), size_text(t)), done as f32 / t as f32),
+                Some(t) if t > 0 => (
+                    format!("{} / {}", size_text(done), size_text(t)),
+                    done as f32 / t as f32,
+                ),
                 _ => (size_text(done), -1.0),
             };
             tell(&s2, 2, h2.clone(), detail, p);
@@ -251,7 +312,13 @@ fn check_now_windows(ui: &Ui) {
                 finish(&shared);
             }
             Err(e) => {
-                tell(&shared, 4, t("Could not get the update"), format!("{e:#}"), -1.0);
+                tell(
+                    &shared,
+                    4,
+                    t("Could not get the update"),
+                    format!("{e:#}"),
+                    -1.0,
+                );
                 finish(&shared);
             }
         }

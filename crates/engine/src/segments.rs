@@ -22,7 +22,12 @@ pub struct Segment {
 
 impl Segment {
     pub fn new(start: u64, end: u64) -> Self {
-        Segment { start, pos: start, end, active: false }
+        Segment {
+            start,
+            pos: start,
+            end,
+            active: false,
+        }
     }
     pub fn remaining(&self) -> u64 {
         self.end.saturating_sub(self.pos)

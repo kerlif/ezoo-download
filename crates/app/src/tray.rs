@@ -49,7 +49,12 @@ pub fn download_icon(progress: Option<f32>) -> Vec<u8> {
             }
         }
     }
-    let rect = |put: &mut dyn FnMut(usize, usize, [u8; 4]), x0: usize, y0: usize, x1: usize, y1: usize, c: [u8; 4]| {
+    let rect = |put: &mut dyn FnMut(usize, usize, [u8; 4]),
+                x0: usize,
+                y0: usize,
+                x1: usize,
+                y1: usize,
+                c: [u8; 4]| {
         for y in y0..y1 {
             for x in x0..x1 {
                 put(x, y, c);
@@ -75,7 +80,9 @@ mod imp {
     use super::{DownloadAction, TrayAction};
     use std::collections::HashMap;
     use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
-    use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+    use tray_icon::{
+        Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
+    };
 
     const MAIN_ID: &str = "ezoo-main";
     const DL_PREFIX: &str = "ezoo-dl-";
@@ -110,7 +117,9 @@ mod imp {
         if menu.append(&show).is_err() || menu.append(&pause).is_err() {
             return false;
         }
-        let Some(icon) = icon_for(progress) else { return false };
+        let Some(icon) = icon_for(progress) else {
+            return false;
+        };
         let built = TrayIconBuilder::new()
             .with_id(format!("{DL_PREFIX}{id}"))
             .with_tooltip(super::short_tip(tip))
@@ -187,7 +196,8 @@ mod imp {
             menu.append(&PredefinedMenuItem::separator()).ok()?;
             menu.append(&about).ok()?;
             menu.append(&exit).ok()?;
-            let icon = Icon::from_rgba(include_bytes!("../ui/tray32.rgba").to_vec(), 32, 32).ok()?;
+            let icon =
+                Icon::from_rgba(include_bytes!("../ui/tray32.rgba").to_vec(), 32, 32).ok()?;
             let tray = TrayIconBuilder::new()
                 .with_id(MAIN_ID)
                 .with_tooltip("Ezoo Download")
@@ -208,7 +218,11 @@ mod imp {
                 (about.id().clone(), || TrayAction::About),
                 (exit.id().clone(), || TrayAction::Exit),
             ];
-            Some(Tray { _icon: tray, limiter, ids })
+            Some(Tray {
+                _icon: tray,
+                limiter,
+                ids,
+            })
         }
 
         /// Clicks since the last call (those on hidden downloads go to
@@ -217,9 +231,17 @@ mod imp {
             let mut out = Vec::new();
             while let Ok(ev) = TrayIconEvent::receiver().try_recv() {
                 let id = ev.id().0.clone();
-                if let Some(dl) = id.strip_prefix(DL_PREFIX).and_then(|n| n.parse::<u64>().ok()) {
+                if let Some(dl) = id
+                    .strip_prefix(DL_PREFIX)
+                    .and_then(|n| n.parse::<u64>().ok())
+                {
                     // one click on a hidden download's icon: its window
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = ev {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = ev
+                    {
                         PENDING.with(|p| p.borrow_mut().push((dl, DownloadAction::Show)));
                     }
                     continue;
@@ -228,8 +250,15 @@ mod imp {
                 // button). Linux trays have no double click: one left click
                 // opens the window there.
                 match &ev {
-                    TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => out.push(TrayAction::Show),
-                    TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } if cfg!(target_os = "linux") => {
+                    TrayIconEvent::DoubleClick {
+                        button: MouseButton::Left,
+                        ..
+                    } => out.push(TrayAction::Show),
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } if cfg!(target_os = "linux") => {
                         out.push(TrayAction::Show);
                     }
                     _ => {}
@@ -270,7 +299,12 @@ mod imp {
 #[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::{DownloadAction, TrayAction};
-    pub fn show_download(_id: u64, _tip: &str, _progress: Option<f32>, _labels: (&str, &str)) -> bool {
+    pub fn show_download(
+        _id: u64,
+        _tip: &str,
+        _progress: Option<f32>,
+        _labels: (&str, &str),
+    ) -> bool {
         false
     }
     pub fn update_download(_id: u64, _tip: &str, _progress: Option<f32>) {}
@@ -321,7 +355,10 @@ mod tests {
         assert!(!green(&empty, 10) && green(&half, 10) && !green(&half, 26));
         // corners are see-through, the letter is white
         assert_eq!(half[3], 0);
-        assert_eq!(&half[(5 * 32 + 10) * 4..(5 * 32 + 10) * 4 + 4], &[255, 255, 255, 255]);
+        assert_eq!(
+            &half[(5 * 32 + 10) * 4..(5 * 32 + 10) * 4 + 4],
+            &[255, 255, 255, 255]
+        );
         assert_eq!(short_tip(&"x".repeat(300)).chars().count(), 120);
         assert_eq!(step_of(0.5), 12);
     }

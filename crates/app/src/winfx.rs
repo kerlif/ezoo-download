@@ -33,7 +33,8 @@ pub(crate) fn set_opacity(w: &slint::Window, pct: u32) {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE, LWA_ALPHA, WS_EX_LAYERED,
+            GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
+            LWA_ALPHA, WS_EX_LAYERED,
         };
         let Some(id) = hwnd_of(w) else { return };
         let hwnd = id as windows_sys::Win32::Foundation::HWND;
@@ -69,7 +70,11 @@ pub(crate) fn set_opacity(w: &slint::Window, pct: u32) {
 /// Where a window of `size` goes to be in the middle of a screen at `screen`
 /// (position) with `screen_size`; never above or left of the screen.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn centered(screen: (i32, i32), screen_size: (u32, u32), size: (u32, u32)) -> (i32, i32) {
+pub(crate) fn centered(
+    screen: (i32, i32),
+    screen_size: (u32, u32),
+    size: (u32, u32),
+) -> (i32, i32) {
     let x = screen.0 + (screen_size.0 as i32 - size.0 as i32).max(0) / 2;
     let y = screen.1 + (screen_size.1 as i32 - size.1 as i32).max(0) / 2;
     (x, y)
@@ -77,7 +82,8 @@ pub(crate) fn centered(screen: (i32, i32), screen_size: (u32, u32), size: (u32, 
 
 fn place_now(w: &slint::Window, maximizable: bool) -> bool {
     use slint::winit_030::{winit, WinitWindowAccessor};
-    w.with_winit_window(|win: &winit::window::Window| place_winit(win, maximizable)).is_some()
+    w.with_winit_window(|win: &winit::window::Window| place_winit(win, maximizable))
+        .is_some()
 }
 
 fn place_winit(win: &slint::winit_030::winit::window::Window, maximizable: bool) {
@@ -138,7 +144,9 @@ mod taskbar {
     use std::ffi::c_void;
     use windows_sys::core::GUID;
     use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+    use windows_sys::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+    };
 
     // ITaskbarList3 (shobjidl.h), in the order of its methods
     #[repr(C)]
@@ -231,7 +239,8 @@ pub(crate) fn drag_file_out(w: &slint::Window, path: &std::path::Path) {
         use windows_sys::Win32::System::Ole::{OleInitialize, DROPEFFECT_COPY, DROPEFFECT_LINK};
         use windows_sys::Win32::UI::Shell::Common::ITEMIDLIST;
         use windows_sys::Win32::UI::Shell::{
-            ILClone, ILCreateFromPathW, ILFindLastID, ILFree, ILRemoveLastID, SHCreateDataObject, SHDoDragDrop,
+            ILClone, ILCreateFromPathW, ILFindLastID, ILFree, ILRemoveLastID, SHCreateDataObject,
+            SHDoDragDrop,
         };
         const IID_IDATA_OBJECT: GUID = GUID::from_u128(0x0000010e_0000_0000_c000_000000000046);
 
@@ -239,7 +248,11 @@ pub(crate) fn drag_file_out(w: &slint::Window, path: &std::path::Path) {
         if !path.is_file() {
             return;
         }
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
         // SAFETY: `wide` is a NUL-terminated path that outlives the calls; the
         // item list and the data object are freed / released exactly once
         unsafe {
@@ -259,15 +272,29 @@ pub(crate) fn drag_file_out(w: &slint::Window, path: &std::path::Path) {
             let child = ILFindLastID(pidl) as *const ITEMIDLIST;
             let items: [*const ITEMIDLIST; 1] = [child];
             let mut obj: *mut c_void = std::ptr::null_mut();
-            let hr = SHCreateDataObject(parent, 1, items.as_ptr(), std::ptr::null_mut(), &IID_IDATA_OBJECT, &mut obj);
+            let hr = SHCreateDataObject(
+                parent,
+                1,
+                items.as_ptr(),
+                std::ptr::null_mut(),
+                &IID_IDATA_OBJECT,
+                &mut obj,
+            );
             if hr >= 0 && !obj.is_null() {
                 let mut effect = 0;
                 // no drop source of our own: the shell's standard one; a copy
                 // (or a shortcut), never a move, so the list stays right
-                let _ = SHDoDragDrop(hwnd as _, obj as _, std::ptr::null_mut(), DROPEFFECT_COPY | DROPEFFECT_LINK, &mut effect);
+                let _ = SHDoDragDrop(
+                    hwnd as _,
+                    obj as _,
+                    std::ptr::null_mut(),
+                    DROPEFFECT_COPY | DROPEFFECT_LINK,
+                    &mut effect,
+                );
                 // IUnknown::Release is the third entry of every COM object's table
                 let vt = *(obj as *const *const [usize; 3]);
-                let release: unsafe extern "system" fn(*mut c_void) -> u32 = std::mem::transmute((*vt)[2]);
+                let release: unsafe extern "system" fn(*mut c_void) -> u32 =
+                    std::mem::transmute((*vt)[2]);
                 release(obj);
             }
             ILFree(parent);
@@ -320,7 +347,9 @@ pub(crate) fn on_top_of(dlg: rfd::FileDialog, _w: &slint::Window) -> rfd::FileDi
 /// The window of ours the user is working in (in front), if any.
 #[cfg(windows)]
 fn own_front_window() -> Option<isize> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
     // SAFETY: plain queries about the window in front; `pid` is a local
     let (hwnd, pid) = unsafe {
         let h = GetForegroundWindow();
@@ -336,9 +365,13 @@ struct OwnWindow(isize);
 
 #[cfg(windows)]
 impl raw_window_handle::HasWindowHandle for OwnWindow {
-    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
         use raw_window_handle::{HandleError, RawWindowHandle, Win32WindowHandle, WindowHandle};
-        let raw = Win32WindowHandle::new(std::num::NonZeroIsize::new(self.0).ok_or(HandleError::Unavailable)?);
+        let raw = Win32WindowHandle::new(
+            std::num::NonZeroIsize::new(self.0).ok_or(HandleError::Unavailable)?,
+        );
         // SAFETY: the handle is of a window of ours that is open now; the
         // message box using it is shown and closed before we go on
         Ok(unsafe { WindowHandle::borrow_raw(RawWindowHandle::Win32(raw)) })
@@ -347,7 +380,9 @@ impl raw_window_handle::HasWindowHandle for OwnWindow {
 
 #[cfg(windows)]
 impl raw_window_handle::HasDisplayHandle for OwnWindow {
-    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
         Ok(raw_window_handle::DisplayHandle::windows())
     }
 }

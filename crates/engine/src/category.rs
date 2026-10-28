@@ -2,22 +2,32 @@
 
 use crate::filename::extension;
 
-pub const CATEGORIES: [&str; 7] = ["Compressed", "Documents", "Music", "Programs", "Video", "Images", "General"];
+/// The built-in categories, in sidebar order.
+pub const CATEGORIES: [&str; 7] = [
+    "Compressed",
+    "Documents",
+    "Music",
+    "Programs",
+    "Video",
+    "Images",
+    "General",
+];
 
+/// The category for a file name, from its extension; `"General"` when unknown.
 pub fn category_for(file_name: &str) -> &'static str {
     match extension(file_name).as_str() {
-        "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "iso" | "img" | "cab" => {
-            "Compressed"
-        }
-        "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "txt" | "rtf" | "odt" | "ods"
-        | "epub" | "csv" | "md" => "Documents",
+        "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "iso" | "img"
+        | "cab" => "Compressed",
+        "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "txt" | "rtf" | "odt"
+        | "ods" | "epub" | "csv" | "md" => "Documents",
         "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "wma" | "opus" => "Music",
-        "exe" | "msi" | "msix" | "appx" | "apk" | "dmg" | "deb" | "rpm" | "bat" | "jar" => "Programs",
+        "exe" | "msi" | "msix" | "appx" | "apk" | "dmg" | "deb" | "rpm" | "bat" | "jar" => {
+            "Programs"
+        }
         "mp4" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "webm" | "m4v" | "ts" | "3gp" | "mpg"
         | "mpeg" => "Video",
-        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic" | "ico" | "psd" => {
-            "Images"
-        }
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic"
+        | "ico" | "psd" => "Images",
         _ => "General",
     }
 }

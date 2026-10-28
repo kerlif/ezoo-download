@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// Token-bucket speed limiter shared by every connection of every download.
 pub struct SpeedLimiter {
     /// bytes per second, 0 = unlimited
     rate: AtomicU64,
@@ -11,6 +12,7 @@ pub struct SpeedLimiter {
 }
 
 impl SpeedLimiter {
+    /// A new limiter for `bytes_per_sec`; 0 means unlimited.
     pub fn new(bytes_per_sec: u64) -> Self {
         SpeedLimiter {
             rate: AtomicU64::new(bytes_per_sec),
@@ -18,6 +20,7 @@ impl SpeedLimiter {
         }
     }
 
+    /// Change the limit; 0 means unlimited. Takes effect immediately.
     pub fn set_rate(&self, bytes_per_sec: u64) {
         self.rate.store(bytes_per_sec, Ordering::Relaxed);
     }
@@ -67,6 +70,9 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(4));
         let t = Instant::now();
         l.acquire(1).await;
-        assert!(t.elapsed() < Duration::from_millis(1100), "one more small piece waits at most about a second");
+        assert!(
+            t.elapsed() < Duration::from_millis(1100),
+            "one more small piece waits at most about a second"
+        );
     }
 }

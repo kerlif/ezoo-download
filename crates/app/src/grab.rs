@@ -1,11 +1,11 @@
 //! Site Grabber and "Download all links" (both use the same window).
 
+use crate::i18n::{t, tf};
 use crate::open_window;
 use crate::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use swiftget_engine::grabber::{self, FoundFile, GrabOptions, GrabProgress};
 use tokio_util::sync::CancellationToken;
-use crate::i18n::{t, tf};
 
 #[derive(Clone)]
 struct Item {
@@ -75,7 +75,9 @@ fn row(it: &Item) -> LinkRow {
 
 /// Rebuild the visible rows from the filters.
 fn show(ui: &Ui) {
-    let Some(d) = ui.grabber.upgrade() else { return };
+    let Some(d) = ui.grabber.upgrade() else {
+        return;
+    };
     let filter = d.get_filter().to_lowercase();
     let type_filter = d.get_type_filter();
     let mut g = ui.grab_state.borrow_mut();
@@ -85,13 +87,18 @@ fn show(ui: &Ui) {
         .enumerate()
         .filter(|(_, it)| type_ok(it, type_filter))
         .filter(|(_, it)| {
-            filter.is_empty() || it.name.to_lowercase().contains(&filter) || it.url.to_lowercase().contains(&filter)
+            filter.is_empty()
+                || it.name.to_lowercase().contains(&filter)
+                || it.url.to_lowercase().contains(&filter)
         })
         .map(|(i, _)| i)
         .collect();
     let rows: Vec<LinkRow> = shown.iter().map(|i| row(&g.all[*i])).collect();
     g.shown = shown;
-    let model = g.model.get_or_insert_with(|| Rc::new(VecModel::default())).clone();
+    let model = g
+        .model
+        .get_or_insert_with(|| Rc::new(VecModel::default()))
+        .clone();
     let checked = g.all.iter().filter(|i| i.checked).count();
     drop(g);
     update_model(&model, rows);
@@ -125,7 +132,9 @@ fn reset(ui: &Ui, d: &GrabberDialog, links_mode: bool) {
 
 /// Tasks > Run site grabber.
 pub(crate) fn open_grabber(ui: &Ui) {
-    let Some(d) = ui.grabber.upgrade() else { return };
+    let Some(d) = ui.grabber.upgrade() else {
+        return;
+    };
     if d.window().is_visible() && !d.get_links_mode() {
         open_window!(d);
         return;
@@ -137,7 +146,9 @@ pub(crate) fn open_grabber(ui: &Ui) {
 
 /// "Download all links with Ezoo Download" from the browser.
 pub(crate) fn open_links(ui: &Ui, l: api::LinksRequest) {
-    let Some(d) = ui.grabber.upgrade() else { return };
+    let Some(d) = ui.grabber.upgrade() else {
+        return;
+    };
     reset(ui, &d, true);
     {
         let mut g = ui.grab_state.borrow_mut();
@@ -170,7 +181,9 @@ pub(crate) fn poll(ui: &Ui) {
         let new: Vec<FoundFile> = std::mem::take(&mut *g.incoming.lock().unwrap());
         (new, g.progress.clone(), g.finished.load(Ordering::Relaxed))
     };
-    let Some(d) = ui.grabber.upgrade() else { return };
+    let Some(d) = ui.grabber.upgrade() else {
+        return;
+    };
     if !new.is_empty() {
         let mut g = ui.grab_state.borrow_mut();
         for f in new {
@@ -183,8 +196,16 @@ pub(crate) fn poll(ui: &Ui) {
         let current = p.current.lock().map(|c| c.clone()).unwrap_or_default();
         let text = tf(
             "{} of {} pages explored  ·  {} files found",
-            &[&p.pages_done.load(Ordering::Relaxed), &p.pages_queued.load(Ordering::Relaxed), &p.files.load(Ordering::Relaxed)],
-        ) + &if finished { t("  ·  done") } else { format!("  ·  {current}") };
+            &[
+                &p.pages_done.load(Ordering::Relaxed),
+                &p.pages_queued.load(Ordering::Relaxed),
+                &p.files.load(Ordering::Relaxed),
+            ],
+        ) + &if finished {
+            t("  ·  done")
+        } else {
+            format!("  ·  {current}")
+        };
         d.set_progress_text(text.into());
     }
     if finished {
@@ -194,7 +215,9 @@ pub(crate) fn poll(ui: &Ui) {
 }
 
 pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.grabber.upgrade() else { return };
+    let Some(d) = ui.grabber.upgrade() else {
+        return;
+    };
     {
         let w = d.as_weak();
         d.on_template_changed(move |t| {
@@ -208,15 +231,22 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui = ui.clone();
         d.on_explore(move || {
-            let Some(d) = ui.grabber.upgrade() else { return };
+            let Some(d) = ui.grabber.upgrade() else {
+                return;
+            };
             let start = d.get_start_url().trim().to_string();
-            if !(start.starts_with("http://") || start.starts_with("https://")) || url::Url::parse(&start).is_err() {
+            if !(start.starts_with("http://") || start.starts_with("https://"))
+                || url::Url::parse(&start).is_err()
+            {
                 d.set_message(t("Type the address of the start page (http:// or https://)").into());
                 return;
             }
             d.set_message(SharedString::new());
             let exts: Vec<String> = if d.get_template() == 6 {
-                d.get_exts().split_whitespace().map(|e| e.trim_start_matches('.').to_lowercase()).collect()
+                d.get_exts()
+                    .split_whitespace()
+                    .map(|e| e.trim_start_matches('.').to_lowercase())
+                    .collect()
             } else {
                 grabber::template_exts(d.get_template())
             };
@@ -231,7 +261,10 @@ pub(crate) fn wire(ui: &Ui) {
                 exclude: Vec::new(),
                 max_pages: 2000,
                 parallel: d.get_parallel().clamp(1, 10) as usize,
-                headers: RequestHeaders { auth: s.login_for(&start), ..Default::default() },
+                headers: RequestHeaders {
+                    auth: s.login_for(&start),
+                    ..Default::default()
+                },
                 user_agent: s.user_agent.clone(),
             };
             let progress = Arc::new(GrabProgress::default());
@@ -256,7 +289,10 @@ pub(crate) fn wire(ui: &Ui) {
             let client = ui.ctx.mgr.client();
             ui.ctx.rt.spawn(async move {
                 let sink = incoming.clone();
-                grabber::crawl(client, opts, progress, cancel, move |f| sink.lock().unwrap().push(f)).await;
+                grabber::crawl(client, opts, progress, cancel, move |f| {
+                    sink.lock().unwrap().push(f)
+                })
+                .await;
                 finished.store(true, Ordering::Relaxed);
             });
         });
@@ -267,7 +303,10 @@ pub(crate) fn wire(ui: &Ui) {
             if let Some(c) = ui.grab_state.borrow().cancel.clone() {
                 c.cancel();
             }
-            ui.grab_state.borrow().finished.store(true, Ordering::Relaxed);
+            ui.grab_state
+                .borrow()
+                .finished
+                .store(true, Ordering::Relaxed);
         });
     }
     {
@@ -303,7 +342,10 @@ pub(crate) fn wire(ui: &Ui) {
         let (w, mgr) = (d.as_weak(), ui.ctx.mgr.clone());
         d.on_browse(move || {
             let Some(d) = w.upgrade() else { return };
-            if let Some(dir) = crate::winfx::file_box().set_directory(mgr.settings().download_dir).pick_folder() {
+            if let Some(dir) = crate::winfx::file_box()
+                .set_directory(mgr.settings().download_dir)
+                .pick_folder()
+            {
                 d.set_folder(dir.display().to_string().into());
             }
         });
@@ -311,17 +353,30 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui = ui.clone();
         d.on_download(move || {
-            let Some(d) = ui.grabber.upgrade() else { return };
+            let Some(d) = ui.grabber.upgrade() else {
+                return;
+            };
             let (items, headers) = {
                 let g = ui.grab_state.borrow();
-                (g.all.iter().filter(|i| i.checked).cloned().collect::<Vec<_>>(), g.headers.clone())
+                (
+                    g.all
+                        .iter()
+                        .filter(|i| i.checked)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    g.headers.clone(),
+                )
             };
             if items.is_empty() {
                 d.set_message(t("Check the files you want first").into());
                 return;
             }
             let s = ui.ctx.mgr.settings();
-            let queue = s.queues.get(d.get_queue_index().max(0) as usize).map(|q| q.id).unwrap_or(MAIN_QUEUE);
+            let queue = s
+                .queues
+                .get(d.get_queue_index().max(0) as usize)
+                .map(|q| q.id)
+                .unwrap_or(MAIN_QUEUE);
             let folder = d.get_folder().trim().to_string();
             let use_text = d.get_use_text();
             let mut added = 0;

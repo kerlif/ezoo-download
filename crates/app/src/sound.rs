@@ -16,9 +16,16 @@ mod imp {
     use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
 
     pub fn play(path: &str) {
-        let wide: Vec<u16> = std::ffi::OsStr::new(path).encode_wide().chain(std::iter::once(0)).collect();
+        let wide: Vec<u16> = std::ffi::OsStr::new(path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
         unsafe {
-            PlaySoundW(wide.as_ptr(), std::ptr::null_mut(), SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+            PlaySoundW(
+                wide.as_ptr(),
+                std::ptr::null_mut(),
+                SND_FILENAME | SND_ASYNC | SND_NODEFAULT,
+            );
         }
     }
 }
@@ -28,7 +35,9 @@ mod imp {
     use std::process::{Command, Stdio};
 
     fn try_spawn(cmd: &mut Command) -> bool {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null()).stdin(Stdio::null());
+        cmd.stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null());
         cmd.spawn().is_ok()
     }
 

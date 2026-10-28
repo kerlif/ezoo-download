@@ -1,10 +1,10 @@
 //! The Scheduler window: every queue with its schedule, its files (in
 //! download order) and its options.
 
+use crate::i18n::{t, tf};
 use crate::open_window;
 use crate::*;
 use swiftget_engine::config::{parse_hhmm, QueueDef};
-use crate::i18n::{t, tf};
 
 #[derive(Default)]
 pub(crate) struct SchedState {
@@ -23,7 +23,10 @@ fn queue_rows(ui: &Ui) -> Vec<QueueRow> {
         .map(|q| QueueRow {
             id: q.id as i32,
             name: q.name.clone().into(),
-            count: views.iter().filter(|v| v.queue == Some(q.id) && v.status != Status::Completed).count() as i32,
+            count: views
+                .iter()
+                .filter(|v| v.queue == Some(q.id) && v.status != Status::Completed)
+                .count() as i32,
             running: ui.ctx.mgr.queue_running(q.id),
         })
         .collect()
@@ -52,8 +55,16 @@ fn fill_list(ui: &Ui, d: &SchedulerDialog) {
 
 fn select(ui: &Ui, d: &SchedulerDialog, id: u64) {
     let s = ui.ctx.mgr.settings();
-    let Some(q) = s.queue(id).cloned() else { return };
-    let index = ui.sched_state.borrow().queue_ids.iter().position(|x| *x == id).unwrap_or(0);
+    let Some(q) = s.queue(id).cloned() else {
+        return;
+    };
+    let index = ui
+        .sched_state
+        .borrow()
+        .queue_ids
+        .iter()
+        .position(|x| *x == id)
+        .unwrap_or(0);
     ui.sched_state.borrow_mut().current = Some(id);
     d.set_current(index as i32);
     d.set_is_main(id == MAIN_QUEUE);
@@ -79,7 +90,13 @@ fn select(ui: &Ui, d: &SchedulerDialog, id: u64) {
     d.set_stop_time(sc.stop_time.clone().into());
     d.set_parallel(q.max_parallel.clamp(1, 32) as i32);
     d.set_retries(q.retries.min(50) as i32);
-    d.set_folder(q.folder.as_ref().map(|p| p.display().to_string()).unwrap_or_default().into());
+    d.set_folder(
+        q.folder
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+            .into(),
+    );
     d.set_when_done(q.after_done.index());
     d.set_open_when_done(q.open_when_done);
     d.set_file_current(-1);
@@ -87,7 +104,9 @@ fn select(ui: &Ui, d: &SchedulerDialog, id: u64) {
 }
 
 fn fill_files(ui: &Ui, d: &SchedulerDialog) {
-    let Some(q) = ui.sched_state.borrow().current else { return };
+    let Some(q) = ui.sched_state.borrow().current else {
+        return;
+    };
     let files = ui.ctx.mgr.queue_files(q);
     let rows: Vec<PairRow> = files
         .iter()
@@ -96,7 +115,15 @@ fn fill_files(ui: &Ui, d: &SchedulerDialog) {
             b: v.total_size.map(fmt_size).unwrap_or_default().into(),
             c: match v.status {
                 Status::Downloading | Status::Paused if v.total_size.is_some() => {
-                    format!("{:.1}%  {}", v.progress() * 100.0, if v.status == Status::Paused { "" } else { "▶" })
+                    format!(
+                        "{:.1}%  {}",
+                        v.progress() * 100.0,
+                        if v.status == Status::Paused {
+                            ""
+                        } else {
+                            "▶"
+                        }
+                    )
                 }
                 other => t(other.label()),
             }
@@ -104,7 +131,8 @@ fn fill_files(ui: &Ui, d: &SchedulerDialog) {
         })
         .collect();
     let ids: Vec<u64> = files.iter().map(|v| v.id).collect();
-    let changed = ui.sched_state.borrow().file_ids != ids || d.get_files().row_count() != rows.len();
+    let changed =
+        ui.sched_state.borrow().file_ids != ids || d.get_files().row_count() != rows.len();
     ui.sched_state.borrow_mut().file_ids = ids;
     if changed {
         d.set_files(ModelRc::new(VecModel::from(rows)));
@@ -146,7 +174,10 @@ fn read(d: &SchedulerDialog, mut q: QueueDef) -> Result<QueueDef, String> {
         return Err(t("The stop time must look like 08:00"));
     }
     let date = d.get_once_date().trim().to_string();
-    if d.get_start_enabled() && d.get_once() && chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").is_err() {
+    if d.get_start_enabled()
+        && d.get_once()
+        && chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").is_err()
+    {
         return Err(t("The date must look like 2026-12-31"));
     }
     q.name = name;
@@ -154,7 +185,15 @@ fn read(d: &SchedulerDialog, mut q: QueueDef) -> Result<QueueDef, String> {
     q.schedule.start_time = start;
     q.schedule.once = d.get_once();
     q.schedule.once_date = date;
-    q.schedule.days = [d.get_d0(), d.get_d1(), d.get_d2(), d.get_d3(), d.get_d4(), d.get_d5(), d.get_d6()];
+    q.schedule.days = [
+        d.get_d0(),
+        d.get_d1(),
+        d.get_d2(),
+        d.get_d3(),
+        d.get_d4(),
+        d.get_d5(),
+        d.get_d6(),
+    ];
     q.schedule.on_startup = d.get_on_startup();
     q.schedule.stop_enabled = d.get_stop_enabled();
     q.schedule.stop_time = stop;
@@ -168,10 +207,19 @@ fn read(d: &SchedulerDialog, mut q: QueueDef) -> Result<QueueDef, String> {
 }
 
 fn apply(ui: &Ui) -> bool {
-    let Some(d) = ui.sched.upgrade() else { return false };
-    let Some(id) = ui.sched_state.borrow().current else { return false };
-    let Some(q) = ui.ctx.mgr.settings().queue(id).cloned() else { return false };
-    match read(&d, q).map_err(anyhow::Error::msg).and_then(|q| ui.ctx.mgr.update_queue(q)) {
+    let Some(d) = ui.sched.upgrade() else {
+        return false;
+    };
+    let Some(id) = ui.sched_state.borrow().current else {
+        return false;
+    };
+    let Some(q) = ui.ctx.mgr.settings().queue(id).cloned() else {
+        return false;
+    };
+    match read(&d, q)
+        .map_err(anyhow::Error::msg)
+        .and_then(|q| ui.ctx.mgr.update_queue(q))
+    {
         Ok(()) => {
             d.set_message(SharedString::new());
             fill_list(ui, &d);
@@ -212,8 +260,17 @@ pub(crate) fn delete_queue(ui: &Ui, id: u64) {
         message(&t("The main download queue can't be deleted."));
         return;
     }
-    let name = ui.ctx.mgr.settings().queue(id).map(|q| q.name.clone()).unwrap_or_default();
-    if !ask(&tf("Delete the queue “{}”?\nIts files move to the main download queue.", &[&name])) {
+    let name = ui
+        .ctx
+        .mgr
+        .settings()
+        .queue(id)
+        .map(|q| q.name.clone())
+        .unwrap_or_default();
+    if !ask(&tf(
+        "Delete the queue “{}”?\nIts files move to the main download queue.",
+        &[&name],
+    )) {
         return;
     }
     match ui.ctx.mgr.delete_queue(id) {
@@ -241,7 +298,12 @@ pub(crate) fn wire(ui: &Ui) {
         let ui = ui.clone();
         d.on_pick_queue(move |i| {
             let Some(d) = ui.sched.upgrade() else { return };
-            let id = ui.sched_state.borrow().queue_ids.get(i.max(0) as usize).copied();
+            let id = ui
+                .sched_state
+                .borrow()
+                .queue_ids
+                .get(i.max(0) as usize)
+                .copied();
             if let Some(id) = id {
                 select(&ui, &d, id);
             }
@@ -263,7 +325,10 @@ pub(crate) fn wire(ui: &Ui) {
         let (w, mgr) = (d.as_weak(), ui.ctx.mgr.clone());
         d.on_browse(move || {
             let Some(d) = w.upgrade() else { return };
-            if let Some(dir) = crate::winfx::file_box().set_directory(mgr.settings().download_dir).pick_folder() {
+            if let Some(dir) = crate::winfx::file_box()
+                .set_directory(mgr.settings().download_dir)
+                .pick_folder()
+            {
                 d.set_folder(dir.display().to_string().into());
             }
         });
@@ -271,7 +336,12 @@ pub(crate) fn wire(ui: &Ui) {
     let move_file = |ui: &Ui, delta: i32| {
         let Some(d) = ui.sched.upgrade() else { return };
         let i = d.get_file_current();
-        let id = ui.sched_state.borrow().file_ids.get(i.max(0) as usize).copied();
+        let id = ui
+            .sched_state
+            .borrow()
+            .file_ids
+            .get(i.max(0) as usize)
+            .copied();
         if let (true, Some(id)) = (i >= 0, id) {
             ui.ctx.mgr.move_in_queue(id, delta);
             fill_files(ui, &d);
@@ -291,7 +361,12 @@ pub(crate) fn wire(ui: &Ui) {
         d.on_file_remove(move || {
             let Some(d) = ui.sched.upgrade() else { return };
             let i = d.get_file_current();
-            let id = ui.sched_state.borrow().file_ids.get(i.max(0) as usize).copied();
+            let id = ui
+                .sched_state
+                .borrow()
+                .file_ids
+                .get(i.max(0) as usize)
+                .copied();
             if let (true, Some(id)) = (i >= 0, id) {
                 ui.ctx.mgr.set_queue(id, None);
                 d.set_file_current(-1);

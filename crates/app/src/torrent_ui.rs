@@ -20,13 +20,22 @@ pub(crate) fn open_source(source: &str) {
 }
 
 pub(crate) fn open(ui: &Ui, source: Option<&str>) {
-    let Some(d) = ui.torrent.upgrade() else { return };
+    let Some(d) = ui.torrent.upgrade() else {
+        return;
+    };
     match source {
         Some(s) => d.set_source(s.into()),
         None if !d.window().is_visible() => {
             // a magnet link in the clipboard is the likely one
-            let clip = arboard::Clipboard::new().ok().and_then(|mut c| c.get_text().ok()).unwrap_or_default();
-            d.set_source(if torrent::is_magnet(&clip) { clip.trim().into() } else { SharedString::new() });
+            let clip = arboard::Clipboard::new()
+                .ok()
+                .and_then(|mut c| c.get_text().ok())
+                .unwrap_or_default();
+            d.set_source(if torrent::is_magnet(&clip) {
+                clip.trim().into()
+            } else {
+                SharedString::new()
+            });
         }
         None => {}
     }
@@ -36,23 +45,36 @@ pub(crate) fn open(ui: &Ui, source: Option<&str>) {
 }
 
 fn checked_text(rows: &VecModel<LinkRow>) -> String {
-    let n = (0..rows.row_count()).filter_map(|i| rows.row_data(i)).filter(|r| r.checked).count();
+    let n = (0..rows.row_count())
+        .filter_map(|i| rows.row_data(i))
+        .filter(|r| r.checked)
+        .count();
     tf("{} of {} files checked", &[&n, &rows.row_count()])
 }
 
 /// "1,3,4": the torrent's numbers of the checked files (kept in each row's
 /// `text`), `None` when all are checked.
 fn selection(rows: &VecModel<LinkRow>) -> Option<String> {
-    let all: Vec<LinkRow> = (0..rows.row_count()).filter_map(|i| rows.row_data(i)).collect();
+    let all: Vec<LinkRow> = (0..rows.row_count())
+        .filter_map(|i| rows.row_data(i))
+        .collect();
     if all.iter().all(|r| r.checked) {
         return None;
     }
-    Some(all.iter().filter(|r| r.checked).map(|r| r.text.to_string()).collect::<Vec<_>>().join(","))
+    Some(
+        all.iter()
+            .filter(|r| r.checked)
+            .map(|r| r.text.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    )
 }
 
 pub(crate) fn wire(ui: &Ui) {
     OPENER.with(|o| *o.borrow_mut() = Some(ui.clone()));
-    let Some(d) = ui.torrent.upgrade() else { return };
+    let Some(d) = ui.torrent.upgrade() else {
+        return;
+    };
     let rows = ui.torrent_rows.clone();
     d.set_files(ModelRc::from(rows.clone()));
     {
@@ -66,7 +88,11 @@ pub(crate) fn wire(ui: &Ui) {
             let settings = mgr.settings();
             if torrent::is_magnet(&src) {
                 d.set_magnet(true);
-                d.set_name(torrent::magnet_name(&src).unwrap_or_else(|| t("Magnet link")).into());
+                d.set_name(
+                    torrent::magnet_name(&src)
+                        .unwrap_or_else(|| t("Magnet link"))
+                        .into(),
+                );
                 d.set_info(t("The file list comes from the other computers when it starts").into());
                 d.set_checked_text(SharedString::new());
                 if d.get_folder().is_empty() {
@@ -86,7 +112,10 @@ pub(crate) fn wire(ui: &Ui) {
                 }
                 return;
             }
-            let info = match std::fs::read(&src).map_err(anyhow::Error::from).and_then(|b| torrent::parse_torrent(&b)) {
+            let info = match std::fs::read(&src)
+                .map_err(anyhow::Error::from)
+                .and_then(|b| torrent::parse_torrent(&b))
+            {
                 Ok(i) => i,
                 Err(e) => {
                     d.set_message(tf("This .torrent file can't be read: {}", &[&e]).into());
@@ -94,7 +123,13 @@ pub(crate) fn wire(ui: &Ui) {
                 }
             };
             d.set_name(info.name.clone().into());
-            d.set_info(tf("{} in {} files", &[&fmt_size(info.total), &info.files.len()]).into());
+            d.set_info(
+                tf(
+                    "{} in {} files",
+                    &[&fmt_size(info.total), &info.files.len()],
+                )
+                .into(),
+            );
             rows.set_vec(
                 info.files
                     .iter()
@@ -111,7 +146,13 @@ pub(crate) fn wire(ui: &Ui) {
             d.set_checked_text(checked_text(&rows).into());
             // the folder of what it mostly is (a film: Video)
             if let Some(big) = info.files.iter().max_by_key(|f| f.size) {
-                d.set_folder(settings.dir_for(&settings.category_of(&big.path, "")).display().to_string().into());
+                d.set_folder(
+                    settings
+                        .dir_for(&settings.category_of(&big.path, ""))
+                        .display()
+                        .to_string()
+                        .into(),
+                );
             }
         });
     }
@@ -121,7 +162,10 @@ pub(crate) fn wire(ui: &Ui) {
             let Some(d) = w.upgrade() else { return };
             // on top of this window, which waits for it
             d.set_front(false);
-            if let Some(p) = crate::winfx::on_top_of(crate::winfx::file_box(), d.window()).add_filter("Torrent", &["torrent"]).pick_file() {
+            if let Some(p) = crate::winfx::on_top_of(crate::winfx::file_box(), d.window())
+                .add_filter("Torrent", &["torrent"])
+                .pick_file()
+            {
                 d.set_source(p.display().to_string().into());
                 d.invoke_load();
             }
@@ -156,7 +200,10 @@ pub(crate) fn wire(ui: &Ui) {
         d.on_browse(move || {
             let Some(d) = w.upgrade() else { return };
             d.set_front(false);
-            if let Some(dir) = crate::winfx::on_top_of(crate::winfx::file_box(), d.window()).set_directory(d.get_folder().as_str()).pick_folder() {
+            if let Some(dir) = crate::winfx::on_top_of(crate::winfx::file_box(), d.window())
+                .set_directory(d.get_folder().as_str())
+                .pick_folder()
+            {
                 d.set_folder(dir.display().to_string().into());
             }
         });
@@ -214,7 +261,11 @@ mod tests {
     use super::*;
 
     fn row(checked: bool, index: usize) -> LinkRow {
-        LinkRow { checked, text: index.to_string().into(), ..Default::default() }
+        LinkRow {
+            checked,
+            text: index.to_string().into(),
+            ..Default::default()
+        }
     }
 
     #[test]

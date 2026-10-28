@@ -9,7 +9,7 @@
 # hicolor icons, AppStream metadata and the browser extension sources.
 
 Name:           ezoo-download
-Version:        1.0.7
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Download manager with multi-connection segmented downloads
 License:        MIT

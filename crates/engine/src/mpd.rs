@@ -70,7 +70,10 @@ struct El {
 
 impl El {
     fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
     fn attr_u64(&self, name: &str) -> Option<u64> {
         self.attr(name)?.trim().parse().ok()
@@ -159,7 +162,9 @@ fn parse_xml(src: &str) -> anyhow::Result<El> {
             if s[i..].starts_with("</") {
                 let end = s[i..].find('>').ok_or_else(|| anyhow!("broken XML tag"))?;
                 let name = s[i + 2..i + end].trim();
-                let el = stack.pop().ok_or_else(|| anyhow!("XML: unexpected </{name}>"))?;
+                let el = stack
+                    .pop()
+                    .ok_or_else(|| anyhow!("XML: unexpected </{name}>"))?;
                 if !name.is_empty() && el.name != name && !el.name.ends_with(name) {
                     bail!("XML: <{}> closed by </{}>", el.name, name);
                 }
@@ -182,7 +187,12 @@ fn parse_xml(src: &str) -> anyhow::Result<El> {
                 None => (inner, ""),
             };
             let name = name.rsplit(':').next().unwrap_or(name).to_string();
-            let el = El { name, attrs: parse_attrs_str(rest), children: Vec::new(), text: String::new() };
+            let el = El {
+                name,
+                attrs: parse_attrs_str(rest),
+                children: Vec::new(),
+                text: String::new(),
+            };
             if self_closing {
                 match stack.last_mut() {
                     Some(p) => p.children.push(el),
@@ -227,7 +237,10 @@ fn parse_attrs_str(s: &str) -> Vec<(String, String)> {
         let (value, next) = if i < b.len() && (b[i] == b'"' || b[i] == b'\'') {
             let q = b[i];
             let start = i + 1;
-            let end = s[start..].find(q as char).map(|p| start + p).unwrap_or(b.len());
+            let end = s[start..]
+                .find(q as char)
+                .map(|p| start + p)
+                .unwrap_or(b.len());
             (unescape(&s[start..end]), end + 1)
         } else {
             let start = i;
@@ -319,13 +332,7 @@ fn join_chain(bases: &[String], rel: &str) -> anyhow::Result<String> {
 }
 
 /// Expand the `$…$` tokens of a SegmentTemplate URL.
-fn expand_template(
-    tpl: &str,
-    id: &str,
-    bandwidth: u64,
-    number: u64,
-    time: u64,
-) -> String {
+fn expand_template(tpl: &str, id: &str, bandwidth: u64, number: u64, time: u64) -> String {
     let mut out = String::with_capacity(tpl.len() + 16);
     let b = tpl.as_bytes();
     let mut i = 0;
@@ -341,7 +348,9 @@ fn expand_template(
             i += 2;
             continue;
         }
-        let Some(end) = tpl[i + 1..].find('$') else { break };
+        let Some(end) = tpl[i + 1..].find('$') else {
+            break;
+        };
         let token = &tpl[i + 1..i + 1 + end];
         let (name, width) = match token.find('%') {
             Some(p) => (&token[..p], Some(&token[p..])),
@@ -351,7 +360,15 @@ fn expand_template(
             "RepresentationID" => id.to_string(),
             "Bandwidth" => bandwidth.to_string(),
             "Number" => match width {
-                Some(w) => format!("{:0width$}", number, width = w.trim_start_matches('%').trim_end_matches('d').parse::<usize>().unwrap_or(1)),
+                Some(w) => format!(
+                    "{:0width$}",
+                    number,
+                    width = w
+                        .trim_start_matches('%')
+                        .trim_end_matches('d')
+                        .parse::<usize>()
+                        .unwrap_or(1)
+                ),
                 None => number.to_string(),
             },
             "Time" => time.to_string(),
@@ -398,7 +415,11 @@ fn read_template(el: &El, into: &mut Template) {
             .children_named("S")
             .filter_map(|s| {
                 let d = s.attr_u64("d")?;
-                Some((s.attr_u64("t").unwrap_or(0), d, s.attr("r").and_then(|r| r.trim().parse().ok()).unwrap_or(0)))
+                Some((
+                    s.attr_u64("t").unwrap_or(0),
+                    d,
+                    s.attr("r").and_then(|r| r.trim().parse().ok()).unwrap_or(0),
+                ))
             })
             .collect();
     }
@@ -420,7 +441,10 @@ fn representation_segments(
     let height = rep.attr_u64("height").unwrap_or(0) as u32;
     let codecs = rep.attr("codecs").unwrap_or("").to_string();
     let mime = rep.attr("mimeType").or(aset.attr("mimeType")).unwrap_or("");
-    let ctype = rep.attr("contentType").or(aset.attr("contentType")).unwrap_or("");
+    let ctype = rep
+        .attr("contentType")
+        .or(aset.attr("contentType"))
+        .unwrap_or("");
     let is_video = if !ctype.is_empty() {
         ctype.starts_with("video")
     } else if !mime.is_empty() {
@@ -431,7 +455,11 @@ fn representation_segments(
 
     // this level's BaseURL, if any
     let mut bases: Vec<String> = bases.to_vec();
-    if let Some(b) = rep.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+    if let Some(b) = rep
+        .child("BaseURL")
+        .map(El::text_of)
+        .filter(|s| !s.is_empty())
+    {
         bases.push(b);
     }
     let deepest = bases.last().cloned().unwrap_or_default();
@@ -441,7 +469,10 @@ fn representation_segments(
         for cp in scope.children_named("ContentProtection") {
             if let Some(scheme) = cp.attr("schemeIdUri").or(cp.attr("value")) {
                 if drm_scheme(scheme) {
-                    bail!("this stream is DRM protected ({}) and cannot be downloaded", scheme);
+                    bail!(
+                        "this stream is DRM protected ({}) and cannot be downloaded",
+                        scheme
+                    );
                 }
             }
         }
@@ -479,7 +510,10 @@ fn representation_segments(
                 });
             }
         }
-    } else if let Some(t) = rep.child("SegmentTemplate").or(aset.child("SegmentTemplate")) {
+    } else if let Some(t) = rep
+        .child("SegmentTemplate")
+        .or(aset.child("SegmentTemplate"))
+    {
         // a template that only lives on the representation, not inherited
         let mut own = tpl_base.clone();
         read_template(t, &mut own);
@@ -513,9 +547,14 @@ fn representation_segments(
                 };
                 for k in 0..count {
                     let time = t0 + k * d;
-                    let url = media_url.as_deref().ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
+                    let url = media_url
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
                     segments.push(Segment {
-                        url: join_chain(&bases, &expand_template(url, &id, bandwidth, number, time))?,
+                        url: join_chain(
+                            &bases,
+                            &expand_template(url, &id, bandwidth, number, time),
+                        )?,
                         range: None,
                     });
                     number += 1;
@@ -537,9 +576,14 @@ fn representation_segments(
                 .unwrap_or(0);
             for k in 0..count.min(crate::m3u8::MAX_PARTS as u64) {
                 let time = pto + k * duration;
-                let url = media_url.as_deref().ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
+                let url = media_url
+                    .as_deref()
+                    .ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
                 segments.push(Segment {
-                    url: join_chain(&bases, &expand_template(url, &id, bandwidth, start_number + k, time))?,
+                    url: join_chain(
+                        &bases,
+                        &expand_template(url, &id, bandwidth, start_number + k, time),
+                    )?,
                     range: None,
                 });
             }
@@ -555,15 +599,24 @@ fn representation_segments(
             .child("Initialization")
             .and_then(|i| i.attr("range"))
             .and_then(parse_range)
-            .map(|range| Segment { url: rep_url.clone(), range: Some(range) });
-        segments.push(Segment { url: rep_url, range: None });
+            .map(|range| Segment {
+                url: rep_url.clone(),
+                range: Some(range),
+            });
+        segments.push(Segment {
+            url: rep_url,
+            range: None,
+        });
     } else {
         // no segmentation at all: the BaseURL is the file (a plain .mp4)
         let rep_url = deepest;
         if rep_url.is_empty() {
             bail!("the representation has no URL and no segments");
         }
-        segments.push(Segment { url: rep_url, range: None });
+        segments.push(Segment {
+            url: rep_url,
+            range: None,
+        });
     }
 
     let _ = timescale; // (used through the segment counts computed above)
@@ -574,7 +627,16 @@ fn representation_segments(
     if segments.len() > crate::m3u8::MAX_PARTS {
         bail!("the stream has too many parts");
     }
-    Ok(Track { id, is_video, bandwidth, width, height, codecs, init, segments })
+    Ok(Track {
+        id,
+        is_video,
+        bandwidth,
+        width,
+        height,
+        codecs,
+        init,
+        segments,
+    })
 }
 
 /// Parse the text of an .mpd manifest. `manifest_url` resolves relative
@@ -601,7 +663,11 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
         .unwrap_or(0.0);
 
     let mut bases: Vec<String> = Vec::new();
-    if let Some(b) = root.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+    if let Some(b) = root
+        .child("BaseURL")
+        .map(El::text_of)
+        .filter(|s| !s.is_empty())
+    {
         bases.push(b);
     } else {
         bases.push(manifest_url.to_string());
@@ -611,7 +677,11 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
         bail!("the manifest has no Period");
     };
     let mut p_bases = bases.clone();
-    if let Some(b) = period.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+    if let Some(b) = period
+        .child("BaseURL")
+        .map(El::text_of)
+        .filter(|s| !s.is_empty())
+    {
         p_bases.push(b);
     }
     let period_seconds = period
@@ -622,7 +692,11 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
     let mut manifest = Manifest::default();
     for aset in period.children_named("AdaptationSet") {
         let mut a_bases = p_bases.clone();
-        if let Some(b) = aset.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+        if let Some(b) = aset
+            .child("BaseURL")
+            .map(El::text_of)
+            .filter(|s| !s.is_empty())
+        {
             a_bases.push(b);
         }
         let mut tpl = Template::default();
@@ -687,7 +761,10 @@ async fn fetch_bytes(shared: &Shared, job: &MpdJob, seg: &Segment) -> anyhow::Re
 }
 
 async fn fetch_text(shared: &Shared, job: &MpdJob, url: &str) -> anyhow::Result<String> {
-    let seg = Segment { url: url.to_string(), range: None };
+    let seg = Segment {
+        url: url.to_string(),
+        range: None,
+    };
     let b = fetch_bytes(shared, job, &seg).await?;
     Ok(String::from_utf8_lossy(&b).into_owned())
 }
@@ -715,17 +792,23 @@ async fn download_track(
     if let Some(init) = &track.init {
         let path = init_file(&job.temp_dir, prefix);
         if !path.exists() {
-            let data = fetch_bytes(&shared, &job, init).await.context("could not load the init segment")?;
+            let data = fetch_bytes(&shared, &job, init)
+                .await
+                .context("could not load the init segment")?;
             shared.limiter.acquire(data.len()).await;
             job.limiter.acquire(data.len()).await;
             let tmp = path.with_extension("tmp");
             std::fs::write(&tmp, &data)?;
             std::fs::rename(&tmp, &path)?;
-            progress.bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+            progress
+                .bytes
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
         }
         progress.parts_done.fetch_add(1, Ordering::Relaxed);
     }
-    progress.parts_total.fetch_add(track.segments.len() as u32, Ordering::Relaxed);
+    progress
+        .parts_total
+        .fetch_add(track.segments.len() as u32, Ordering::Relaxed);
 
     // count what is already on the disk (resume)
     let mut done_bytes = 0u64;
@@ -789,7 +872,8 @@ async fn download_track(
                             if attempt > job.retries {
                                 return Err(e);
                             }
-                            tokio::time::sleep(Duration::from_secs((attempt as u64 * 2).min(20))).await;
+                            tokio::time::sleep(Duration::from_secs((attempt as u64 * 2).min(20)))
+                                .await;
                         }
                     }
                 }
@@ -798,7 +882,9 @@ async fn download_track(
     }
     let mut first_error = None;
     while let Some(r) = set.join_next().await {
-        let r = r.map_err(|e| anyhow!("worker crashed: {e}")).and_then(|r| r);
+        let r = r
+            .map_err(|e| anyhow!("worker crashed: {e}"))
+            .and_then(|r| r);
         if let Err(e) = r {
             if first_error.is_none() && !cancel.is_cancelled() {
                 first_error = Some(e);
@@ -815,7 +901,13 @@ async fn download_track(
 
     // join init + segments into one file
     let temp_dir = job.temp_dir.clone();
-    let out = if prefix == "v" { job.video_out.clone() } else { job.audio_out.clone().unwrap_or_else(|| job.video_out.clone()) };
+    let out = if prefix == "v" {
+        job.video_out.clone()
+    } else {
+        job.audio_out
+            .clone()
+            .unwrap_or_else(|| job.video_out.clone())
+    };
     let has_init = track.init.is_some();
     let total = segments.len();
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
@@ -846,7 +938,9 @@ pub async fn run(
     cancel: CancellationToken,
 ) -> anyhow::Result<bool> {
     let job = Arc::new(job);
-    let text = fetch_text(&shared, &job, &job.url).await.context("could not load the manifest")?;
+    let text = fetch_text(&shared, &job, &job.url)
+        .await
+        .context("could not load the manifest")?;
     let manifest = parse(&job.url, &text)?;
     let (video, audio) = manifest.best();
     let video = video.ok_or_else(|| anyhow!("the manifest has no video track"))?;
@@ -855,7 +949,15 @@ pub async fn run(
     let temp_dir = job.temp_dir.clone();
 
     // two tracks share one temp folder, so each keeps its own prefix
-    download_track(shared.clone(), job.clone(), video.clone(), "v", progress.clone(), cancel.clone()).await?;
+    download_track(
+        shared.clone(),
+        job.clone(),
+        video.clone(),
+        "v",
+        progress.clone(),
+        cancel.clone(),
+    )
+    .await?;
     if let Some(audio) = audio.cloned() {
         download_track(shared, job, audio, "a", progress, cancel).await?;
     }
@@ -895,11 +997,20 @@ mod tests {
     #[test]
     fn tokens_expand() {
         assert_eq!(
-            expand_template("$RepresentationID$/seg-$Number%05d$.m4s", "1080p", 100, 42, 0),
+            expand_template(
+                "$RepresentationID$/seg-$Number%05d$.m4s",
+                "1080p",
+                100,
+                42,
+                0
+            ),
             "1080p/seg-00042.m4s"
         );
         assert_eq!(expand_template("a$$b$Bandwidth$", "x", 800, 1, 0), "a$b800");
-        assert_eq!(expand_template("$Time$-$Unknown$.mp4", "x", 1, 2, 3000), "3000-$Unknown$.mp4");
+        assert_eq!(
+            expand_template("$Time$-$Unknown$.mp4", "x", 1, 2, 3000),
+            "3000-$Unknown$.mp4"
+        );
     }
 
     #[test]
@@ -909,10 +1020,19 @@ mod tests {
         let (v, a) = m.best();
         let v = v.unwrap();
         assert_eq!(v.id, "1080p");
-        assert_eq!(v.init.as_ref().unwrap().url, "https://cdn.example/video/1080p/init.mp4");
+        assert_eq!(
+            v.init.as_ref().unwrap().url,
+            "https://cdn.example/video/1080p/init.mp4"
+        );
         assert_eq!(v.segments.len(), 16); // 64 s / 4 s
-        assert_eq!(v.segments[0].url, "https://cdn.example/video/1080p/seg-00001.m4s");
-        assert_eq!(v.segments[15].url, "https://cdn.example/video/1080p/seg-00016.m4s");
+        assert_eq!(
+            v.segments[0].url,
+            "https://cdn.example/video/1080p/seg-00001.m4s"
+        );
+        assert_eq!(
+            v.segments[15].url,
+            "https://cdn.example/video/1080p/seg-00016.m4s"
+        );
         let a = a.unwrap();
         assert_eq!(a.segments.len(), 16); // 192000/48000 = 4 s per part
         assert_eq!(a.segments[0].url, "https://cdn.example/video/audio-1.m4s");

@@ -51,7 +51,32 @@ Verified by reading code; each item is re-checked after every phase.
 - HLS handling: `crates/engine/src/m3u8.rs` (`best_variant`, `parse_media`, `parse_attrs`) and `crates/engine/src/hls.rs` (segment download, AES-128 `decrypt()`).
 - Font loading: `crates/app/src/fonts.rs` (`install()`, `write_font()` per OS) + `ui/fonts/FONTS-LICENSE.txt`.
 - Segment engine primitives (already present): `crates/engine/src/segments.rs` — `plan()`, `downloaded()`, `all_finished()`, `claim_work()`, `split_largest()`; per-host connection memory via `settings.connections_for()` in `manager.rs` (line 1214/1254); hard ceiling 32 connections (`manager.rs` line 359).
-- Promotional/donation strings: audit in progress (parallel investigation; results feed Phase 2). Known pointer: `crates/app/ui/instapay-qr.png` is referenced from UI code — purpose to be confirmed by the audit.
+- Promotional/donation strings: audit COMPLETE (2026-10-28, read-only).
+  Surface is small and concentrated: 2 dialogs in `crates/app/ui/dialogs.slint`
+  (AboutDialog lines 3756–3790, WhatsNewDialog lines 3892–3930) fed by 5 live
+  English source strings, translated into all 7 non-English locales, plus 2
+  orphan legacy donation strings with no live caller. Total: **100 text/code
+  occurrences** (15 `dialogs.slint` lines + 1 `extra.rs` comment + 1 `i18n.rs`
+  entry + 35 `.po` entries + 5 live `ar_ui.py` keys + 30 live `ui/*.json`
+  keys + 1 orphan `ar_ui.py` key + 6 orphan `ui/*.json` keys + 6 orphan
+  `rs/*.json` keys) **plus 1 binary asset** (`crates/app/ui/instapay-qr.png`,
+  300×300, 69,674 bytes — InstaPay payment QR for `a7medek@instapay`; payload
+  never decoded on this VM, purpose conclusive from caption + adjacent links).
+  Only payment destinations in the tree: PayPal `paypalme/ahmedezzat99` and
+  InstaPay `ipn.eg/S/a7medek/instapay/1pmCQ7` (both the original author's).
+  ZERO promo in extension, website, README, installer, packaging. No
+  buymeacoffee/patreon/ko-fi/sponsor/promo/nag/donat* anywhere. No
+  donation timer/nag: What's New auto-shows once per version upgrade
+  (`main.rs:499-516`, `extra.rs:384-406`) and carries the donation block —
+  removing the block neutralises the path; the version gate itself is
+  legitimate. Translation pipeline: `.slint` `@tr()` → `ar_ui.py` +
+  `ui/*.json` → `make_po.py` → `.po` files; `.po` files must be regenerated
+  after cleaning the tables. The 3 existing `docs/screenshots/*.png` were
+  visually checked 2026-10-28: main window / Add dialog only, no donation
+  content. Decision (recorded in `docs/OPEN-QUESTIONS.md`): the AboutDialog
+  YouTube/Facebook author-channel buttons are promotional UI and are removed
+  in Phase 2; the "Coded by Ahmed Ezzat" text credit, all textual credits,
+  upstream links, and installer publisher metadata are kept.
 
 ## 4. Wayland dialog bug — root-cause diagnosis (proven from vendored sources)
 

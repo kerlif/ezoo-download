@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Ezoo Download — Linux build (deb + AppImage + rpm)
 # Usage:  ./packaging/linux/build-linux.sh [deb|appimage|rpm|all]
-# Result: dist/EzooDownload_1.0.7_amd64.deb
-#         dist/EzooDownload-1.0.7-x86_64.AppImage
-#         dist/ezoo-download-1.0.7-1.x86_64.rpm
+# Result: dist/EzooDownload_1.1.0_amd64.deb
+#         dist/EzooDownload-1.1.0-x86_64.AppImage
+#         dist/ezoo-download-1.1.0-1.x86_64.rpm
 #
 # Environment:
 #   SKIP_CARGO_BUILD=1  reuse target/release/EzooDownload, do not rebuild

@@ -6,13 +6,20 @@ use crate::*;
 
 use crate::i18n::{t, tf};
 
-const QUALITIES: [&str; 9] = ["best", "2160", "1440", "1080", "720", "480", "360", "audio", "mp3"];
+const QUALITIES: [&str; 9] = [
+    "best", "2160", "1440", "1080", "720", "480", "360", "audio", "mp3",
+];
 
 pub(crate) fn open(ui: &Ui) {
-    let Some(d) = ui.playlist.upgrade() else { return };
+    let Some(d) = ui.playlist.upgrade() else {
+        return;
+    };
     if !d.window().is_visible() {
         // a playlist address in the clipboard is the likely one
-        let clip = arboard::Clipboard::new().ok().and_then(|mut c| c.get_text().ok()).unwrap_or_default();
+        let clip = arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut c| c.get_text().ok())
+            .unwrap_or_default();
         let clip = clip.trim();
         if clip.contains("list=") || clip.contains("/playlist") || clip.contains("/@") {
             d.set_url(clip.into());
@@ -26,7 +33,9 @@ pub(crate) fn open(ui: &Ui) {
 /// The browser's "Download all" on a playlist page: the window with that
 /// list, already looking up its videos.
 pub(crate) fn open_url(ui: &Ui, url: &str) {
-    let Some(d) = ui.playlist.upgrade() else { return };
+    let Some(d) = ui.playlist.upgrade() else {
+        return;
+    };
     d.set_url(url.into());
     d.set_message(SharedString::new());
     open_window!(d);
@@ -47,12 +56,17 @@ fn fmt_len(secs: u64) -> String {
 }
 
 fn checked_text(rows: &VecModel<LinkRow>) -> String {
-    let n = (0..rows.row_count()).filter_map(|i| rows.row_data(i)).filter(|r| r.checked).count();
+    let n = (0..rows.row_count())
+        .filter_map(|i| rows.row_data(i))
+        .filter(|r| r.checked)
+        .count();
     tf("{} of {} videos checked", &[&n, &rows.row_count()])
 }
 
 pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.playlist.upgrade() else { return };
+    let Some(d) = ui.playlist.upgrade() else {
+        return;
+    };
     let rows = ui.playlist_rows.clone();
     d.set_entries(ModelRc::from(rows.clone()));
     {
@@ -92,7 +106,9 @@ pub(crate) fn wire(ui: &Ui) {
                                     url: e.url.clone().into(),
                                 })
                                 .collect();
-                            if let Some(m) = d.get_entries().as_any().downcast_ref::<VecModel<LinkRow>>() {
+                            if let Some(m) =
+                                d.get_entries().as_any().downcast_ref::<VecModel<LinkRow>>()
+                            {
                                 m.set_vec(list);
                                 d.set_checked_text(checked_text(m).into());
                             }
@@ -101,7 +117,13 @@ pub(crate) fn wire(ui: &Ui) {
                             let folder = base.join(filename::sanitize(&p.title));
                             d.set_folder(folder.display().to_string().into());
                         }
-                        Err(e) => d.set_status(tf("Could not get the list: {}", &[&crate::err_text(&format!("{e:#}"))]).into()),
+                        Err(e) => d.set_status(
+                            tf(
+                                "Could not get the list: {}",
+                                &[&crate::err_text(&format!("{e:#}"))],
+                            )
+                            .into(),
+                        ),
                     }
                 });
             });
@@ -145,9 +167,13 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui = ui.clone();
         d.on_download(move || {
-            let Some(d) = ui.playlist.upgrade() else { return };
-            let chosen: Vec<LinkRow> =
-                (0..ui.playlist_rows.row_count()).filter_map(|i| ui.playlist_rows.row_data(i)).filter(|r| r.checked).collect();
+            let Some(d) = ui.playlist.upgrade() else {
+                return;
+            };
+            let chosen: Vec<LinkRow> = (0..ui.playlist_rows.row_count())
+                .filter_map(|i| ui.playlist_rows.row_data(i))
+                .filter(|r| r.checked)
+                .collect();
             if chosen.is_empty() {
                 d.set_message(t("Check the videos you want first").into());
                 return;
@@ -158,12 +184,25 @@ pub(crate) fn wire(ui: &Ui) {
                 return;
             }
             let folder = PathBuf::from(folder);
-            let quality = QUALITIES[d.get_quality().clamp(0, QUALITIES.len() as i32 - 1) as usize].to_string();
-            let ext = match quality.as_str() { "audio" => "m4a", "mp3" => "mp3", _ => "mp4" };
+            let quality = QUALITIES[d.get_quality().clamp(0, QUALITIES.len() as i32 - 1) as usize]
+                .to_string();
+            let ext = match quality.as_str() {
+                "audio" => "m4a",
+                "mp3" => "mp3",
+                _ => "mp4",
+            };
             let title = d.get_playlist_title().to_string();
             // its own queue: N videos at a time, all into the folder
-            let name = if title.trim().is_empty() { "Playlist".to_string() } else { title.trim().chars().take(60).collect() };
-            let queue = match ui.ctx.mgr.add_queue(&name, d.get_parallel().clamp(1, 8) as u32, Some(folder.clone())) {
+            let name = if title.trim().is_empty() {
+                "Playlist".to_string()
+            } else {
+                title.trim().chars().take(60).collect()
+            };
+            let queue = match ui.ctx.mgr.add_queue(
+                &name,
+                d.get_parallel().clamp(1, 8) as u32,
+                Some(folder.clone()),
+            ) {
                 Ok(q) => q,
                 Err(e) => {
                     d.set_message(format!("{e:#}").into());

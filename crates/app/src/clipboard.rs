@@ -32,7 +32,9 @@ pub fn downloadable_url_with(text: &str, own: &[String]) -> Option<String> {
     }
     let path = u.path().to_ascii_lowercase();
     let ext = path.rsplit('.').next()?;
-    if path.contains('.') && (EXTENSIONS.contains(&ext) || own.iter().any(|e| e.eq_ignore_ascii_case(ext))) {
+    if path.contains('.')
+        && (EXTENSIONS.contains(&ext) || own.iter().any(|e| e.eq_ignore_ascii_case(ext)))
+    {
         Some(t.to_string())
     } else {
         None
@@ -48,7 +50,9 @@ pub fn spawn(
     std::thread::Builder::new()
         .name("ezoo-clipboard".into())
         .spawn(move || {
-            let Ok(mut clip) = arboard::Clipboard::new() else { return };
+            let Ok(mut clip) = arboard::Clipboard::new() else {
+                return;
+            };
             // ignore whatever was already copied before we started
             let mut last = clip.get_text().unwrap_or_default();
             loop {
@@ -75,11 +79,17 @@ mod tests {
 
     #[test]
     fn links_in_the_clipboard() {
-        assert_eq!(downloadable_url("https://example.com/file.zip").as_deref(), Some("https://example.com/file.zip"));
+        assert_eq!(
+            downloadable_url("https://example.com/file.zip").as_deref(),
+            Some("https://example.com/file.zip")
+        );
         assert_eq!(downloadable_url("https://example.com/index.html"), None);
         assert_eq!(downloadable_url("two words"), None);
         let own = vec!["xyz".to_string()];
-        assert_eq!(downloadable_url_with("https://example.com/a.XYZ", &own).as_deref(), Some("https://example.com/a.XYZ"));
+        assert_eq!(
+            downloadable_url_with("https://example.com/a.XYZ", &own).as_deref(),
+            Some("https://example.com/a.XYZ")
+        );
         assert_eq!(downloadable_url("https://example.com/a.xyz"), None);
     }
 }

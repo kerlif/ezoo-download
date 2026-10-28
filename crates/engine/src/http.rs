@@ -65,15 +65,28 @@ pub fn is_network_error(e: &anyhow::Error) -> bool {
             return true;
         }
         if let Some(r) = c.downcast_ref::<reqwest::Error>() {
-            return r.status().is_none() && !r.is_builder() && !r.is_redirect()
-                && (r.is_connect() || r.is_timeout() || r.is_request() || r.is_body() || r.is_decode());
+            return r.status().is_none()
+                && !r.is_builder()
+                && !r.is_redirect()
+                && (r.is_connect()
+                    || r.is_timeout()
+                    || r.is_request()
+                    || r.is_body()
+                    || r.is_decode());
         }
         if let Some(io) = c.downcast_ref::<std::io::Error>() {
             return matches!(
                 io.kind(),
-                K::ConnectionReset | K::ConnectionAborted | K::ConnectionRefused | K::NotConnected
-                    | K::TimedOut | K::BrokenPipe | K::UnexpectedEof | K::HostUnreachable
-                    | K::NetworkUnreachable | K::NetworkDown
+                K::ConnectionReset
+                    | K::ConnectionAborted
+                    | K::ConnectionRefused
+                    | K::NotConnected
+                    | K::TimedOut
+                    | K::BrokenPipe
+                    | K::UnexpectedEof
+                    | K::HostUnreachable
+                    | K::NetworkUnreachable
+                    | K::NetworkDown
             );
         }
         false
@@ -82,7 +95,8 @@ pub fn is_network_error(e: &anyhow::Error) -> bool {
 
 /// The server's status code, if the error is one.
 pub fn http_status_of(e: &anyhow::Error) -> Option<u16> {
-    e.chain().find_map(|c| c.downcast_ref::<HttpStatus>().map(|s| s.0))
+    e.chain()
+        .find_map(|c| c.downcast_ref::<HttpStatus>().map(|s| s.0))
 }
 
 /// How long to wait before trying again after `n` failures in a row while
@@ -120,7 +134,10 @@ pub struct Shared {
 
 impl Shared {
     pub fn new(client: Client, limiter: SpeedLimiter) -> Shared {
-        Shared { client: RwLock::new(client), limiter }
+        Shared {
+            client: RwLock::new(client),
+            limiter,
+        }
     }
     /// The HTTP client (cheap to clone: it is shared inside).
     pub fn client(&self) -> Client {
@@ -157,7 +174,10 @@ impl ProxyConfig {
 }
 
 pub fn build_client() -> anyhow::Result<Client> {
-    build_client_with(&ProxyConfig { mode: 1, ..Default::default() })
+    build_client_with(&ProxyConfig {
+        mode: 1,
+        ..Default::default()
+    })
 }
 
 pub fn build_client_with(proxy: &ProxyConfig) -> anyhow::Result<Client> {
@@ -173,13 +193,20 @@ pub fn build_client_with(proxy: &ProxyConfig) -> anyhow::Result<Client> {
         // 1 = system settings: reqwest reads them by itself
         0 => b = b.no_proxy(),
         2 if !proxy.host.is_empty() => {
-            let host = proxy.host.trim_start_matches("http://").trim_start_matches("https://");
+            let host = proxy
+                .host
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
             let url = format!("http://{host}:{}", proxy.port);
             let mut p = reqwest::Proxy::all(&url).context("the proxy address is not valid")?;
             if !proxy.user.is_empty() {
                 p = p.basic_auth(&proxy.user, &proxy.password);
             }
-            let bypass = proxy.bypass.split_whitespace().collect::<Vec<_>>().join(",");
+            let bypass = proxy
+                .bypass
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(",");
             p = p.no_proxy(reqwest::NoProxy::from_string(&bypass));
             b = b.proxy(p);
         }
@@ -387,14 +414,17 @@ mod refused_tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             loop {
-                let Ok((mut s, _)) = listener.accept().await else { return };
+                let Ok((mut s, _)) = listener.accept().await else {
+                    return;
+                };
                 tokio::spawn(async move {
                     let mut buf = vec![0u8; 8192];
                     let n = s.read(&mut buf).await.unwrap_or(0);
                     let req = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
                     let refused = req.contains("\r\ncookie:") || req.contains("\r\nrange:");
                     let resp = if refused {
-                        "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+                        "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
                     } else {
                         "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\nhello".to_string()
                     };
@@ -409,10 +439,16 @@ mod refused_tests {
     async fn probe_falls_back_when_refused() {
         let url = picky_server().await;
         let client = Client::builder().no_proxy().build().unwrap();
-        let headers = RequestHeaders { cookies: Some("cf=1".into()), ..Default::default() };
+        let headers = RequestHeaders {
+            cookies: Some("cf=1".into()),
+            ..Default::default()
+        };
         let p = probe(&client, &url, &headers, "UA").await.unwrap();
         assert_eq!(p.total_size, Some(5));
-        assert!(!p.resumable, "the server refuses ranges: one plain connection");
+        assert!(
+            !p.resumable,
+            "the server refuses ranges: one plain connection"
+        );
         let used = p.headers_used.expect("it worked only without the cookie");
         assert!(used.cookies.is_none());
     }

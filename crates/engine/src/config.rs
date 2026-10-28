@@ -38,7 +38,10 @@ impl AfterDone {
     }
     /// Needs the countdown window (the computer goes off / to sleep).
     pub fn is_power(self) -> bool {
-        matches!(self, AfterDone::Sleep | AfterDone::Shutdown | AfterDone::Hibernate)
+        matches!(
+            self,
+            AfterDone::Sleep | AfterDone::Shutdown | AfterDone::Hibernate
+        )
     }
 }
 
@@ -162,12 +165,24 @@ pub fn default_categories() -> Vec<CategoryDef> {
         builtin: true,
     };
     vec![
-        c("Compressed", "zip rar 7z tar gz tgz bz2 xz zst iso img cab arj lzh ace"),
-        c("Documents", "pdf doc docx xls xlsx ppt pptx txt rtf odt ods odp epub csv md pps"),
+        c(
+            "Compressed",
+            "zip rar 7z tar gz tgz bz2 xz zst iso img cab arj lzh ace",
+        ),
+        c(
+            "Documents",
+            "pdf doc docx xls xlsx ppt pptx txt rtf odt ods odp epub csv md pps",
+        ),
         c("Music", "mp3 wav flac aac ogg m4a wma opus mid mka ra"),
         c("Programs", "exe msi msix appx apk xapk dmg deb rpm bat jar"),
-        c("Video", "mp4 mkv avi mov wmv flv webm m4v ts 3gp mpg mpeg vob rm rmvb asf ogv"),
-        c("Images", "jpg jpeg png gif webp bmp svg tif tiff heic ico psd"),
+        c(
+            "Video",
+            "mp4 mkv avi mov wmv flv webm m4v ts 3gp mpg mpeg vob rm rmvb asf ogv",
+        ),
+        c(
+            "Images",
+            "jpg jpeg png gif webp bmp svg tif tiff heic ico psd",
+        ),
     ]
 }
 
@@ -198,8 +213,9 @@ pub const MAIN_QUEUE: u64 = 1;
 const SETTINGS_VERSION: u32 = 4;
 
 /// Columns of the download list that can be shown or hidden (View > Columns).
-pub const ALL_COLUMNS: [&str; 11] =
-    ["q", "size", "status", "eta", "speed", "last", "desc", "added", "saveto", "referer", "parent"];
+pub const ALL_COLUMNS: [&str; 11] = [
+    "q", "size", "status", "eta", "speed", "last", "desc", "added", "saveto", "referer", "parent",
+];
 /// Width a column starts with (pixels).
 pub fn default_column_width(key: &str) -> u32 {
     match key {
@@ -496,7 +512,8 @@ impl Settings {
         }
         s.version = SETTINGS_VERSION;
         if !s.queues.iter().any(|q| q.id == MAIN_QUEUE) {
-            s.queues.insert(0, QueueDef::new(MAIN_QUEUE, "Main download queue", 1, None));
+            s.queues
+                .insert(0, QueueDef::new(MAIN_QUEUE, "Main download queue", 1, None));
         }
         if s.categories.is_empty() {
             s.categories = default_categories();
@@ -563,8 +580,15 @@ impl Settings {
             .iter()
             .filter(|l| !l.user.is_empty())
             .find(|l| {
-                let site = l.site.trim().trim_start_matches("http://").trim_start_matches("https://");
-                let (h, p) = site.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((site, String::new()));
+                let site = l
+                    .site
+                    .trim()
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://");
+                let (h, p) = site
+                    .split_once('/')
+                    .map(|(h, p)| (h, format!("/{p}")))
+                    .unwrap_or((site, String::new()));
                 host_matches(&host, h) && (p.is_empty() || path.starts_with(&p))
             })
             .map(|l| (l.user.clone(), l.password.clone()))
@@ -593,7 +617,11 @@ impl Settings {
             .into_iter()
             .filter(|k| k == "name" || self.column_visible(k))
             .map(|k| {
-                let w = self.column_widths.get(&k).copied().unwrap_or_else(|| default_column_width(&k));
+                let w = self
+                    .column_widths
+                    .get(&k)
+                    .copied()
+                    .unwrap_or_else(|| default_column_width(&k));
                 (k, w.clamp(36, 2000))
             })
             .collect()
@@ -628,7 +656,11 @@ impl Settings {
     /// files go straight into the download folder.
     /// (A folder set in the category's properties wins.)
     pub fn dir_for(&self, category: &str) -> PathBuf {
-        if let Some(p) = self.category_dirs.get(category).filter(|p| !p.as_os_str().is_empty()) {
+        if let Some(p) = self
+            .category_dirs
+            .get(category)
+            .filter(|p| !p.as_os_str().is_empty())
+        {
             return p.clone();
         }
         if self.category_folders && category != "General" {
@@ -663,7 +695,10 @@ fn default_sound(name: &str) -> String {
 /// "example.com" matches example.com and www.example.com; "*.x.com" and
 /// "*" patterns work too.
 pub fn host_matches(host: &str, pattern: &str) -> bool {
-    let p = pattern.trim().trim_start_matches("http://").trim_start_matches("https://");
+    let p = pattern
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
     let p = p.split('/').next().unwrap_or("").to_ascii_lowercase();
     if p.is_empty() {
         return false;
@@ -726,7 +761,10 @@ mod tests {
     #[test]
     fn categories_and_logins() {
         let mut s = Settings::default();
-        assert_eq!(s.category_of("a.ZIP", "https://example.com/get?id=1"), "Compressed");
+        assert_eq!(
+            s.category_of("a.ZIP", "https://example.com/get?id=1"),
+            "Compressed"
+        );
         assert_eq!(s.category_of("noext", "https://example.com/"), "General");
         s.categories.push(CategoryDef {
             name: "Courses".into(),
@@ -734,11 +772,21 @@ mod tests {
             sites: vec!["courses.example.com".into()],
             builtin: false,
         });
-        assert_eq!(s.category_of("v.mp4", "https://www.courses.example.com/v.mp4"), "Courses");
-        s.logins.push(SiteLogin { site: "example.com/members".into(), user: "u".into(), password: "p".into() });
+        assert_eq!(
+            s.category_of("v.mp4", "https://www.courses.example.com/v.mp4"),
+            "Courses"
+        );
+        s.logins.push(SiteLogin {
+            site: "example.com/members".into(),
+            user: "u".into(),
+            password: "p".into(),
+        });
         assert!(s.login_for("https://example.com/members/a.pdf").is_some());
         assert!(s.login_for("https://example.com/public/a.pdf").is_none());
-        s.server_limits.push(ServerLimit { host: "slow.example.com".into(), connections: 2 });
+        s.server_limits.push(ServerLimit {
+            host: "slow.example.com".into(),
+            connections: 2,
+        });
         assert_eq!(s.connections_for("https://a.slow.example.com/x", 32), 2);
         assert_eq!(s.connections_for("https://fast.example.com/x", 32), 32);
     }
@@ -751,7 +799,12 @@ mod column_tests {
     #[test]
     fn columns_keep_their_order_and_width() {
         let mut s = Settings::default();
-        let keys = |s: &Settings| s.column_layout().into_iter().map(|c| c.0).collect::<Vec<_>>();
+        let keys = |s: &Settings| {
+            s.column_layout()
+                .into_iter()
+                .map(|c| c.0)
+                .collect::<Vec<_>>()
+        };
         // new settings: the name first, then the default columns
         assert_eq!(keys(&s)[0], "name");
         assert!(keys(&s).contains(&"size".to_string()));

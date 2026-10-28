@@ -15,13 +15,14 @@ mod i18n;
 mod options;
 mod playlist;
 mod preview;
-mod torrent_ui;
 mod scheduler;
 mod sound;
+mod torrent_ui;
 mod tray;
 mod update;
 mod winfx;
 
+use i18n::{t, tf};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -30,11 +31,10 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use swiftget_engine::config::MAIN_QUEUE;
-use i18n::{t, tf};
 use swiftget_engine::filename;
 use swiftget_engine::{
-    default_data_dir, fmt_duration, fmt_size, AfterDone, DownloadKind, DownloadView, Event, Manager, NewDownload,
-    ProbeResult, RequestHeaders, Settings, Status,
+    default_data_dir, fmt_duration, fmt_size, AfterDone, DownloadKind, DownloadView, Event,
+    Manager, NewDownload, ProbeResult, RequestHeaders, Settings, Status,
 };
 
 pub(crate) const APP: &str = "Ezoo Download";
@@ -159,10 +159,16 @@ fn install_crash_log() {
     std::panic::set_hook(Box::new(move |info| {
         let path = default_data_dir().join("crash.log");
         // keep the file small: start again when it gets big
-        if std::fs::metadata(&path).map(|m| m.len() > 256 * 1024).unwrap_or(false) {
+        if std::fs::metadata(&path)
+            .map(|m| m.len() > 256 * 1024)
+            .unwrap_or(false)
+        {
             let _ = std::fs::remove_file(&path);
         }
-        let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        let place = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_default();
         let what = info
             .payload()
             .downcast_ref::<&str>()
@@ -178,7 +184,11 @@ fn install_crash_log() {
             place
         );
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
             let _ = f.write_all(line.as_bytes());
         }
         previous(info);
@@ -353,10 +363,14 @@ fn main() -> anyhow::Result<()> {
         // the API thread only sends; the UI thread owns the windows
         let (tx, rx) = std::sync::mpsc::channel::<api::ApiEvent>();
         let rx = Rc::new(rx);
-        api::serve(server, move || api::config_json(&cfg_mgr.settings()), move |event| {
-            let _ = tx.send(event);
-            let _ = slint::invoke_from_event_loop(|| {});
-        });
+        api::serve(
+            server,
+            move || api::config_json(&cfg_mgr.settings()),
+            move |event| {
+                let _ = tx.send(event);
+                let _ = slint::invoke_from_event_loop(|| {});
+            },
+        );
         let ui2 = ui.clone();
         let api_timer = Timer::default();
         api_timer.start(TimerMode::Repeated, Duration::from_millis(50), move || {
@@ -389,15 +403,31 @@ fn main() -> anyhow::Result<()> {
                 let ctx = ctx.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     // a torrent always asks first (it also shares with others)
-                    if ctx.mgr.settings().auto_start_clipboard && !swiftget_engine::torrent::is_magnet(&url) {
+                    if ctx.mgr.settings().auto_start_clipboard
+                        && !swiftget_engine::torrent::is_magnet(&url)
+                    {
                         if ctx.mgr.find_url(&url).is_none() {
-                            ctx.mgr.add(NewDownload { url, start: true, ..Default::default() });
+                            ctx.mgr.add(NewDownload {
+                                url,
+                                start: true,
+                                ..Default::default()
+                            });
                         }
                         return;
                     }
-                    let busy = ctx.add.upgrade().map(|d| d.window().is_visible()).unwrap_or(true);
+                    let busy = ctx
+                        .add
+                        .upgrade()
+                        .map(|d| d.window().is_visible())
+                        .unwrap_or(true);
                     if !busy {
-                        open_add_dialog(&ctx, url, RequestHeaders::default(), None, VideoExtra::default());
+                        open_add_dialog(
+                            &ctx,
+                            url,
+                            RequestHeaders::default(),
+                            None,
+                            VideoExtra::default(),
+                        );
                     }
                 });
             },
@@ -447,8 +477,17 @@ fn main() -> anyhow::Result<()> {
             }
             // next to the clock (window hidden): the list is brought up to
             // date only every few seconds, nobody looks at it
-            let shown = ui.ctx.main.upgrade().map(|m| m.window().is_visible() && !m.window().is_minimized()).unwrap_or(false);
-            hidden_ticks.set(if shown { 0 } else { hidden_ticks.get().wrapping_add(1) });
+            let shown = ui
+                .ctx
+                .main
+                .upgrade()
+                .map(|m| m.window().is_visible() && !m.window().is_minimized())
+                .unwrap_or(false);
+            hidden_ticks.set(if shown {
+                0
+            } else {
+                hidden_ticks.get().wrapping_add(1)
+            });
             if shown || hidden_ticks.get() % 12 == 1 {
                 refresh(&ui);
             }
@@ -457,7 +496,13 @@ fn main() -> anyhow::Result<()> {
             // the download behind an open "Download File Info" says nothing
             // until Start is pressed
             let early = early_download(&ui.ctx);
-            let finished: Vec<u64> = ui.ctx.mgr.take_completed().into_iter().filter(|id| Some(*id) != early).collect();
+            let finished: Vec<u64> = ui
+                .ctx
+                .mgr
+                .take_completed()
+                .into_iter()
+                .filter(|id| Some(*id) != early)
+                .collect();
             if let Some(&last) = finished.last() {
                 if ui.ctx.mgr.settings().show_complete_dialog {
                     show_complete(&ui, last);
@@ -505,7 +550,11 @@ fn main() -> anyhow::Result<()> {
         let now = env!("CARGO_PKG_VERSION");
         if s.last_version != now {
             // an empty last_version on a copy used before = an update from 1.0.3
-            let updated = if s.last_version.is_empty() { s.extension_prompted } else { true };
+            let updated = if s.last_version.is_empty() {
+                s.extension_prompted
+            } else {
+                true
+            };
             s.last_version = now.into();
             let _ = mgr.set_settings(s);
             just_updated = updated;
@@ -530,7 +579,9 @@ fn main() -> anyhow::Result<()> {
         } else if s.show_tips && !just_updated {
             // never together with a message box (What's new, a question…)
             let ui = ui.clone();
-            Timer::single_shot(Duration::from_millis(600), move || extra::show_tip_when_free(ui));
+            Timer::single_shot(Duration::from_millis(600), move || {
+                extra::show_tip_when_free(ui)
+            });
         }
     }
     slint::run_event_loop_until_quit()?;
@@ -553,7 +604,9 @@ fn main() -> anyhow::Result<()> {
 // ===================================================================== main window
 
 fn wire_main(ui: &Ui) {
-    let Some(main) = ui.ctx.main.upgrade() else { return };
+    let Some(main) = ui.ctx.main.upgrade() else {
+        return;
+    };
     let mgr = ui.ctx.mgr.clone();
     {
         let ctx = ui.ctx.clone();
@@ -563,7 +616,13 @@ fn wire_main(ui: &Ui) {
                 .and_then(|mut c| c.get_text().ok())
                 .and_then(|t| clipboard::downloadable_url(&t).or_else(|| is_http_url(&t)))
                 .unwrap_or_default();
-            open_add_dialog(&ctx, url, RequestHeaders::default(), None, VideoExtra::default());
+            open_add_dialog(
+                &ctx,
+                url,
+                RequestHeaders::default(),
+                None,
+                VideoExtra::default(),
+            );
         });
     }
     {
@@ -573,7 +632,10 @@ fn wire_main(ui: &Ui) {
     {
         let ui = ui.clone();
         main.on_add_batch_clipboard(move || {
-            let text = arboard::Clipboard::new().ok().and_then(|mut c| c.get_text().ok()).unwrap_or_default();
+            let text = arboard::Clipboard::new()
+                .ok()
+                .and_then(|mut c| c.get_text().ok())
+                .unwrap_or_default();
             open_batch(&ui, text);
         });
     }
@@ -631,10 +693,15 @@ fn wire_main(ui: &Ui) {
         let ui = ui.clone();
         main.on_delete_completed(move || {
             let ui2 = ui.clone();
-            confirm(&ui.ctx, APP, &t("Remove every finished download from the list?\n(The files stay on the disk.)"), move || {
-                ui2.ctx.mgr.remove_completed();
-                refresh(&ui2);
-            });
+            confirm(
+                &ui.ctx,
+                APP,
+                &t("Remove every finished download from the list?\n(The files stay on the disk.)"),
+                move || {
+                    ui2.ctx.mgr.remove_completed();
+                    refresh(&ui2);
+                },
+            );
         });
     }
     {
@@ -748,7 +815,9 @@ fn wire_main(ui: &Ui) {
     {
         let ui = ui.clone();
         main.on_row_activated(move |id| {
-            let Some(v) = ui.ctx.mgr.get(id as u64) else { return };
+            let Some(v) = ui.ctx.mgr.get(id as u64) else {
+                return;
+            };
             if ui.ctx.mgr.settings().double_click == 1 {
                 extra::open_properties(&ui, v.id);
             } else if v.status == Status::Completed {
@@ -805,7 +874,9 @@ fn wire_main(ui: &Ui) {
         main.on_row_drag(move |id, offset| {
             // select with the mouse: from the row where the drag started
             let order = visible_ids(&ui);
-            let Some(start) = order.iter().position(|x| *x == id as u64) else { return };
+            let Some(start) = order.iter().position(|x| *x == id as u64) else {
+                return;
+            };
             let end = (start as i64 + offset as i64).clamp(0, order.len() as i64 - 1) as usize;
             let mut sel = ui.sel.borrow_mut();
             sel.ids = order[start.min(end)..=start.max(end)].to_vec();
@@ -832,13 +903,17 @@ fn wire_main(ui: &Ui) {
         // the header: a title dragged onto another place moves the column there
         let ui = ui.clone();
         main.on_column_dropped(move |from, x| {
-            let widths: Vec<f32> = (0..ui.columns_model.row_count()).filter_map(|i| ui.columns_model.row_data(i)).map(|c| c.width).collect();
+            let widths: Vec<f32> = (0..ui.columns_model.row_count())
+                .filter_map(|i| ui.columns_model.row_data(i))
+                .map(|c| c.width)
+                .collect();
             let to = column_at(&widths, x);
             let from = from.max(0) as usize;
             if from < widths.len() && to != from {
                 if let Some(c) = ui.columns_model.row_data(from) {
                     ui.columns_model.remove(from);
-                    ui.columns_model.insert(to.min(ui.columns_model.row_count()), c);
+                    ui.columns_model
+                        .insert(to.min(ui.columns_model.row_count()), c);
                     save_columns(&ui);
                 }
             }
@@ -848,18 +923,24 @@ fn wire_main(ui: &Ui) {
         let ui = ui.clone();
         main.on_row_drag_out(move |id| {
             // a finished file pulled out of the list: Windows takes it from here
-            let Some(v) = ui.ctx.mgr.get(id as u64) else { return };
+            let Some(v) = ui.ctx.mgr.get(id as u64) else {
+                return;
+            };
             if v.status != Status::Completed || !v.save_path.is_file() {
                 return;
             }
-            let Some(m) = ui.ctx.main.upgrade() else { return };
+            let Some(m) = ui.ctx.main.upgrade() else {
+                return;
+            };
             winfx::drag_file_out(m.window(), &v.save_path);
             // the mouse was let go outside the list: the row must know too
-            m.window().dispatch_event(slint::platform::WindowEvent::PointerReleased {
-                position: slint::LogicalPosition::new(0.0, 0.0),
-                button: slint::platform::PointerEventButton::Left,
-            });
-            m.window().dispatch_event(slint::platform::WindowEvent::PointerExited);
+            m.window()
+                .dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                    position: slint::LogicalPosition::new(0.0, 0.0),
+                    button: slint::platform::PointerEventButton::Left,
+                });
+            m.window()
+                .dispatch_event(slint::platform::WindowEvent::PointerExited);
         });
     }
     {
@@ -946,7 +1027,10 @@ fn wire_main(ui: &Ui) {
     main.on_update_tools(move || {
         // ffmpeg too, right now (removing the stamps makes it check)
         let _ = std::fs::remove_file(tools_dir.join("ffmpeg-checked"));
-        tools_rt.spawn(swiftget_engine::tools::update_all(tools_client.clone(), tools_dir.clone()));
+        tools_rt.spawn(swiftget_engine::tools::update_all(
+            tools_client.clone(),
+            tools_dir.clone(),
+        ));
         std::thread::spawn(|| {
             let text = match swiftget_engine::ytdlp::update_now() {
                 Ok(out) => tf(
@@ -978,7 +1062,10 @@ fn wire_main(ui: &Ui) {
 
 /// Ids in the order the list shows them.
 fn visible_ids(ui: &Ui) -> Vec<u64> {
-    (0..ui.rows.row_count()).filter_map(|i| ui.rows.row_data(i)).map(|r| r.id as u64).collect()
+    (0..ui.rows.row_count())
+        .filter_map(|i| ui.rows.row_data(i))
+        .map(|r| r.id as u64)
+        .collect()
 }
 
 pub(crate) fn select_single(ui: &Ui, id: u64) {
@@ -1061,7 +1148,10 @@ fn multi_action(ui: &Ui, ids: &[u64], action: &str) {
         }
         "stop" => ids.iter().for_each(|&i| ui.ctx.mgr.pause(i)),
         "restart" => {
-            if ask(&tf("Download these {} files again from the beginning?", &[&ids.len()])) {
+            if ask(&tf(
+                "Download these {} files again from the beginning?",
+                &[&ids.len()],
+            )) {
                 ids.iter().for_each(|&i| ui.ctx.mgr.restart(i));
             }
         }
@@ -1078,7 +1168,11 @@ fn multi_action(ui: &Ui, ids: &[u64], action: &str) {
             });
         }
         "copy" => {
-            let text: Vec<String> = ids.iter().filter_map(|&i| ui.ctx.mgr.get(i)).map(|v| v.url).collect();
+            let text: Vec<String> = ids
+                .iter()
+                .filter_map(|&i| ui.ctx.mgr.get(i))
+                .map(|v| v.url)
+                .collect();
             if let Ok(mut c) = arboard::Clipboard::new() {
                 let _ = c.set_text(text.join("\r\n"));
             }
@@ -1106,7 +1200,13 @@ fn tray_action(ui: &Ui, action: tray::TrayAction) {
         T::Show => bring_to_front(&ui.ctx),
         T::AddUrl => {
             bring_to_front(&ui.ctx);
-            open_add_dialog(&ui.ctx, String::new(), RequestHeaders::default(), None, VideoExtra::default());
+            open_add_dialog(
+                &ui.ctx,
+                String::new(),
+                RequestHeaders::default(),
+                None,
+                VideoExtra::default(),
+            );
         }
         T::ResumeAll => ui.ctx.mgr.start_all(),
         T::StopAll => ui.ctx.mgr.pause_all(),
@@ -1177,7 +1277,12 @@ fn handle_api(ui: &Ui, event: api::ApiEvent) {
             let repeat = LAST_API_ADD.with(|l| {
                 let mut l = l.borrow_mut();
                 let now = std::time::Instant::now();
-                let same = l.as_ref().map(|(u, at)| *u == req.url && now.duration_since(*at) < Duration::from_secs(10)).unwrap_or(false);
+                let same = l
+                    .as_ref()
+                    .map(|(u, at)| {
+                        *u == req.url && now.duration_since(*at) < Duration::from_secs(10)
+                    })
+                    .unwrap_or(false);
                 *l = Some((req.url.clone(), now));
                 same
             });
@@ -1236,7 +1341,9 @@ fn handle_api(ui: &Ui, event: api::ApiEvent) {
 // ===================================================================== download file info
 
 fn wire_add(ui: &Ui) {
-    let Some(add) = ui.ctx.add.upgrade() else { return };
+    let Some(add) = ui.ctx.add.upgrade() else {
+        return;
+    };
     {
         let ctx = ui.ctx.clone();
         add.on_check_url(move || {
@@ -1275,7 +1382,13 @@ fn wire_add(ui: &Ui) {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "download".into());
-            let path = ctx.mgr.settings().dir_for(&cat).join(&name).display().to_string();
+            let path = ctx
+                .mgr
+                .settings()
+                .dir_for(&cat)
+                .join(&name)
+                .display()
+                .to_string();
             d.set_save_as(path.clone().into());
             d.set_category_name(t(&cat).into());
             ctx.add_state.lock().unwrap().auto_path = path;
@@ -1347,12 +1460,17 @@ fn wire_add(ui: &Ui) {
 // ===================================================================== batch
 
 fn wire_batch(ui: &Ui) {
-    let Some(batch) = ui.batch.upgrade() else { return };
+    let Some(batch) = ui.batch.upgrade() else {
+        return;
+    };
     {
         let w = batch.as_weak();
         batch.on_paste(move || {
             let Some(d) = w.upgrade() else { return };
-            if let Some(text) = arboard::Clipboard::new().ok().and_then(|mut c| c.get_text().ok()) {
+            if let Some(text) = arboard::Clipboard::new()
+                .ok()
+                .and_then(|mut c| c.get_text().ok())
+            {
                 let mut links = d.get_links().to_string();
                 if !links.is_empty() && !links.ends_with('\n') {
                     links.push('\n');
@@ -1366,7 +1484,10 @@ fn wire_batch(ui: &Ui) {
         let (w, mgr) = (batch.as_weak(), ui.ctx.mgr.clone());
         batch.on_browse(move || {
             let Some(d) = w.upgrade() else { return };
-            if let Some(dir) = crate::winfx::file_box().set_directory(mgr.settings().download_dir).pick_folder() {
+            if let Some(dir) = crate::winfx::file_box()
+                .set_directory(mgr.settings().download_dir)
+                .pick_folder()
+            {
                 d.set_folder(dir.display().to_string().into());
             }
         });
@@ -1386,7 +1507,10 @@ fn wire_batch(ui: &Ui) {
                 match pattern_links(&d) {
                     Ok(l) => {
                         let user = d.get_user().trim().to_string();
-                        (l, (!user.is_empty()).then(|| (user, d.get_password().to_string())))
+                        (
+                            l,
+                            (!user.is_empty()).then(|| (user, d.get_password().to_string())),
+                        )
                     }
                     Err(e) => {
                         d.set_message(e.into());
@@ -1401,13 +1525,20 @@ fn wire_batch(ui: &Ui) {
                 return;
             }
             let s = ui.ctx.mgr.settings();
-            let queue = s.queues.get(d.get_queue_index().max(0) as usize).map(|q| q.id).unwrap_or(MAIN_QUEUE);
+            let queue = s
+                .queues
+                .get(d.get_queue_index().max(0) as usize)
+                .map(|q| q.id)
+                .unwrap_or(MAIN_QUEUE);
             let folder = d.get_folder().trim().to_string();
             for url in links {
                 ui.ctx.mgr.add(NewDownload {
                     url,
                     save_dir: (!folder.is_empty()).then(|| PathBuf::from(&folder)),
-                    headers: RequestHeaders { auth: auth.clone(), ..Default::default() },
+                    headers: RequestHeaders {
+                        auth: auth.clone(),
+                        ..Default::default()
+                    },
                     queue: Some(queue),
                     start: false,
                     ..Default::default()
@@ -1434,7 +1565,13 @@ fn wire_batch(ui: &Ui) {
 }
 
 /// "img*.jpg" + from/to -> the list of addresses (numbers or letters).
-fn expand_pattern(pattern: &str, letters: bool, from: &str, to: &str, size: usize) -> Result<Vec<String>, String> {
+fn expand_pattern(
+    pattern: &str,
+    letters: bool,
+    from: &str,
+    to: &str,
+    size: usize,
+) -> Result<Vec<String>, String> {
     let pattern = pattern.trim();
     if !(pattern.starts_with("http://") || pattern.starts_with("https://")) {
         return Err(t("The address must start with http:// or https://"));
@@ -1444,8 +1581,18 @@ fn expand_pattern(pattern: &str, letters: bool, from: &str, to: &str, size: usiz
     }
     let mut out = Vec::new();
     if letters {
-        let a = from.trim().chars().next().filter(|c| c.is_ascii_alphabetic()).ok_or_else(|| t("From must be a letter"))?;
-        let b = to.trim().chars().next().filter(|c| c.is_ascii_alphabetic()).ok_or_else(|| t("To must be a letter"))?;
+        let a = from
+            .trim()
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_alphabetic())
+            .ok_or_else(|| t("From must be a letter"))?;
+        let b = to
+            .trim()
+            .chars()
+            .next()
+            .filter(|c| c.is_ascii_alphabetic())
+            .ok_or_else(|| t("To must be a letter"))?;
         let (a, b) = (a as u8, b as u8);
         if a > b {
             return Err(t("From must come before To"));
@@ -1454,7 +1601,10 @@ fn expand_pattern(pattern: &str, letters: bool, from: &str, to: &str, size: usiz
             out.push(pattern.replace('*', &(c as char).to_string()));
         }
     } else {
-        let a: u64 = from.trim().parse().map_err(|_| t("From must be a number"))?;
+        let a: u64 = from
+            .trim()
+            .parse()
+            .map_err(|_| t("From must be a number"))?;
         let b: u64 = to.trim().parse().map_err(|_| t("To must be a number"))?;
         if a > b {
             return Err(t("From must be smaller than To"));
@@ -1499,7 +1649,9 @@ fn batch_preview(d: &BatchDialog) -> String {
 // ===================================================================== download complete
 
 fn wire_complete(ui: &Ui) {
-    let Some(complete) = ui.complete.upgrade() else { return };
+    let Some(complete) = ui.complete.upgrade() else {
+        return;
+    };
     {
         let ui = ui.clone();
         complete.on_open_file(move || {
@@ -1578,14 +1730,21 @@ impl Drop for ModalGuard {
 
 pub(crate) fn message(text: &str) {
     let _g = ModalGuard::new();
-    crate::winfx::msg_box().set_title(APP).set_description(text).show();
+    crate::winfx::msg_box()
+        .set_title(APP)
+        .set_description(text)
+        .show();
 }
 
 pub(crate) fn ask(text: &str) -> bool {
     use rfd::{MessageButtons, MessageDialogResult};
     let _g = ModalGuard::new();
     matches!(
-        crate::winfx::msg_box().set_title(APP).set_description(text).set_buttons(MessageButtons::YesNo).show(),
+        crate::winfx::msg_box()
+            .set_title(APP)
+            .set_description(text)
+            .set_buttons(MessageButtons::YesNo)
+            .show(),
         MessageDialogResult::Yes
     )
 }
@@ -1601,7 +1760,9 @@ fn is_http_url(t: &str) -> Option<String> {
 pub(crate) fn extract_links(text: &str) -> Vec<String> {
     text.split_whitespace()
         .map(|l| l.trim_matches(|c| c == '"' || c == '\'' || c == '<' || c == '>' || c == ','))
-        .filter(|l| (l.starts_with("http://") || l.starts_with("https://")) && url::Url::parse(l).is_ok())
+        .filter(|l| {
+            (l.starts_with("http://") || l.starts_with("https://")) && url::Url::parse(l).is_ok()
+        })
         .map(|l| l.to_string())
         .collect()
 }
@@ -1609,10 +1770,11 @@ pub(crate) fn extract_links(text: &str) -> Vec<String> {
 /// File-type icon for a file name.
 pub(crate) fn kind_for(name: &str) -> &'static str {
     match filename::extension(name).as_str() {
-        "mp4" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "webm" | "m4v" | "ts" | "3gp" | "mpg" | "mpeg" | "vob"
-        | "rm" | "rmvb" | "ogv" | "asf" => "video",
+        "mp4" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "webm" | "m4v" | "ts" | "3gp" | "mpg"
+        | "mpeg" | "vob" | "rm" | "rmvb" | "ogv" | "asf" => "video",
         "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "wma" | "opus" | "mid" | "mka" => "audio",
-        "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "cab" | "arj" | "lzh" => "archive",
+        "zip" | "rar" | "7z" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "zst" | "cab" | "arj"
+        | "lzh" => "archive",
         "iso" | "img" | "dmg" => "disc",
         "pdf" => "pdf",
         "doc" | "docx" | "odt" | "rtf" | "epub" => "doc",
@@ -1622,7 +1784,8 @@ pub(crate) fn kind_for(name: &str) -> &'static str {
         "exe" | "msi" | "msix" | "appx" | "bat" | "jar" | "deb" | "rpm" => "exe",
         "apk" | "xapk" => "apk",
         "torrent" => "torrent",
-        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic" | "ico" | "psd" => "image",
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "svg" | "tif" | "tiff" | "heic"
+        | "ico" | "psd" => "image",
         _ => "general",
     }
 }
@@ -1723,7 +1886,9 @@ pub(crate) fn change_language(ui: &Ui, lang: &str) {
 
 /// Open the program again (after it saved everything and closed).
 fn restart_now() {
-    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
     let mut cmd = std::process::Command::new(exe);
     cmd.arg("--restarted");
     #[cfg(windows)]
@@ -1736,7 +1901,16 @@ fn restart_now() {
 }
 
 /// Fonts of Options > Appearance > Font ("" = Windows' own).
-pub(crate) const FONTS: [&str; 8] = ["", "InstaArabi", "Tahoma", "Arial", "Calibri", "Verdana", "Times New Roman", "Courier New"];
+pub(crate) const FONTS: [&str; 8] = [
+    "",
+    "InstaArabi",
+    "Tahoma",
+    "Arial",
+    "Calibri",
+    "Verdana",
+    "Times New Roman",
+    "Courier New",
+];
 
 /// What an empty font choice means: Arabic in InstaArabi, everything else
 /// in Times New Roman (both come with the program, see `fonts`).
@@ -1791,8 +1965,17 @@ fn background_image(path: &str) -> Option<slint::Image> {
         let mut b = b.borrow_mut();
         if b.0 != path {
             // a picture is at most a few MB; anything huge is not loaded
-            let ok = std::fs::metadata(path).map(|m| m.is_file() && m.len() <= 40 << 20).unwrap_or(false);
-            *b = (path.to_string(), if ok { slint::Image::load_from_path(Path::new(path)).ok() } else { None });
+            let ok = std::fs::metadata(path)
+                .map(|m| m.is_file() && m.len() <= 40 << 20)
+                .unwrap_or(false);
+            *b = (
+                path.to_string(),
+                if ok {
+                    slint::Image::load_from_path(Path::new(path)).ok()
+                } else {
+                    None
+                },
+            );
         }
         b.1.clone()
     })
@@ -1894,12 +2077,22 @@ pub(crate) fn column_at(widths: &[f32], x: f32) -> usize {
 
 /// Keep the header's column order and widths in the settings.
 fn save_columns(ui: &Ui) {
-    let cols: Vec<ColDef> = (0..ui.columns_model.row_count()).filter_map(|i| ui.columns_model.row_data(i)).collect();
+    let cols: Vec<ColDef> = (0..ui.columns_model.row_count())
+        .filter_map(|i| ui.columns_model.row_data(i))
+        .collect();
     let mut s = ui.ctx.mgr.settings();
     let mut order: Vec<String> = cols.iter().map(|c| c.key.to_string()).collect();
     // hidden columns keep their place at the end
-    let rest: Vec<String> =
-        s.column_order.iter().cloned().chain(swiftget_engine::config::ALL_COLUMNS.iter().map(|k| k.to_string())).collect();
+    let rest: Vec<String> = s
+        .column_order
+        .iter()
+        .cloned()
+        .chain(
+            swiftget_engine::config::ALL_COLUMNS
+                .iter()
+                .map(|k| k.to_string()),
+        )
+        .collect();
     for k in rest {
         if !order.contains(&k) {
             order.push(k);
@@ -1907,7 +2100,10 @@ fn save_columns(ui: &Ui) {
     }
     s.column_order = order;
     for c in &cols {
-        s.column_widths.insert(c.key.to_string(), c.width.round().clamp(36.0, 2000.0) as u32);
+        s.column_widths.insert(
+            c.key.to_string(),
+            c.width.round().clamp(36.0, 2000.0) as u32,
+        );
     }
     let _ = ui.ctx.mgr.set_settings(s);
 }
@@ -1919,8 +2115,14 @@ pub(crate) fn apply_view_settings(ui: &Ui, s: &Settings) {
         m.set_sort_by(s.sort_by.clone().into());
         m.set_sort_desc(s.sort_desc);
         m.set_cols(cols_from(s));
-        let defs: Vec<ColDef> =
-            s.column_layout().into_iter().map(|(key, w)| ColDef { key: key.into(), width: w as f32 }).collect();
+        let defs: Vec<ColDef> = s
+            .column_layout()
+            .into_iter()
+            .map(|(key, w)| ColDef {
+                key: key.into(),
+                width: w as f32,
+            })
+            .collect();
         ui.columns_model.set_vec(defs);
         m.set_toolbar_small(s.toolbar_small);
     }
@@ -1930,7 +2132,12 @@ fn open_batch(ui: &Ui, text: String) {
     let Some(d) = ui.batch.upgrade() else { return };
     let s = ui.ctx.mgr.settings();
     d.set_queue_names(queue_names(&s));
-    let current = ui.ctx.main.upgrade().map(|m| m.get_current_queue() as u64).unwrap_or(MAIN_QUEUE);
+    let current = ui
+        .ctx
+        .main
+        .upgrade()
+        .map(|m| m.get_current_queue() as u64)
+        .unwrap_or(MAIN_QUEUE);
     d.set_queue_index(s.queues.iter().position(|q| q.id == current).unwrap_or(0) as i32);
     d.set_links(extract_links(&text).join("\n").into());
     d.set_mode(0);
@@ -1966,7 +2173,13 @@ fn show_name_in_dialog(ctx: &Ctx, d: &AddDialog, name: &str, url: &str) -> Strin
     path
 }
 
-pub(crate) fn open_add_dialog(ctx: &Ctx, url: String, headers: RequestHeaders, name_hint: Option<String>, extra: VideoExtra) {
+pub(crate) fn open_add_dialog(
+    ctx: &Ctx,
+    url: String,
+    headers: RequestHeaders,
+    name_hint: Option<String>,
+    extra: VideoExtra,
+) {
     // a magnet link: the torrent window
     if swiftget_engine::torrent::is_magnet(&url) {
         torrent_ui::open_source(&url);
@@ -1979,7 +2192,12 @@ pub(crate) fn open_add_dialog(ctx: &Ctx, url: String, headers: RequestHeaders, n
         // the same link again (a page can send it twice): nothing new to show;
         // another link waits until this one is started or cancelled
         if !url.is_empty() && st.origin_url != url && !st.waiting.iter().any(|p| p.url == url) {
-            st.waiting.push_back(PendingOpen { url, headers, name_hint, extra });
+            st.waiting.push_back(PendingOpen {
+                url,
+                headers,
+                name_hint,
+                extra,
+            });
         }
         drop(st);
         to_front!(d);
@@ -2009,7 +2227,11 @@ pub(crate) fn open_add_dialog(ctx: &Ctx, url: String, headers: RequestHeaders, n
         st.probe = None;
         st.probe_url.clear();
         // a name from the browser is final; one guessed from the URL is not
-        st.auto_path = if name_hint.is_some() { String::new() } else { path };
+        st.auto_path = if name_hint.is_some() {
+            String::new()
+        } else {
+            path
+        };
         st.probe_seq += 1;
     }
     d.set_url(url.clone().into());
@@ -2020,7 +2242,13 @@ pub(crate) fn open_add_dialog(ctx: &Ctx, url: String, headers: RequestHeaders, n
     d.set_queue_names(queue_names(&s));
     d.set_queue_index(0);
     d.set_use_login(login.is_some());
-    d.set_user(login.as_ref().map(|l| l.0.clone()).unwrap_or_default().into());
+    d.set_user(
+        login
+            .as_ref()
+            .map(|l| l.0.clone())
+            .unwrap_or_default()
+            .into(),
+    );
     d.set_password(login.map(|l| l.1).unwrap_or_default().into());
     d.set_warning(
         if !url.is_empty() && ctx.mgr.find_url(&url).is_some() {
@@ -2094,7 +2322,10 @@ fn start_probe(ctx: &Ctx, url: String) {
         (st.probe_seq, st.headers.clone())
     };
     if d.get_use_login() && !d.get_user().trim().is_empty() {
-        headers.auth = Some((d.get_user().trim().to_string(), d.get_password().to_string()));
+        headers.auth = Some((
+            d.get_user().trim().to_string(),
+            d.get_password().to_string(),
+        ));
     }
     d.set_probing(true);
     d.set_info_error(false);
@@ -2156,7 +2387,9 @@ fn confirm_add(ui: &Ui, start: bool) {
     let ctx = &ui.ctx;
     let Some(d) = ctx.add.upgrade() else { return };
     let url = d.get_url().trim().to_string();
-    if !(url.starts_with("http://") || url.starts_with("https://")) || url::Url::parse(&url).is_err() {
+    if !(url.starts_with("http://") || url.starts_with("https://"))
+        || url::Url::parse(&url).is_err()
+    {
         d.set_info(t("Please enter a valid http:// or https:// address").into());
         d.set_info_error(true);
         return;
@@ -2166,7 +2399,10 @@ fn confirm_add(ui: &Ui, start: bool) {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .filter(|n| !n.trim().is_empty());
-    let dir = save_as.parent().map(Path::to_path_buf).filter(|p| !p.as_os_str().is_empty());
+    let dir = save_as
+        .parent()
+        .map(Path::to_path_buf)
+        .filter(|p| !p.as_os_str().is_empty());
     let settings = ctx.mgr.settings();
     if d.get_remember_path() {
         if let Some(dir) = &dir {
@@ -2186,19 +2422,34 @@ fn confirm_add(ui: &Ui, start: bool) {
     let req = {
         let mut st = ctx.add_state.lock().unwrap();
         st.probe_seq += 1;
-        let probe = if st.probe_url == url { st.probe.clone() } else { None };
+        let probe = if st.probe_url == url {
+            st.probe.clone()
+        } else {
+            None
+        };
         // the video extras belong to the original link only
-        let extra = if st.origin_url == url { st.extra.clone() } else { VideoExtra::default() };
+        let extra = if st.origin_url == url {
+            st.extra.clone()
+        } else {
+            VideoExtra::default()
+        };
         // "Download Later" puts it in the chosen queue
         let queue = if start {
             None
         } else {
-            settings.queues.get(d.get_queue_index().max(0) as usize).map(|q| q.id)
+            settings
+                .queues
+                .get(d.get_queue_index().max(0) as usize)
+                .map(|q| q.id)
         };
         let description = d.get_description().trim().to_string();
         let mut headers = st.headers.clone();
-        headers.auth = (d.get_use_login() && !d.get_user().trim().is_empty())
-            .then(|| (d.get_user().trim().to_string(), d.get_password().to_string()));
+        headers.auth = (d.get_use_login() && !d.get_user().trim().is_empty()).then(|| {
+            (
+                d.get_user().trim().to_string(),
+                d.get_password().to_string(),
+            )
+        });
         NewDownload {
             url: url.clone(),
             file_name: name,
@@ -2221,21 +2472,47 @@ fn confirm_add(ui: &Ui, start: bool) {
     open_next(ctx);
     let early = ctx.add_state.lock().unwrap().early_id.take();
     if let Some(id) = early {
-        if ctx.mgr.get(id).map(|v| v.url == url || v.parent_page.as_deref() == Some(url.as_str())).unwrap_or(false)
+        if ctx
+            .mgr
+            .get(id)
+            .map(|v| v.url == url || v.parent_page.as_deref() == Some(url.as_str()))
+            .unwrap_or(false)
             || ctx.add_state.lock().unwrap().origin_url == url
         {
-            let dir = req.save_dir.clone().unwrap_or_else(|| settings.dir_for("General"));
+            let dir = req
+                .save_dir
+                .clone()
+                .unwrap_or_else(|| settings.dir_for("General"));
             let name = req.file_name.clone().unwrap_or_default();
-            if let Err(e) = ctx.mgr.retarget(id, &dir, &name, req.description.clone(), req.headers.auth.clone()) {
-                message(&tf("Could not change where it is saved: {}", &[&format!("{e:#}")]));
+            if let Err(e) = ctx.mgr.retarget(
+                id,
+                &dir,
+                &name,
+                req.description.clone(),
+                req.headers.auth.clone(),
+            ) {
+                message(&tf(
+                    "Could not change where it is saved: {}",
+                    &[&format!("{e:#}")],
+                ));
             }
             if start {
-                if ctx.mgr.get(id).map(|v| v.status == Status::Failed || v.status == Status::Paused).unwrap_or(false) {
+                if ctx
+                    .mgr
+                    .get(id)
+                    .map(|v| v.status == Status::Failed || v.status == Status::Paused)
+                    .unwrap_or(false)
+                {
                     ctx.mgr.start(id);
                 }
                 // finished while the window was open: "Download complete"
                 // now; still running: its progress window
-                if ctx.mgr.get(id).map(|v| v.status == Status::Completed).unwrap_or(false) {
+                if ctx
+                    .mgr
+                    .get(id)
+                    .map(|v| v.status == Status::Completed)
+                    .unwrap_or(false)
+                {
                     if settings.sounds_on {
                         sound::play(&settings.sound_complete);
                     }
@@ -2340,7 +2617,10 @@ fn row_action(ui: &Ui, id: u64, action: &str) {
         }
         "stop" => ui.ctx.mgr.pause(id),
         "restart" => {
-            if ask(&tf("Download “{}” again from the beginning?", &[&v.file_name])) {
+            if ask(&tf(
+                "Download “{}” again from the beginning?",
+                &[&v.file_name],
+            )) {
                 ui.ctx.mgr.restart(id);
             }
         }
@@ -2376,7 +2656,10 @@ fn row_action(ui: &Ui, id: u64, action: &str) {
             std::thread::spawn(move || {
                 let text = match sha256_of(&path) {
                     Ok(hash) => {
-                        let shown = tf("SHA-256 of {}:\n\n{}\n\n(copied to the clipboard)", &[&name, &hash]);
+                        let shown = tf(
+                            "SHA-256 of {}:\n\n{}\n\n(copied to the clipboard)",
+                            &[&name, &hash],
+                        );
                         if let Ok(mut c) = arboard::Clipboard::new() {
                             let _ = c.set_text(hash);
                         }
@@ -2406,7 +2689,11 @@ fn sha256_of(path: &Path) -> std::io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 pub(crate) fn open_with(path: &Path) {
@@ -2460,7 +2747,10 @@ fn delete_download(ctx: &Ctx, id: u64) {
             &[&v.file_name],
         )
     } else {
-        tf("Delete the unfinished download “{}”?\nThe partly downloaded data will be removed.", &[&v.file_name])
+        tf(
+            "Delete the unfinished download “{}”?\nThe partly downloaded data will be removed.",
+            &[&v.file_name],
+        )
     };
     let ctx2 = ctx.clone();
     confirm(ctx, &t("Delete download"), &text, move || {
@@ -2531,14 +2821,19 @@ pub(crate) fn confirm(ctx: &Ctx, title: &str, text: &str, on_ok: impl FnOnce() +
 }
 
 pub(crate) fn reveal_in_folder(v: &DownloadView) {
-    let dir = v.save_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let dir = v
+        .save_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         if v.status == Status::Completed && v.save_path.exists() {
-            let _ = std::process::Command::new(swiftget_engine::system::windows_tool("explorer.exe"))
-                .raw_arg(format!("/select,\"{}\"", v.save_path.display()))
-                .spawn();
+            let _ =
+                std::process::Command::new(swiftget_engine::system::windows_tool("explorer.exe"))
+                    .raw_arg(format!("/select,\"{}\"", v.save_path.display()))
+                    .spawn();
             return;
         }
     }
@@ -2584,7 +2879,9 @@ fn menu_done_from(i: i32) -> AfterDone {
 }
 
 pub(crate) fn fmt_time(t: chrono::DateTime<chrono::Utc>) -> String {
-    t.with_timezone(&chrono::Local).format("%b %d %H:%M").to_string()
+    t.with_timezone(&chrono::Local)
+        .format("%b %d %H:%M")
+        .to_string()
 }
 
 /// Open what is already downloaded of a video / song in the player.
@@ -2592,7 +2889,9 @@ pub(crate) fn play_while_downloading(ui: &Ui, id: u64) {
     let Some(v) = ui.ctx.mgr.get(id) else { return };
     let kind = kind_for(&v.file_name);
     if kind != "video" && kind != "audio" {
-        return message(&t("Only videos and sound files can be played while they download."));
+        return message(&t(
+            "Only videos and sound files can be played while they download.",
+        ));
     }
     match ui.ctx.mgr.preview_source(id) {
         None if v.kind == DownloadKind::Hls => {
@@ -2617,7 +2916,12 @@ pub(crate) fn play_while_downloading(ui: &Ui, id: u64) {
 /// Open a finished download. A .torrent file opens in our own torrent
 /// window (what it shares is the real download).
 pub(crate) fn open_download(path: &std::path::Path) {
-    if path.extension().map(|e| e.eq_ignore_ascii_case("torrent")).unwrap_or(false) && path.is_file() {
+    if path
+        .extension()
+        .map(|e| e.eq_ignore_ascii_case("torrent"))
+        .unwrap_or(false)
+        && path.is_file()
+    {
         torrent_ui::open_source(&path.display().to_string());
     } else {
         let _ = open::that(path);
@@ -2648,9 +2952,15 @@ fn row_of(v: &DownloadView, sel: bool) -> DownloadRow {
     };
     let status = match v.status {
         _ if v.waiting => t("Waiting for connection…"),
-        Status::Downloading if v.kind == DownloadKind::Torrent && v.total_size.is_none() => t("Getting the file list…"),
-        Status::Downloading | Status::Paused if v.total_size.is_some() => format!("{:.2}%", pct * 100.0),
-        Status::Downloading if v.parts_total > 0 => tf("{}/{} parts", &[&v.parts_done, &v.parts_total]),
+        Status::Downloading if v.kind == DownloadKind::Torrent && v.total_size.is_none() => {
+            t("Getting the file list…")
+        }
+        Status::Downloading | Status::Paused if v.total_size.is_some() => {
+            format!("{:.2}%", pct * 100.0)
+        }
+        Status::Downloading if v.parts_total > 0 => {
+            tf("{}/{} parts", &[&v.parts_done, &v.parts_total])
+        }
         Status::Downloading => fmt_size(v.downloaded),
         Status::Paused => String::new(),
         Status::Assembling => t("Merging…"),
@@ -2667,14 +2977,21 @@ fn row_of(v: &DownloadView, sel: bool) -> DownloadRow {
         (_, Some(d), _) => d.clone(),
         (_, _, DownloadKind::Dash) => tf("{}: video + audio", &[&t(&v.category)]),
         (_, _, DownloadKind::Hls) => tf("{}: stream", &[&t(&v.category)]),
-        (_, _, DownloadKind::Torrent) if v.status.is_running() => tf("Torrent: {} peers", &[&v.active_connections]),
+        (_, _, DownloadKind::Torrent) if v.status.is_running() => {
+            tf("Torrent: {} peers", &[&v.active_connections])
+        }
         (_, _, DownloadKind::Torrent) => t("Torrent"),
         _ => t(&v.category),
     };
     DownloadRow {
         id: v.id as i32,
         name: v.file_name.clone().into(),
-        kind: if v.kind == DownloadKind::Torrent { "torrent" } else { kind_for(&v.file_name) }.into(),
+        kind: if v.kind == DownloadKind::Torrent {
+            "torrent"
+        } else {
+            kind_for(&v.file_name)
+        }
+        .into(),
         category: v.category.clone().into(),
         queue: v.queue.map(|q| q.to_string()).unwrap_or_default().into(),
         size: size.into(),
@@ -2687,7 +3004,12 @@ fn row_of(v: &DownloadView, sel: bool) -> DownloadRow {
         state: state_of(v.status),
         added: fmt_time(v.added_at).into(),
         sel,
-        save_to: v.save_path.parent().map(|p| p.display().to_string()).unwrap_or_default().into(),
+        save_to: v
+            .save_path
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+            .into(),
         referer: v.referer().to_string().into(),
         parent: v.parent_page.clone().unwrap_or_default().into(),
     }
@@ -2728,7 +3050,9 @@ fn update_model<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T
 }
 
 pub(crate) fn refresh(ui: &Ui) {
-    let Some(w) = ui.ctx.main.upgrade() else { return };
+    let Some(w) = ui.ctx.main.upgrade() else {
+        return;
+    };
     let mut views = ui.ctx.mgr.snapshot();
     // not in the list before Start is pressed in "Download File Info"
     if let Some(early) = early_download(&ui.ctx) {
@@ -2754,10 +3078,20 @@ pub(crate) fn refresh(ui: &Ui) {
         "status" => views.sort_by_key(|v| (order(v), v.id)),
         "eta" => views.sort_by_key(|v| (v.eta_secs.unwrap_or(u64::MAX), v.id)),
         "speed" => views.sort_by_key(|v| (v.speed as u64, v.id)),
-        "desc" => views.sort_by_key(|v| (v.description.clone().unwrap_or_default().to_lowercase(), v.id)),
+        "desc" => views.sort_by_key(|v| {
+            (
+                v.description.clone().unwrap_or_default().to_lowercase(),
+                v.id,
+            )
+        }),
         "saveto" => views.sort_by_key(|v| (v.save_path.parent().map(|p| p.to_path_buf()), v.id)),
         "referer" => views.sort_by_key(|v| (v.referer().to_lowercase(), v.id)),
-        "parent" => views.sort_by_key(|v| (v.parent_page.clone().unwrap_or_default().to_lowercase(), v.id)),
+        "parent" => views.sort_by_key(|v| {
+            (
+                v.parent_page.clone().unwrap_or_default().to_lowercase(),
+                v.id,
+            )
+        }),
         "added" => views.sort_by_key(|v| (v.added_at, v.id)),
         _ => views.sort_by_key(|v| (v.finished_at.or(v.last_try).unwrap_or(v.added_at), v.id)),
     }
@@ -2772,7 +3106,11 @@ pub(crate) fn refresh(ui: &Ui) {
             search.is_empty()
                 || v.file_name.to_lowercase().contains(&search)
                 || v.url.to_lowercase().contains(&search)
-                || v.description.as_deref().unwrap_or("").to_lowercase().contains(&search)
+                || v.description
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&search)
         })
         .map(|v| row_of(v, false))
         .collect();
@@ -2790,8 +3128,16 @@ pub(crate) fn refresh(ui: &Ui) {
         }
         let chosen: Vec<&DownloadView> = views.iter().filter(|v| sel.ids.contains(&v.id)).collect();
         w.set_sel_count(chosen.len() as i32);
-        w.set_can_resume(chosen.iter().any(|v| matches!(v.status, Status::Paused | Status::Failed)));
-        w.set_can_stop(chosen.iter().any(|v| v.status == Status::Queued || v.status.is_running()));
+        w.set_can_resume(
+            chosen
+                .iter()
+                .any(|v| matches!(v.status, Status::Paused | Status::Failed)),
+        );
+        w.set_can_stop(
+            chosen
+                .iter()
+                .any(|v| v.status == Status::Queued || v.status.is_running()),
+        );
     }
     update_model(&ui.rows, new_rows);
 
@@ -2804,7 +3150,12 @@ pub(crate) fn refresh(ui: &Ui) {
             SharedString::new()
         }
     };
-    let builtin: Vec<String> = settings.categories.iter().filter(|c| c.builtin).map(|c| c.name.clone()).collect();
+    let builtin: Vec<String> = settings
+        .categories
+        .iter()
+        .filter(|c| c.builtin)
+        .map(|c| c.name.clone())
+        .collect();
     let cat_rows: Vec<CatRow> = settings
         .category_names()
         .into_iter()
@@ -2833,7 +3184,9 @@ pub(crate) fn refresh(ui: &Ui) {
                 .iter()
                 .filter(|v| v.queue == Some(q.id) && v.status != Status::Completed)
                 .count() as i32,
-            running: views.iter().any(|v| v.queue == Some(q.id) && v.status.is_running()),
+            running: views
+                .iter()
+                .any(|v| v.queue == Some(q.id) && v.status.is_running()),
         })
         .collect();
     update_model(&ui.queues, queue_rows);
@@ -2853,7 +3206,10 @@ pub(crate) fn refresh(ui: &Ui) {
     let running = views.iter().filter(|v| v.status.is_running()).count();
     let speed: f64 = views.iter().map(|v| v.speed).sum();
     let text = if running > 0 {
-        tf("{} downloading  ·  {}/s", &[&running, &fmt_size(speed as u64)])
+        tf(
+            "{} downloading  ·  {}/s",
+            &[&running, &fmt_size(speed as u64)],
+        )
     } else {
         tf("Ready  ·  {} files in the list", &[&views.len()])
     };
@@ -2904,7 +3260,9 @@ pub(crate) fn open_progress(ui: &Ui, id: u64) {
             if let Some(d) = w.upgrade() {
                 mgr.set_on_complete(id, completion_from(d.get_when_done()));
                 let mut s = mgr.settings();
-                if s.show_complete_dialog != d.get_complete_dialog() || s.force_shutdown != d.get_force_close() {
+                if s.show_complete_dialog != d.get_complete_dialog()
+                    || s.force_shutdown != d.get_force_close()
+                {
                     s.show_complete_dialog = d.get_complete_dialog();
                     s.force_shutdown = d.get_force_close();
                     let _ = mgr.set_settings(s);
@@ -2939,7 +3297,12 @@ pub(crate) fn open_progress(ui: &Ui, id: u64) {
         d.on_hide_to_tray(move || {
             let Some(d) = w.upgrade() else { return };
             let (tip, progress) = mgr.get(id).map(|v| tray_tip(&v)).unwrap_or_default();
-            if tray::show_download(id, &tip, progress, (&t("Show download progress"), &t("Stop download"))) {
+            if tray::show_download(
+                id,
+                &tip,
+                progress,
+                (&t("Show download progress"), &t("Stop download")),
+            ) {
                 let _ = d.hide();
             } else {
                 // no icon could be made: at least out of the way
@@ -2968,12 +3331,17 @@ pub(crate) fn open_progress(ui: &Ui, id: u64) {
                 let now = d.window().size().to_logical(scale);
                 let height = if d.get_show_details() {
                     let before = tall.get();
-                    if before > 0.0 { before } else { now.height.max(d.get_content_height()) }
+                    if before > 0.0 {
+                        before
+                    } else {
+                        now.height.max(d.get_content_height())
+                    }
                 } else {
                     tall.set(now.height);
                     d.get_content_height()
                 };
-                d.window().set_size(slint::LogicalSize::new(now.width, height.max(120.0)));
+                d.window()
+                    .set_size(slint::LogicalSize::new(now.width, height.max(120.0)));
             });
         });
     }
@@ -3076,7 +3444,9 @@ fn taskbar_state(v: &DownloadView) -> winfx::TaskbarProgress {
     use winfx::TaskbarProgress as P;
     let amount = match v.total_size {
         Some(t) if t > 0 => Some((v.downloaded.min(t), t)),
-        _ if v.parts_total > 0 => Some((v.parts_done.min(v.parts_total) as u64, v.parts_total as u64)),
+        _ if v.parts_total > 0 => {
+            Some((v.parts_done.min(v.parts_total) as u64, v.parts_total as u64))
+        }
         _ => None,
     };
     match (v.status, amount) {
@@ -3094,7 +3464,14 @@ fn taskbar_state(v: &DownloadView) -> winfx::TaskbarProgress {
 fn fill_details(d: &DetailsDialog, model: &VecModel<SegView>, v: &DownloadView) {
     let pct = v.progress();
     d.set_name(v.file_name.clone().into());
-    d.set_kind(if v.kind == DownloadKind::Torrent { "torrent" } else { kind_for(&v.file_name) }.into());
+    d.set_kind(
+        if v.kind == DownloadKind::Torrent {
+            "torrent"
+        } else {
+            kind_for(&v.file_name)
+        }
+        .into(),
+    );
     d.set_percent(format!("{:.0}%", pct * 100.0).into());
     d.set_url(v.url.clone().into());
     let status = match v.status {
@@ -3105,16 +3482,35 @@ fn fill_details(d: &DetailsDialog, model: &VecModel<SegView>, v: &DownloadView) 
         other => t(other.label()),
     };
     d.set_status(status.into());
-    d.set_size(v.total_size.map(fmt_size).unwrap_or_else(|| t("Unknown")).into());
+    d.set_size(
+        v.total_size
+            .map(fmt_size)
+            .unwrap_or_else(|| t("Unknown"))
+            .into(),
+    );
     let done = if v.parts_total > 0 && v.total_size.is_none() {
-        format!("{} ({}/{} parts)", fmt_size(v.downloaded), v.parts_done, v.parts_total)
+        format!(
+            "{} ({}/{} parts)",
+            fmt_size(v.downloaded),
+            v.parts_done,
+            v.parts_total
+        )
     } else {
         format!("{} ({:.2} %)", fmt_size(v.downloaded), pct * 100.0)
     };
     d.set_downloaded(done.into());
-    let speed = if v.speed > 0.0 { format!("{}/s", fmt_size(v.speed as u64)) } else { "—".into() };
+    let speed = if v.speed > 0.0 {
+        format!("{}/s", fmt_size(v.speed as u64))
+    } else {
+        "—".into()
+    };
     d.set_speed(speed.into());
-    d.set_eta(v.eta_secs.map(fmt_duration).unwrap_or_else(|| "—".into()).into());
+    d.set_eta(
+        v.eta_secs
+            .map(fmt_duration)
+            .unwrap_or_else(|| "—".into())
+            .into(),
+    );
     d.set_resumable(t(if v.resumable { "Yes" } else { "No" }).into());
     d.set_resumable_ok(v.resumable);
     d.set_error(err_text(v.error.as_deref().unwrap_or_default()).into());
@@ -3170,7 +3566,14 @@ mod tests {
     #[test]
     fn batch_patterns() {
         let l = expand_pattern("https://example.com/img*.jpg", false, "8", "10", 2).unwrap();
-        assert_eq!(l, vec!["https://example.com/img08.jpg", "https://example.com/img09.jpg", "https://example.com/img10.jpg"]);
+        assert_eq!(
+            l,
+            vec![
+                "https://example.com/img08.jpg",
+                "https://example.com/img09.jpg",
+                "https://example.com/img10.jpg"
+            ]
+        );
         let l = expand_pattern("https://example.com/*.pdf", true, "a", "c", 1).unwrap();
         assert_eq!(l.len(), 3);
         assert!(expand_pattern("https://example.com/x.pdf", false, "1", "2", 1).is_err());

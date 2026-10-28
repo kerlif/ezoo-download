@@ -58,7 +58,11 @@ fn write_font(name: &str, bytes: &[u8]) -> std::io::Result<()> {
         std::fs::write(&f, bytes)?;
     }
     // "InstaArabi-Regular.ttf" -> "InstaArabi (TrueType)"
-    let family = name.split('-').next().unwrap_or(name).trim_end_matches(".ttf");
+    let family = name
+        .split('-')
+        .next()
+        .unwrap_or(name)
+        .trim_end_matches(".ttf");
     let label = wide(format!("{family} (TrueType)"));
     let key = wide(r"Software\Microsoft\Windows NT\CurrentVersion\Fonts".to_string());
     let path = wide(f.display().to_string());
@@ -93,7 +97,10 @@ fn write_font(name: &str, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(windows)]
 fn wide(s: String) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(&s).encode_wide().chain(std::iter::once(0)).collect()
+    std::ffi::OsStr::new(&s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]

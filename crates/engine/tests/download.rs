@@ -36,7 +36,11 @@ async fn serve(data: Arc<Vec<u8>>) -> u16 {
                     if let Some(v) = l.strip_prefix("range: bytes=") {
                         let (a, b) = v.trim().split_once('-').unwrap();
                         let a: usize = a.parse().unwrap();
-                        let b: usize = if b.is_empty() { data.len() - 1 } else { b.parse().unwrap() };
+                        let b: usize = if b.is_empty() {
+                            data.len() - 1
+                        } else {
+                            b.parse().unwrap()
+                        };
                         range = Some((a, b.min(data.len() - 1)));
                     }
                 }
@@ -74,7 +78,9 @@ async fn segmented_download_with_pause_and_resume() {
     let url = format!("http://127.0.0.1:{port}/files/test.bin");
     let shared = Arc::new(Shared::new(build_client().unwrap(), SpeedLimiter::new(0)));
 
-    let p = probe(&shared.client(), &url, &RequestHeaders::default(), "test").await.unwrap();
+    let p = probe(&shared.client(), &url, &RequestHeaders::default(), "test")
+        .await
+        .unwrap();
     assert_eq!(p.total_size, Some(data.len() as u64));
     assert!(p.resumable);
     assert_eq!(p.file_name, "test file.bin");
@@ -111,7 +117,14 @@ async fn segmented_download_with_pause_and_resume() {
         }
         c2.cancel();
     });
-    let first = http_download::run(shared.clone(), job.clone(), segs.clone(), progress.clone(), cancel).await;
+    let first = http_download::run(
+        shared.clone(),
+        job.clone(),
+        segs.clone(),
+        progress.clone(),
+        cancel,
+    )
+    .await;
     assert!(first.is_err(), "should have been paused");
     let after_pause = progress.bytes.load(Ordering::Relaxed);
     assert!(after_pause > 0 && after_pause < data.len() as u64);
@@ -119,9 +132,15 @@ async fn segmented_download_with_pause_and_resume() {
     // resume with the saved segment table
     let saved = segs.lock().unwrap().clone();
     let segs = Arc::new(Mutex::new(saved));
-    http_download::run(shared, job, segs.clone(), progress.clone(), CancellationToken::new())
-        .await
-        .unwrap();
+    http_download::run(
+        shared,
+        job,
+        segs.clone(),
+        progress.clone(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
 
     let out = std::fs::read(&part).unwrap();
     assert_eq!(out.len(), data.len());
@@ -157,7 +176,15 @@ async fn chunked_requests_with_32_connections() {
     };
     let segs = Arc::new(Mutex::new(Vec::new()));
     let progress = Arc::new(Progress::default());
-    http_download::run(shared, job, segs, progress.clone(), CancellationToken::new()).await.unwrap();
+    http_download::run(
+        shared,
+        job,
+        segs,
+        progress.clone(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     let out = std::fs::read(&part).unwrap();
     assert!(out == *data, "chunked download differs from the source");
     assert_eq!(progress.bytes.load(Ordering::Relaxed), data.len() as u64);
@@ -192,7 +219,11 @@ async fn serve_flaky(data: Arc<Vec<u8>>, down: Arc<std::sync::atomic::AtomicBool
                     if let Some(v) = l.strip_prefix("range: bytes=") {
                         let (a, b) = v.trim().split_once('-').unwrap();
                         let a: usize = a.parse().unwrap();
-                        let b: usize = if b.is_empty() { data.len() - 1 } else { b.parse().unwrap() };
+                        let b: usize = if b.is_empty() {
+                            data.len() - 1
+                        } else {
+                            b.parse().unwrap()
+                        };
                         range = Some((a, b.min(data.len() - 1)));
                     }
                 }
@@ -263,10 +294,19 @@ async fn waits_through_a_long_outage_and_resumes() {
         d2.store(false, Ordering::Relaxed);
         saw_waiting
     });
-    http_download::run(shared, job, segs, progress.clone(), CancellationToken::new())
-        .await
-        .expect("should wait for the connection and finish");
-    assert!(watcher.await.unwrap(), "should have shown 'waiting for connection'");
+    http_download::run(
+        shared,
+        job,
+        segs,
+        progress.clone(),
+        CancellationToken::new(),
+    )
+    .await
+    .expect("should wait for the connection and finish");
+    assert!(
+        watcher.await.unwrap(),
+        "should have shown 'waiting for connection'"
+    );
     assert!(!progress.waiting.load(Ordering::Relaxed));
     let out = std::fs::read(&part).unwrap();
     assert!(out == *data, "downloaded bytes differ from the source");

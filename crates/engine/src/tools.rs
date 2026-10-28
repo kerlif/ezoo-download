@@ -11,15 +11,19 @@ use std::time::{Duration, SystemTime};
 
 const YTDLP_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 /// the SHA-256 of every file of that release, published by yt-dlp
-const YTDLP_SUMS_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
-const YTDLP_LINUX_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux";
+const YTDLP_SUMS_URL: &str =
+    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
+const YTDLP_LINUX_URL: &str =
+    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux";
 /// none of the helpers is anywhere near this big
 const MAX_TOOL_BYTES: u64 = 400 << 20;
 /// aria2 for torrents: one fixed, known build (it changes rarely), checked
 /// against this SHA-256 before use
 pub const ARIA2_URL: &str = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
-pub const ARIA2_ZIP_SHA256: &str = "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288";
-pub const ARIA2_EXE_SHA256: &str = "be2099c214f63a3cb4954b09a0becd6e2e34660b886d4c898d260febfe9d70c2";
+pub const ARIA2_ZIP_SHA256: &str =
+    "67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288";
+pub const ARIA2_EXE_SHA256: &str =
+    "be2099c214f63a3cb4954b09a0becd6e2e34660b886d4c898d260febfe9d70c2";
 
 fn exe(name: &str) -> String {
     if cfg!(windows) {
@@ -32,7 +36,10 @@ fn exe(name: &str) -> String {
 /// Folders searched for the tools, best first.
 pub fn tool_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
-    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf))
+    {
         v.push(dir.join("tools"));
         v.push(dir.clone());
         // Linux packages: the .deb/.rpm install the bundled ffmpeg in
@@ -53,14 +60,19 @@ pub fn tool_dirs() -> Vec<PathBuf> {
 
 /// A folder of ours for the helpers' temporary files.
 pub fn work_dir() -> Option<PathBuf> {
-    let dir = directories::ProjectDirs::from("com", "Ezoo", "EzooDownload")?.data_dir().join("tmp");
+    let dir = directories::ProjectDirs::from("com", "Ezoo", "EzooDownload")?
+        .data_dir()
+        .join("tmp");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
 
 /// A tool shipped with the app (not one somewhere on PATH).
 pub fn bundled(name: &str) -> Option<PathBuf> {
-    tool_dirs().into_iter().map(|d| d.join(exe(name))).find(|p| p.exists())
+    tool_dirs()
+        .into_iter()
+        .map(|d| d.join(exe(name)))
+        .find(|p| p.exists())
 }
 
 /// Where new copies go: the install folder's "tools" when we may write
@@ -74,7 +86,9 @@ fn writable_dir(name: &str) -> Option<PathBuf> {
             }
         }
     }
-    tool_dirs().into_iter().find(|d| std::fs::create_dir_all(d).is_ok() && can_write(d))
+    tool_dirs()
+        .into_iter()
+        .find(|d| std::fs::create_dir_all(d).is_ok() && can_write(d))
 }
 
 fn can_write(dir: &Path) -> bool {
@@ -98,15 +112,20 @@ pub fn sum_for(list: &str, name: &str) -> Option<String> {
     list.lines().find_map(|l| {
         let mut it = l.split_whitespace();
         let (sum, file) = (it.next()?, it.next()?);
-        (file.trim_start_matches('*') == name && sum.len() == 64 && sum.chars().all(|c| c.is_ascii_hexdigit()))
-            .then(|| sum.to_ascii_lowercase())
+        (file.trim_start_matches('*') == name
+            && sum.len() == 64
+            && sum.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| sum.to_ascii_lowercase())
     })
 }
 
 async fn get_text(client: &reqwest::Client, url: &str) -> anyhow::Result<String> {
     let text = client
         .get(url)
-        .header(reqwest::header::USER_AGENT, crate::config::DEFAULT_USER_AGENT)
+        .header(
+            reqwest::header::USER_AGENT,
+            crate::config::DEFAULT_USER_AGENT,
+        )
         .send()
         .await?
         .error_for_status()?
@@ -121,11 +140,19 @@ async fn get_text(client: &reqwest::Client, url: &str) -> anyhow::Result<String>
 /// Download `url` to `dest`. It is used only when its SHA-256 is `sha256`
 /// (from the checksum list its makers publish): a changed or broken file is
 /// thrown away and never run.
-async fn download(client: &reqwest::Client, url: &str, dest: &Path, sha256: &str) -> anyhow::Result<()> {
+async fn download(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    sha256: &str,
+) -> anyhow::Result<()> {
     use sha2::{Digest, Sha256};
     let mut resp = client
         .get(url)
-        .header(reqwest::header::USER_AGENT, crate::config::DEFAULT_USER_AGENT)
+        .header(
+            reqwest::header::USER_AGENT,
+            crate::config::DEFAULT_USER_AGENT,
+        )
         .send()
         .await?
         .error_for_status()?;
@@ -184,7 +211,8 @@ async fn yt_dlp(client: &reqwest::Client, data_dir: &Path) {
             if let Some(dir) = writable_dir("yt-dlp") {
                 if let Ok(sums) = get_text(client, YTDLP_SUMS_URL).await {
                     if let Some(sum) = sum_for(&sums, "yt-dlp_linux") {
-                        let _ = download(client, YTDLP_LINUX_URL, &dir.join(exe("yt-dlp")), &sum).await;
+                        let _ =
+                            download(client, YTDLP_LINUX_URL, &dir.join(exe("yt-dlp")), &sum).await;
                     }
                 }
             }
@@ -195,7 +223,9 @@ async fn yt_dlp(client: &reqwest::Client, data_dir: &Path) {
     if !due(&stamp, Duration::from_secs(20 * 3600)) {
         return;
     }
-    let Some(tool) = bundled("yt-dlp") else { return };
+    let Some(tool) = bundled("yt-dlp") else {
+        return;
+    };
     let ok = tokio::task::spawn_blocking(move || {
         let mut cmd = Command::new(&tool);
         if let Some(dir) = work_dir() {
@@ -217,7 +247,9 @@ async fn yt_dlp(client: &reqwest::Client, data_dir: &Path) {
 /// of the big public build that older versions downloaded by themselves
 /// are removed, so ours is the one used.
 fn ours_ffmpeg() -> Option<PathBuf> {
-    let dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf))?;
+    let dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf))?;
     let tools = dir.join("tools").join(exe("ffmpeg"));
     if tools.exists() {
         return Some(tools);
@@ -239,7 +271,11 @@ fn ffmpeg_cleanup() {
     }
     if let Some(p) = directories::ProjectDirs::from("com", "Ezoo", "EzooDownload") {
         let dir = p.data_dir().join("tools");
-        for f in [exe("ffmpeg"), "ffmpeg-version.txt".into(), "ffmpeg-LICENSE.txt".into()] {
+        for f in [
+            exe("ffmpeg"),
+            "ffmpeg-version.txt".into(),
+            "ffmpeg-LICENSE.txt".into(),
+        ] {
             let _ = std::fs::remove_file(dir.join(f));
         }
     }
@@ -250,7 +286,9 @@ async fn aria2(client: &reqwest::Client) -> anyhow::Result<()> {
     if !cfg!(windows) || bundled("aria2c").is_some() {
         return Ok(());
     }
-    let Some(dir) = writable_dir("aria2c") else { return Ok(()) };
+    let Some(dir) = writable_dir("aria2c") else {
+        return Ok(());
+    };
     let work = std::env::temp_dir().join(format!("ezoo-aria2-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work)?;
@@ -272,7 +310,9 @@ async fn aria2(client: &reqwest::Client) -> anyhow::Result<()> {
             std::fs::copy(&f, &staged)?;
             replace(&staged, &dir.join(exe("aria2c")))
         }
-        Some(_) => Err(anyhow::anyhow!("aria2c.exe does not match its known SHA-256")),
+        Some(_) => Err(anyhow::anyhow!(
+            "aria2c.exe does not match its known SHA-256"
+        )),
         None => Err(anyhow::anyhow!("aria2c.exe was not found in the download")),
     };
     let _ = std::fs::remove_dir_all(&work);
@@ -282,7 +322,12 @@ async fn aria2(client: &reqwest::Client) -> anyhow::Result<()> {
 fn sha256_of(path: &Path) -> Option<String> {
     use sha2::{Digest, Sha256};
     let data = std::fs::read(path).ok()?;
-    Some(Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect())
+    Some(
+        Sha256::digest(&data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+    )
 }
 
 fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -292,7 +337,11 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
             if let Some(f) = find_file(&p, name) {
                 return Some(f);
             }
-        } else if p.file_name().map(|n| n.eq_ignore_ascii_case(name)).unwrap_or(false) {
+        } else if p
+            .file_name()
+            .map(|n| n.eq_ignore_ascii_case(name))
+            .unwrap_or(false)
+        {
             return Some(p);
         }
     }

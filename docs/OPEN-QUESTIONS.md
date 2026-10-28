@@ -57,3 +57,16 @@ the resolution and date.
    verified from the bundled files' own name tables) covers document
    text. Exact copyright lines for Cairo/Noto must be captured from the
    downloaded `OFL.txt` files at fetch time.
+
+2. **AboutDialog YouTube/Facebook buttons** (resolved 2026-10-28, promo
+   audit). The About dialog carries `YouTube` → `https://www.youtube.com/@Ezoo-Tech`
+   and `Facebook` → `https://www.facebook.com/profile.php?id=61558130707674`
+   buttons (`dialogs.slint:3744-3752`), plus `AppPublisherURL` in
+   `installer/ezoo.iss:42`. Decision: the two buttons are promotional UI
+   and are REMOVED in Phase 2 with the donation block; the "Coded by Ahmed
+   Ezzat" text credit, all textual author/upstream credits, upstream
+   links, and the installer publisher name/URL metadata are KEPT as
+   attribution (installer metadata is not user-visible promotional UI).
+   Rationale: Phase 2 removes promotional UI and keeps credits; channel
+   buttons drive traffic to the author's channels and are promotion, while
+   name/upstream attribution is credit.
