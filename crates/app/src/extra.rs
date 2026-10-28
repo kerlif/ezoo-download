@@ -498,7 +498,7 @@ thread_local! {
 }
 
 /// After an update: what is new, in its own window (right to left in
-/// Arabic), with a word about supporting the free program.
+/// Arabic).
 pub(crate) fn whats_new(ui: &Ui) {
     let Ok(d) = WhatsNewDialog::new() else { return };
     crate::set_theme_of(
@@ -515,11 +515,6 @@ pub(crate) fn whats_new(ui: &Ui) {
     );
     let items: Vec<SharedString> = WHATS_NEW.iter().map(|l| t(l).into()).collect();
     d.set_items(ModelRc::new(VecModel::from(items)));
-    d.on_open_link(|u| {
-        if u.starts_with("https://") {
-            let _ = open::that(u.as_str());
-        }
-    });
     let w = d.as_weak();
     d.on_close_window(move || {
         if let Some(d) = w.upgrade() {

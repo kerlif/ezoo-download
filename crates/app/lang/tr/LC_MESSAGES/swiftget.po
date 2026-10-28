@@ -1402,23 +1402,8 @@ msgstr "Sürüm {}"
 msgid "Coded by Ahmed Ezzat"
 msgstr "Kodlayan: Ahmed Ezzat"
 
-msgid "Like Ezoo Download? You can support its development:"
-msgstr "Ezoo Download'u beğendiniz mi? Geliştirilmesine destek olabilirsiniz:"
-
-msgid "Support with PayPal"
-msgstr "PayPal ile destek ol"
-
-msgid "Support with InstaPay"
-msgstr "InstaPay ile destekle"
-
-msgid "InstaPay: a7medek@instapay (scan the code with your bank's app)"
-msgstr "InstaPay: a7medek@instapay (kodu bankanızın uygulamasıyla tarayın)"
-
 msgid "What's new in Ezoo Download"
 msgstr "Ezoo Download’da yenilikler"
-
-msgid "Ezoo Download is free and has no ads. If it helps you and you would like to support its development, you can send a gift with PayPal or InstaPay. Thank you!"
-msgstr "Ezoo Download ücretsiz ve reklamsızdır. İşinize yarıyorsa ve gelişimini desteklemek isterseniz PayPal veya InstaPay ile bağış gönderebilirsiniz. Teşekkürler!"
 
 msgid "Hide"
 msgstr "Gizle"

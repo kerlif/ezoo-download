@@ -398,7 +398,6 @@ const AR: &[(&str, &str)] = &[
         "A new playlist icon, and a smaller icon on the window title.",
         "أيقونة جديدة لقوائم التشغيل، وأيقونة أصغر في شريط عنوان النافذة.",
     ),
-    ("Support Ezoo Download with PayPal from Help > About.", "ادعم Ezoo Download عبر PayPal من مساعدة > حول."),
     // 1.0.5
     (
         "The main window can be maximized to the full screen.",
