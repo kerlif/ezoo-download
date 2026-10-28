@@ -1054,6 +1054,9 @@ msgstr "بدء تحميل الروابط المنسوخة للحافظة تلق�
 msgid "Show \"Tip of the day\" at startup"
 msgstr "إظهار \"نصيحة اليوم\" عند البدء"
 
+msgid "Check for updates automatically"
+msgstr "البحث عن التحديثات تلقائياً"
+
 msgid "On double click on a download"
 msgstr "عند النقر المزدوج على تحميل"
 

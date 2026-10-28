@@ -5605,6 +5605,7 @@ dependencies = [
  "libc",
  "open",
  "raw-window-handle",
+ "reqwest",
  "rfd",
  "serde",
  "serde_json",

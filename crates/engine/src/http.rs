@@ -219,14 +219,30 @@ pub fn build_client() -> anyhow::Result<Client> {
 }
 
 pub fn build_client_with(proxy: &ProxyConfig) -> anyhow::Result<Client> {
+    Ok(base_builder(proxy)?
+        .redirect(reqwest::redirect::Policy::limited(15))
+        .build()?)
+}
+
+/// Client for the update checker: the same proxy handling as
+/// `build_client_with`, but redirects are NOT followed automatically —
+/// the checker follows them itself in `selfupdate::open_guarded` and
+/// refuses cross-host hops. No total timeout: artifact downloads stream
+/// through this client too, and a slow one must not be cut off.
+pub fn checker_client(proxy: &ProxyConfig) -> anyhow::Result<Client> {
+    Ok(base_builder(proxy)?
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
+}
+
+fn base_builder(proxy: &ProxyConfig) -> anyhow::Result<reqwest::ClientBuilder> {
     let mut b = Client::builder()
         // Real separate TCP connections. With HTTP/2 all our
         // "connections" would share one TCP connection and be as slow as one.
         .http1_only()
         .tcp_nodelay(true)
         .connect_timeout(Duration::from_secs(20))
-        .pool_max_idle_per_host(64)
-        .redirect(reqwest::redirect::Policy::limited(15));
+        .pool_max_idle_per_host(64);
     match proxy.mode {
         // 1 = system settings: reqwest reads them by itself
         0 => b = b.no_proxy(),
@@ -250,7 +266,7 @@ pub fn build_client_with(proxy: &ProxyConfig) -> anyhow::Result<Client> {
         }
         _ => {}
     }
-    Ok(b.build()?)
+    Ok(b)
 }
 
 /// GET request carrying the browser's headers.

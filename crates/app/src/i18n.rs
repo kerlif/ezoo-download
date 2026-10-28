@@ -461,6 +461,22 @@ const AR: &[(&str, &str)] = &[
         "جارٍ تثبيت الإصدار {}…",
     ),
     (
+        "Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.",
+        "تم تنزيل الإصدار {} والتحقق منه. هل تريد تثبيته الآن؟ سيُغلق Ezoo Download ويفتح من جديد بعد التثبيت.",
+    ),
+    (
+        "Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.",
+        "تم تنزيل الإصدار {} والتحقق منه. هل تريد استبدال ملف AppImage الآن؟ سيبدأ الإصدار الجديد في المرة القادمة التي تفتح فيها Ezoo Download.",
+    ),
+    (
+        "The AppImage file was replaced. Open Ezoo Download again to use version {}.",
+        "تم استبدال ملف AppImage. افتح Ezoo Download من جديد لاستخدام الإصدار {}.",
+    ),
+    (
+        "Open the release page in the browser?",
+        "فتح صفحة الإصدار في المتصفح؟",
+    ),
+    (
         "Ezoo Download closes now and opens again when it is installed.",
         "سيُغلق Ezoo Download الآن ويفتح من جديد بعد التثبيت.",
     ),
@@ -607,6 +623,12 @@ mod tests {
             let m = table(code).expect("table");
             assert!(m.len() > 150, "{code}: only {} texts", m.len());
             for (en, tr) in m {
+                // "needs-review" is metadata, not a UI text: its value
+                // lists the English source strings awaiting review, which
+                // legitimately contain "{}" placeholders of their own
+                if en == "needs-review" {
+                    continue;
+                }
                 assert_eq!(
                     en.matches("{}").count(),
                     tr.matches("{}").count(),

@@ -211,7 +211,7 @@ pub struct SiteLogin {
 pub const MAIN_QUEUE: u64 = 1;
 
 /// Bump when defaults change in a way old settings files should pick up.
-const SETTINGS_VERSION: u32 = 4;
+const SETTINGS_VERSION: u32 = 5;
 
 /// Columns of the download list that can be shown or hidden (View > Columns).
 pub const ALL_COLUMNS: [&str; 11] = [
@@ -383,6 +383,9 @@ pub struct Settings {
     pub start_while_info: bool,
     /// "en", "ar", or "" = the language of Windows
     pub language: String,
+    /// automatic update checks (Options > General); turning it off stops
+    /// the startup / 24-hour checks, Help > Check for updates still works
+    pub update_check: bool,
 }
 
 impl Default for Settings {
@@ -472,6 +475,7 @@ impl Default for Settings {
             extension_prompted: false,
             start_while_info: true,
             language: String::new(),
+            update_check: true,
         }
     }
 }
@@ -518,6 +522,12 @@ impl Settings {
                 }
             }
             s.schedule.enabled = false;
+        }
+        if s.version < 5 {
+            // v5: automatic update checks are on unless the user turns
+            // them off (files written before the setting existed have no
+            // value; the struct default already fills it in as on)
+            s.update_check = true;
         }
         s.version = SETTINGS_VERSION;
         if !s.queues.iter().any(|q| q.id == MAIN_QUEUE) {
@@ -873,6 +883,22 @@ mod tests {
         // old settings files without the field still load
         let s2: Settings = serde_json::from_str("{\"version\":4}").unwrap();
         assert!(s2.host_learning.is_empty());
+    }
+
+    #[test]
+    fn update_check_is_on_unless_the_user_turned_it_off() {
+        let dir = std::env::temp_dir().join(format!("ezoo-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        // a file from before the setting existed: checks stay on
+        std::fs::write(&path, "{\"version\":4}").unwrap();
+        let s = Settings::load(&path);
+        assert!(s.update_check);
+        assert_eq!(s.version, 5);
+        // an explicit off survives a load
+        std::fs::write(&path, "{\"version\":5,\"update_check\":false}").unwrap();
+        assert!(!Settings::load(&path).update_check);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

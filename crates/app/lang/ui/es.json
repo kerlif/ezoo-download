@@ -476,5 +476,6 @@
  "Stalled": "Bloqueada",
  "Receiving data…": "Recibiendo datos…",
  "Waiting": "En espera",
- "needs-review": "Stalled; Receiving data…; Waiting"
+ "Check for updates automatically": "Buscar actualizaciones automáticamente",
+ "needs-review": "Stalled; Receiving data…; Waiting; Check for updates automatically"
 }

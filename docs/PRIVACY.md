@@ -1,11 +1,10 @@
 # Privacy — outbound network requests
 
-Inventory in progress. The entries below cover the capture-window
-probing added in Phase 4 of the v1.1.0 upgrade (complete) and the
-per-host learning store added in Phase 5 (complete, local only). The
-full inventory — update checker, yt-dlp, torrents, and every other
-request the program makes — is completed in Phase 7; nothing outside
-this list was added or changed by Phases 4–5.
+Inventory complete as of Phase 7 of the v1.1.0 upgrade (surveyed from
+the code; the update-checker section is verified by local-server
+tests). Nothing outside this list is contacted by the program. Phases
+4–5 added the probing and learning entries only; Phase 7 added the
+update checker and surveyed the rest.
 
 ## Rules that apply to every request below
 
@@ -18,6 +17,45 @@ this list was added or changed by Phases 4–5.
   adds no new stored copy.
 - Probing never runs yt-dlp. yt-dlp runs only when the user asks for
   video choices (the browser panel's "Download this video" flow).
+
+## Update checker (Phase 7)
+
+Checked at startup (3 s in, async) and every 24 hours while the
+program stays open, unless turned off in Options > General. The
+check is the only contact with `api.github.com`, and the only
+request the program makes on its own besides the tools updater
+below. Full design: `docs/UPDATE-CHECKER.md`.
+
+| Request | Purpose |
+|---|---|
+| `GET https://api.github.com/repos/kerlif/ezoo-download/releases/latest` | Learn the latest release (tag + asset list). The one update source; the repository comes from the single `REPO` constant. |
+| `GET` the release's `version.json` asset | The signed manifest (version, download URL, SHA-256, signature). Verified before anything is offered. |
+| `GET` the release's `SHA256SUMS.txt` (else `SHA256SUMS-windows.txt`) | Checksum file the downloaded artifact is cross-checked against. |
+| `GET` the artifact (installer / AppImage) | Only after the signed manifest verified, only when a newer release exists, and only on Windows (installed copies) and Linux AppImages. Downloaded in the background into a temporary directory, verified, and only then offered to the user. |
+
+Headers sent, and nothing else: `User-Agent: EzooDownload/<version>`
+(app name and version only — no user, machine, or locale data),
+`Accept: application/vnd.github+json` and `X-GitHub-Api-Version:
+2022-11-28` on the API request only, and `If-None-Match: <cached
+ETag>` when a cached answer exists. No cookies, no authorization,
+no query parameters, no request body. The proxy settings from
+Options are honoured. Redirects are followed by hand (at most 3)
+and only to the same origin or to GitHub's release-asset hosts
+(`api.github.com`, `github.com`, `objects.githubusercontent.com`,
+`release-assets.githubusercontent.com`); any other redirect is
+refused.
+
+ETag cache (so unchanged releases cost nothing): `<app data
+dir>/update/checker-cache.json`, format `{"etag": "...", "body":
+"<the releases/latest JSON verbatim>"}`. The body holds only public
+release data (tag, asset names and URLs). A `304` reuses the cached
+body, which is re-parsed and re-verified (signature included) —
+the cache never bypasses verification. Cache failures are ignored.
+
+Failures (offline, rate-limited, malformed answers) fail silently
+and retry later with backoff (5 min, 15 min, 1 h, 6 h, 24 h; a
+server-asked `Retry-After` / rate-limit reset wins, clamped to
+1 min – 24 h). The checker never retries inside one check.
 
 ## Capture-window probing (Phase 4)
 
@@ -53,3 +91,22 @@ size, as exponentially weighted averages. This is stored locally only:
 
 The explicit per-server connection exceptions (Options > Connection)
 are a separate, user-set mechanism and are unchanged.
+
+## Other outbound requests (surveyed, Phase 7)
+
+Everything below is user-initiated or the download itself; none of
+it is telemetry, and none of it was added or changed by Phase 7
+(the checker is the only new network code in this phase).
+
+| Activity | Trigger | Destination / data |
+|---|---|---|
+| Downloads (HTTP, HLS, DASH) | The user adds a link, or the browser extension / clipboard hands one over | The link's own server only. Headers: the user-agent from settings, the browser's captured headers for that link when present, and any saved site login for it. `Range` requests for segments/resume. |
+| Site grabber | The user runs the grabber on a page | That site's pages, with the shared client (proxy + user-agent settings), to find links. |
+| Tools updater (`tools.rs`) | Automatic: 20 s after startup, then every 6 h, but only fetches when a day has passed or a tool is missing; silent, no UI | `github.com/yt-dlp/yt-dlp` (the `yt-dlp` binary + `SHA2-256SUMS`, hash-checked before use) and the fixed aria2 1.37.0 release zip (hash-checked). Sends the browser user-agent string (`DEFAULT_USER_AGENT`) — pre-existing behaviour, unchanged by Phase 7; the update checker does not use it. ffmpeg is never fetched: it ships with the install. |
+| yt-dlp subprocess | User action only: video choices in the browser panel, playlist lookups, Help > update yt-dlp | Whatever yt-dlp itself contacts (video sites; its own update endpoint when updating). That is yt-dlp's behaviour, not the app's; the app never runs it in the background. |
+| Torrents (aria2 subprocess) | The user adds a torrent | The trackers and peers of that torrent. The app talks to aria2 only over its local JSON-RPC server on `127.0.0.1` (ephemeral port, random password per start, never through a proxy). |
+| Browser-extension bridge | Inbound only: the extension posts captured links | Local TCP server on `127.0.0.1` (port 9614). No outbound traffic; requests carry a token header and the `Host` is validated against DNS rebinding. |
+
+Not app traffic: the Firefox add-on update manifest
+(`firefox-updates.json`, a static file on the release) is fetched
+by Firefox itself on its own schedule, never by this program.

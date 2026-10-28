@@ -253,6 +253,10 @@
  "Fixed videos that could not be downloaded on some computers because of the Windows temporary folder.": "Исправлены видео, которые не скачивались на некоторых компьютерах из-за временной папки Windows.",
  "The Grabber also finds links written as plain text, and the menu next to the clock is in the program's language.": "Сборщик находит и ссылки, написанные простым текстом, а меню у часов теперь на языке программы.",
  "The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.": "Ограничение скорости остаётся ровным при многих подключениях, а буфер обмена ловит и добавленные вами типы файлов.",
- "needs-review": "estimated from bitrate; estimated from sampled segments; Stalled",
+ "Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.": "Версия {} загружена и проверена. Установить её сейчас? Ezoo Download закроется и снова откроется после установки.",
+ "Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.": "Версия {} загружена и проверена. Заменить файл AppImage сейчас? Новая версия запустится при следующем открытии Ezoo Download.",
+ "The AppImage file was replaced. Open Ezoo Download again to use version {}.": "Файл AppImage заменён. Откройте Ezoo Download снова, чтобы использовать версию {}.",
+ "Open the release page in the browser?": "Открыть страницу выпуска в браузере?",
+ "needs-review": "estimated from bitrate; estimated from sampled segments; Stalled; Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.; Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.; The AppImage file was replaced. Open Ezoo Download again to use version {}.; Open the release page in the browser?",
  "Stalled": "Зависший"
 }

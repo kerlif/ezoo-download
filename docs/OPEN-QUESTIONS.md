@@ -29,14 +29,23 @@ the resolution and date.
    and confirming dialogs open one at a time as floating windows.
 3. **Fork update-signing keypair.** The fork's `version.json` ships with an
    empty `sig` (no `UPDATE_SIGNING_KEY` secret); the in-app updater
-   therefore refuses fork builds. Default: generate a NEW Ed25519 keypair
-   for the fork in Phase 7, commit the public key in `selfupdate.rs`
-   (replacing the upstream public-key constant), and escalate the private
-   key to the parent agent for storage as a CI secret — the private key
-   must never be committed. The existing `ring`/Ed25519 mechanism is kept
-   (it is the "equivalent" the spec allows for minisign); no second
-   checker is added. Resolution needs: parent creates the CI secret via
-   the browser; CI signs `version.json` in the release workflows.
+   therefore refuses fork builds. CODE SIDE DONE in Phase 7
+   (2026-10-28): a NEW Ed25519 keypair was generated for the fork
+   (32 random bytes from `/dev/urandom` as the seed,
+   `ring::Ed25519KeyPair::from_seed_unchecked`; public key
+   `a495ab88…640fc`, fingerprint SHA-256 `6a8ee4d63d46aeaf…`, full
+   values in `docs/UPDATE-CHECKER.md` §9) and the public key is
+   committed in `selfupdate.rs`, replacing the upstream constant;
+   the existing `ring`/Ed25519 mechanism is kept (it is the
+   "equivalent" the spec allows for minisign); no second checker
+   was added. The private key (64-hex seed) was written ONCE to a
+   file OUTSIDE the git tree, mode 600:
+   `/home/hatch/workspace/ezoo/.update-signing-private.key` — it
+   is in no commit, report, or test fixture. The exact CI step
+   Phase 8 needs is written in `docs/UPDATE-CHECKER.md` §10.
+   Resolution needs: parent creates the CI secret
+   `UPDATE_SIGNING_KEY` via the browser with that private key, and
+   Phase 8 makes a missing key a hard error on release builds.
 4. **Update-check behavior for the Windows Store / portable copies.**
    `selfupdate::installed()` already gates self-update on installed
    copies. Default: keep that behavior; portable copies get notify-only.
@@ -107,6 +116,34 @@ the resolution and date.
     `ui/*.json` are marked too). Default: ship them as written; the
     state is also shown by the segment bar's colour. Resolution
     needs: a native speaker's check of those strings.
+
+11. **Phase 7 translations marked needs-review.** The new update
+    strings — one Slint string ("Check for updates automatically",
+    Options > General) and four Rust strings (the Windows install
+    ask, the AppImage replace ask, the AppImage-replaced
+    confirmation, "Open the release page in the browser?") — are
+    translated best-effort into the six non-English, non-Arabic
+    locales and marked `needs-review` in `crates/app/lang/ui/*.json`
+    (Slint string) and `crates/app/lang/rs/*.json` (Rust strings);
+    the Arabic wordings were written directly (Arabic table in
+    `i18n.rs`, `ar_ui.py`). The `i18n` placeholder-parity test now
+    skips the `needs-review` metadata key, whose value lists source
+    strings that legitimately contain `{}` placeholders. Default:
+    ship them as written. Resolution needs: a native speaker's
+    check of those strings.
+
+12. **AppImage update hash is cross-checked, not directly signed.**
+    The signed `version.json` manifest's signature covers the
+    version and the Windows installer's SHA-256 only, so a Linux
+    AppImage update is verified against the release's
+    `SHA256SUMS.txt` entry, while the signed manifest gates the
+    whole offer (no offer exists unless the signed manifest
+    verified). The checksum file itself is unsigned. Default:
+    keep, as documented in `docs/UPDATE-CHECKER.md` §5; extending
+    the signed message to cover per-platform hashes would change
+    the signing contract shared with the release workflows.
+    Resolution needs: a decision if per-platform hashes should be
+    signed in a later phase.
 
 ## Resolved
 

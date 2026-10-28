@@ -1054,6 +1054,9 @@ msgstr "Автоматически скачивать ссылки, попавш
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Показывать \"Совет дня\" при запуске"
 
+msgid "Check for updates automatically"
+msgstr "Проверять обновления автоматически"
+
 msgid "On double click on a download"
 msgstr "Двойной щелчок по загрузке"
 

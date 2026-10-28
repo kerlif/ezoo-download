@@ -78,6 +78,7 @@ fn fill(ui: &Ui, d: &SettingsDialog, s: &Settings) {
     d.set_auto_clipboard(s.auto_start_clipboard);
     d.set_double_click(s.double_click.min(1) as i32);
     d.set_show_tips(s.show_tips);
+    d.set_update_check(s.update_check);
     d.set_port(s.browser_port as i32);
     d.set_skip_key(key_index(&s.skip_key));
     d.set_force_key(key_index(&s.force_key));
@@ -186,6 +187,7 @@ fn read(ui: &Ui, d: &SettingsDialog, mut s: Settings) -> Result<Settings, String
     s.auto_start_clipboard = d.get_auto_clipboard();
     s.double_click = d.get_double_click().clamp(0, 1) as u32;
     s.show_tips = d.get_show_tips();
+    s.update_check = d.get_update_check();
     s.browser_port = d.get_port().clamp(1024, 65535) as u16;
     s.skip_key = KEYS[d.get_skip_key().clamp(0, 3) as usize].into();
     s.force_key = KEYS[d.get_force_key().clamp(0, 3) as usize].into();

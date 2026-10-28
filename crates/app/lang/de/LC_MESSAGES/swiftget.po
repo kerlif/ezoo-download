@@ -1054,6 +1054,9 @@ msgstr "Links aus der Zwischenablage automatisch herunterladen"
 msgid "Show \"Tip of the day\" at startup"
 msgstr "\"Tipp des Tages\" beim Start anzeigen"
 
+msgid "Check for updates automatically"
+msgstr "Automatisch nach Updates suchen"
+
 msgid "On double click on a download"
 msgstr "Bei Doppelklick auf einen Download"
 

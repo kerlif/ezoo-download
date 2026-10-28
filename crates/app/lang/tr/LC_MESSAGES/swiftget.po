@@ -1054,6 +1054,9 @@ msgstr "Panoya konan bağlantıları otomatik indirmeye başla"
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Başlangıçta \"Günün ipucu\"nu göster"
 
+msgid "Check for updates automatically"
+msgstr "Güncellemeleri otomatik olarak denetle"
+
 msgid "On double click on a download"
 msgstr "Bir indirmeye çift tıklayınca"
 

@@ -254,5 +254,9 @@
  "The Grabber also finds links written as plain text, and the menu next to the clock is in the program's language.": "Le collecteur trouve aussi les liens écrits en texte simple, et le menu près de l'horloge est dans la langue du programme.",
  "The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.": "La limite de vitesse reste fluide avec de nombreuses connexions, et le presse-papiers reconnaît aussi les types de fichiers que vous avez ajoutés.",
  "Stalled": "Bloquée",
- "needs-review": "Stalled"
+ "Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.": "La version {} a été téléchargée et vérifiée. L'installer maintenant ? Ezoo Download se ferme puis s'ouvre de nouveau une fois installée.",
+ "Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.": "La version {} a été téléchargée et vérifiée. Remplacer le fichier AppImage maintenant ? La nouvelle version démarrera à la prochaine ouverture d'Ezoo Download.",
+ "The AppImage file was replaced. Open Ezoo Download again to use version {}.": "Le fichier AppImage a été remplacé. Ouvrez de nouveau Ezoo Download pour utiliser la version {}.",
+ "Open the release page in the browser?": "Ouvrir la page de la version dans le navigateur ?",
+ "needs-review": "Stalled; Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.; Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.; The AppImage file was replaced. Open Ezoo Download again to use version {}.; Open the release page in the browser?"
 }

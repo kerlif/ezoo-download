@@ -1054,6 +1054,9 @@ msgstr "Iniciar automáticamente los enlaces copiados al portapapeles"
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Mostrar el \"Consejo del día\" al iniciar"
 
+msgid "Check for updates automatically"
+msgstr "Buscar actualizaciones automáticamente"
+
 msgid "On double click on a download"
 msgstr "Al hacer doble clic en una descarga"
 

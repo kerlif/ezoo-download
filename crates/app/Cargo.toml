@@ -32,6 +32,10 @@ open = "5"
 url = "2"
 chrono = "0.4"
 sha2 = "0.10"
+# Only to name the shared HTTP client type (update.rs); the client itself
+# is built by the engine, with the same version and features as there, so
+# this adds no new crate to the tree.
+reqwest = { version = "0.12", default-features = false, features = ["charset", "http2"] }
 tokio-util = "0.7"
 sys-locale = "0.3"
 

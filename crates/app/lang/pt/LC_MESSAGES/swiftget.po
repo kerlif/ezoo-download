@@ -1054,6 +1054,9 @@ msgstr "Iniciar automaticamente os links copiados para a área de transferência
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Mostrar a \"Dica do dia\" ao iniciar"
 
+msgid "Check for updates automatically"
+msgstr "Procurar atualizações automaticamente"
+
 msgid "On double click on a download"
 msgstr "Ao clicar duas vezes num download"
 

@@ -1054,6 +1054,9 @@ msgstr "Démarrer automatiquement les liens copiés dans le presse-papiers"
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Afficher \"l'Astuce du jour\" au démarrage"
 
+msgid "Check for updates automatically"
+msgstr "Rechercher automatiquement les mises à jour"
+
 msgid "On double click on a download"
 msgstr "Double-clic sur un téléchargement"
 

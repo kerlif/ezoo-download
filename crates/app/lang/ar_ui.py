@@ -298,6 +298,7 @@ AR = {
     "Tip of the day": "نصيحة اليوم",
     "Did you know…": "هل تعلم…",
     "Show tips at startup": "إظهار النصائح عند البدء",
+    "Check for updates automatically": "البحث عن التحديثات تلقائياً",
     "Next tip": "النصيحة التالية",
     "Refresh download address": "تحديث رابط التحميل",
     "1. Open the web page where you got this file.\\n2. Click the download link there again (or start the video).\\n3. Ezoo Download takes the new address and continues from where it stopped.":
