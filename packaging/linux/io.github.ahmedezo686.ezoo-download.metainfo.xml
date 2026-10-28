@@ -35,7 +35,7 @@
     <release version="1.0.7" date="2026-10-26" type="stable">
       <description>
         <p>First Linux release: .deb and AppImage packaging, system tray for
-        KDE/GNOME/XFCE, embedded InstaArabi + Times New Roman fonts, and
+        KDE/GNOME/XFCE, embedded Arabic and Latin fonts, and
         DASH (.mpd) stream downloads.</p>
       </description>
     </release>

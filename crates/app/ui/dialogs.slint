@@ -2136,7 +2136,7 @@ export component SettingsDialog inherits ThemedWindow {
                         }
                         ComboBox {
                             width: 200px;
-                            model: [@tr("Default (Segoe UI)"), "InstaArabi", "Tahoma", "Arial", "Calibri", "Verdana", "Times New Roman", "Courier New"];
+                            model: [@tr("Default"), "Noto Sans Arabic", "Carlito", "Tahoma", "Arial", "Calibri", "Verdana", "Liberation Serif", "Courier New"];
                             current-index <=> root.font-index;
                             selected => {
                                 root.preview-look();

@@ -36,3 +36,26 @@ aria2 - https://github.com/aria2/aria2
 Rust crates (tokio, reqwest, serde, chrono, tiny_http, arboard, rfd, tray-icon,
 regex, sha2, aes, cbc, url, directories, filetime and their dependencies)
   MIT and/or Apache-2.0 licenses.
+
+Fonts (bundled with the program: embedded in the program binary and
+registered in memory at startup, so no system font is needed; the full
+SIL Open Font License 1.1 text of each font ships as OFL-Carlito.txt,
+OFL-NotoSansArabic.txt and OFL-LiberationSerif.txt next to the program
+documentation, and the copyright and licence notices are also kept
+inside the font files themselves)
+
+Carlito (Latin UI text) - https://github.com/googlefonts/carlito
+  Copyright 2013 The Carlito Project Authors
+  (https://github.com/googlefonts/carlito), with Reserved Font Name
+  "Carlito". Licensed under the SIL Open Font License, Version 1.1.
+
+Noto Sans Arabic (Arabic UI text) - https://github.com/notofonts/arabic
+  Copyright 2022 The Noto Project Authors
+  (https://github.com/notofonts/arabic). Licensed under the SIL Open
+  Font License, Version 1.1.
+
+Liberation Serif (document-style text only) -
+https://github.com/liberationfonts/liberation-fonts
+  Digitized data copyright (c) 2010 Google Corporation. Copyright (c)
+  2012 Red Hat, Inc., with Reserved Font Name Liberation. Licensed
+  under the SIL Open Font License, Version 1.1.

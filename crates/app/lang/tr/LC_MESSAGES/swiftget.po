@@ -1009,8 +1009,8 @@ msgstr "Metin boyutu"
 msgid "Font"
 msgstr "Yazı tipi"
 
-msgid "Default (Segoe UI)"
-msgstr "Varsayılan (Segoe UI)"
+msgid "Default"
+msgstr "Varsayılan"
 
 msgid "Background picture"
 msgstr "Arka plan resmi"
@@ -1077,9 +1077,6 @@ msgstr "Tarayıcı eklentisi bağlantı noktası"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "Bu dosya türlerini otomatik indirmeye başla (tarayıcıdan):"
-
-msgid "Default"
-msgstr "Varsayılan"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "Bu sitelerden otomatik indirme başlatma:"

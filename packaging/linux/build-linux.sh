@@ -62,6 +62,10 @@ cp -r "$HERE/hicolor" "$STAGE/root/usr/share/icons/hicolor" 2>/dev/null || {
     mkdir -p "$STAGE/root/usr/share/icons"; cp -r "$HERE/hicolor" "$STAGE/root/usr/share/icons/hicolor"; }
 cp "$ROOT/README.md" "$STAGE/root/usr/share/doc/ezoo-download/"
 cp "$ROOT/THIRD-PARTY-NOTICES.txt" "$STAGE/root/usr/share/doc/ezoo-download/" 2>/dev/null || true
+# the bundled fonts' OFL-1.1 texts (verbatim, one per family)
+for ofl in OFL-Carlito.txt OFL-NotoSansArabic.txt OFL-LiberationSerif.txt; do
+    cp "$ROOT/crates/app/ui/fonts/$ofl" "$STAGE/root/usr/share/doc/ezoo-download/" 2>/dev/null || true
+done
 mkdir -p "$STAGE/root/usr/share/metainfo"
 cp "$HERE/io.github.ahmedezo686.ezoo-download.metainfo.xml" "$STAGE/root/usr/share/metainfo/"
 

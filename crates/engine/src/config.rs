@@ -267,7 +267,8 @@ pub struct Settings {
     pub opacity: u32,
     /// size of all texts, 80..=150 (%)
     pub font_scale: u32,
-    /// font of all windows ("" = Windows' own, Segoe UI)
+    /// font of all windows ("" = the bundled default: Carlito,
+    /// Noto Sans Arabic when the language is Arabic)
     pub font_family: String,
     /// a picture behind the main window ("" = none, the theme's colors)
     pub background_image: String,

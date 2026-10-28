@@ -1009,8 +1009,8 @@ msgstr "Tamaño del texto"
 msgid "Font"
 msgstr "Fuente"
 
-msgid "Default (Segoe UI)"
-msgstr "Predeterminada (Segoe UI)"
+msgid "Default"
+msgstr "Predeterminado"
 
 msgid "Background picture"
 msgstr "Imagen de fondo"
@@ -1077,9 +1077,6 @@ msgstr "Puerto de la extensión del navegador"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "Iniciar automáticamente la descarga de estos tipos de archivo (desde el navegador):"
-
-msgid "Default"
-msgstr "Predeterminado"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "No iniciar descargas automáticamente desde estos sitios:"

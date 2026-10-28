@@ -445,7 +445,6 @@ AR = {
     "Appearance": "المظهر",
     "Text size": "حجم الخط",
     "Font": "الخط",
-    "Default (Segoe UI)": "الافتراضي (Segoe UI)",
     "Background picture": "صورة الخلفية",
     "none (the theme's colors)": "بدون (ألوان المظهر)",
     "Picture visibility": "وضوح الصورة",

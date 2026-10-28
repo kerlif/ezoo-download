@@ -14,13 +14,16 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-# ~1.18: the winit accessor (unstable-winit-030) belongs to this Slint line
+# ~1.18: the winit accessor (unstable-winit-030) belongs to this Slint line;
+# unstable-fontique-011 exposes slint::fontique_011::shared_collection(),
+# the runtime registration path for the bundled fonts (see src/fonts.rs)
 slint = { version = "~1.18", default-features = false, features = [
     "std",
     "accessibility",
     "compat-1-2",
     "raw-window-handle-06",
     "unstable-winit-030",
+    "unstable-fontique-011",
 ] }
 tiny_http = "0.12"
 arboard = { version = "3", default-features = false }

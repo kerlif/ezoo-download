@@ -1009,8 +1009,8 @@ msgstr "حجم الخط"
 msgid "Font"
 msgstr "الخط"
 
-msgid "Default (Segoe UI)"
-msgstr "الافتراضي (Segoe UI)"
+msgid "Default"
+msgstr "الافتراضي"
 
 msgid "Background picture"
 msgstr "صورة الخلفية"
@@ -1077,9 +1077,6 @@ msgstr "منفذ إضافة المتصفح"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "بدء تحميل أنواع الملفات هذه تلقائياً (من المتصفح):"
-
-msgid "Default"
-msgstr "الافتراضي"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "عدم بدء التحميل تلقائياً من هذه المواقع:"

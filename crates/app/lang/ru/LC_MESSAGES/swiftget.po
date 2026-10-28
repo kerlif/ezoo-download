@@ -1009,8 +1009,8 @@ msgstr "Размер текста"
 msgid "Font"
 msgstr "Шрифт"
 
-msgid "Default (Segoe UI)"
-msgstr "По умолчанию (Segoe UI)"
+msgid "Default"
+msgstr "По умолчанию"
 
 msgid "Background picture"
 msgstr "Фоновое изображение"
@@ -1077,9 +1077,6 @@ msgstr "Порт расширения браузера"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "Автоматически скачивать файлы этих типов (из браузера):"
-
-msgid "Default"
-msgstr "По умолчанию"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "Не начинать загрузку автоматически с этих сайтов:"

@@ -197,9 +197,10 @@ fn install_crash_log() {
 
 fn main() -> anyhow::Result<()> {
     install_crash_log();
-    // the fonts of the interface are inside the program: put them in place
-    // before the first window opens, while the font list is collected
-    fonts::install();
+    // the fonts of the interface are embedded in the program: register
+    // them in memory (and delete the per-user copies older versions
+    // wrote) before the first window opens
+    fonts::setup();
     // started by Windows at sign-in: stay next to the clock, no window
     let background = std::env::args().any(|a| a == "--background");
     let data_dir = default_data_dir();
@@ -232,6 +233,17 @@ fn main() -> anyhow::Result<()> {
         .enable_all()
         .build()?;
     let mgr = Manager::new(rt.handle().clone(), data_dir.clone())?;
+    // v1.1.0: a font choice saved under a removed name moves to its
+    // replacement (InstaArabi -> Noto Sans Arabic, Times New Roman ->
+    // Liberation Serif) and is saved back at once.
+    {
+        let mut s = mgr.settings();
+        let migrated = fonts::migrate_font_family(&s.font_family).to_string();
+        if migrated != s.font_family {
+            s.font_family = migrated;
+            let _ = mgr.set_settings(s);
+        }
+    }
     // yt-dlp and ffmpeg: put back if missing, update silently once a day
     swiftget_engine::tools::spawn_updater(rt.handle(), mgr.client(), data_dir.clone());
 
@@ -1895,25 +1907,29 @@ fn restart_now() {
     let _ = cmd.spawn();
 }
 
-/// Fonts of Options > Appearance > Font ("" = Windows' own).
-pub(crate) const FONTS: [&str; 8] = [
+/// Fonts of Options > Appearance > Font ("" = the bundled default:
+/// Carlito, Noto Sans Arabic for Arabic). Kept in the same order as
+/// the font ComboBox model in `ui/dialogs.slint`.
+pub(crate) const FONTS: [&str; 9] = [
     "",
-    "InstaArabi",
+    "Noto Sans Arabic",
+    "Carlito",
     "Tahoma",
     "Arial",
     "Calibri",
     "Verdana",
-    "Times New Roman",
+    "Liberation Serif",
     "Courier New",
 ];
 
-/// What an empty font choice means: Arabic in InstaArabi, everything else
-/// in Times New Roman (both come with the program, see `fonts`).
+/// What an empty font choice means: Arabic in Noto Sans Arabic,
+/// everything else in Carlito (both bundled with the program, see
+/// `fonts`).
 pub(crate) fn default_family(lang: &str) -> &'static str {
     if lang == "ar" {
-        "InstaArabi"
+        fonts::ARABIC_FAMILY
     } else {
-        "Times New Roman"
+        fonts::LATIN_FAMILY
     }
 }
 
@@ -1935,11 +1951,7 @@ impl Look {
         Look {
             mode: s.theme.min(8) as i32,
             scale: s.font_scale.clamp(80, 150) as f32 / 100.0,
-            family: if FONTS.contains(&s.font_family.as_str()) {
-                s.font_family.clone()
-            } else {
-                default_family(i18n::effective(&s.language)).to_string()
-            },
+            family: fonts::resolve_font_family(&s.font_family, i18n::effective(&s.language)),
             background: s.background_image.clone(),
             strength: s.background_strength.clamp(10, 80) as f32 / 100.0,
         }

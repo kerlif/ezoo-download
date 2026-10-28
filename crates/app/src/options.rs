@@ -270,11 +270,15 @@ fn look_of(d: &SettingsDialog) -> crate::Look {
     crate::Look {
         mode: d.get_theme().clamp(0, 8),
         scale: (d.get_text_size().round() as u32).clamp(80, 150) as f32 / 100.0,
-        family: crate::FONTS
-            .get(d.get_font_index().max(0) as usize)
-            .copied()
-            .unwrap_or("")
-            .to_string(),
+        family: crate::fonts::resolve_font_family(
+            crate::FONTS
+                .get(d.get_font_index().max(0) as usize)
+                .copied()
+                .unwrap_or(""),
+            crate::i18n::LANGS
+                [(d.get_language().max(0) as usize).min(crate::i18n::LANGS.len() - 1)]
+            .0,
+        ),
         background: d.get_bg_image().to_string(),
         strength: (d.get_bg_strength().round() as u32).clamp(10, 80) as f32 / 100.0,
     }

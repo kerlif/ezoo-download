@@ -31,14 +31,16 @@ the resolution and date.
    `selfupdate::installed()` already gates self-update on installed
    copies. Default: keep that behavior; portable copies get notify-only.
    Resolution needs: none unless the parent directs otherwise.
-5. **Variable vs static fonts for Cairo / Noto Sans Arabic.** Current
-   Google Fonts distributions are variable fonts; Phase 3 must confirm
-   static Regular/Bold instances exist upstream and that Slint 1.18 /
-   fontdb resolves them (including weight selection), or generate static
-   instances only after checking Reserved Font Name status. Default:
-   prefer unmodified upstream static TTFs; if none exist, fall back to
-   the family that ships them. Resolution needs: repo-listing check at
-   fetch time in Phase 3.
+5. **fontique zero-font panic.** fontique 0.11.1 (Slint 1.18.1) panics
+   when fontconfig reports zero fonts (see `docs/FONTS.md`): at
+   Slint platform creation, `SystemFonts::new` calls
+   `FcFontSort(...).unwrap()`, which returns `NoMatch` with no fonts
+   installed. Default: none — the panic is upstream and no
+   application-level code can avoid it; the Phase 3 gate used a
+   one-glyph substitute font instead. Resolution needs: an upstream
+   Slint/fontique fix, or a pinned upgrade that carries one; real
+   systems always ship at least one font, so impact is limited to
+   fontless test/container environments.
 
 ## Resolved
 
@@ -70,3 +72,19 @@ the resolution and date.
    Rationale: Phase 2 removes promotional UI and keeps credits; channel
    buttons drive traffic to the author's channels and are promotion, while
    name/upstream attribution is credit.
+
+3. **Variable vs static fonts for Cairo / Noto Sans Arabic** (resolved
+   2026-10-28, Phase 3 fetch evidence). Verdict: Cairo has NO
+   upstream static instances — `google/fonts` ships only
+   `Cairo[slnt,wght].ttf` (variable) and upstream `Gue3bara/Cairo`
+   ships only `fonts/Cairo/variable/` (variable-only build config) —
+   so per the default, the family that ships statics was chosen:
+   Noto Sans Arabic, release `NotoSansArabic-v2.013` from
+   `notofonts/arabic`, whose archive contains static hinted
+   `NotoSansArabic-Regular.ttf` and `-Bold.ttf`. No static instances
+   were generated, so no Reserved Font Name question arises (all
+   bundled files ship byte-identical to upstream). Slint 1.18 does
+   not use fontdb: shaping goes through parley/fontique, and static
+   weight selection (400/700, verified from the files' OS/2 tables
+   and by unit test) works through the registered families. Full
+   evidence, hashes and name-table dumps: `docs/FONTS.md`.

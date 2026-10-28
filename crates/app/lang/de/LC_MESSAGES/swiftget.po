@@ -1009,8 +1009,8 @@ msgstr "Textgröße"
 msgid "Font"
 msgstr "Schriftart"
 
-msgid "Default (Segoe UI)"
-msgstr "Standard (Segoe UI)"
+msgid "Default"
+msgstr "Standard"
 
 msgid "Background picture"
 msgstr "Hintergrundbild"
@@ -1077,9 +1077,6 @@ msgstr "Port der Browser-Erweiterung"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "Diese Dateitypen automatisch herunterladen (aus dem Browser):"
-
-msgid "Default"
-msgstr "Standard"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "Von diesen Websites nicht automatisch herunterladen:"
