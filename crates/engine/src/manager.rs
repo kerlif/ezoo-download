@@ -1,6 +1,7 @@
 //! The download manager: owns every download, runs the queue, the scheduler,
 //! speed measurement and persistence. The UI only talks to this type.
 
+use crate::adaptive::{AdaptiveConfig, AdaptiveReport};
 use crate::config::{parse_hhmm, AfterDone, QueueDef, Settings, MAIN_QUEUE};
 use crate::filename;
 use crate::hls::{self, HlsJob};
@@ -1364,6 +1365,34 @@ impl Manager {
         inner.dirty = true;
     }
 
+    /// Fold one finished HTTP download into the per-host learning store
+    /// (local settings file only). Skipped when the run produced no
+    /// usable observation.
+    fn record_learning(
+        &self,
+        url: &str,
+        report: &Arc<Mutex<AdaptiveReport>>,
+        total_size: Option<u64>,
+    ) {
+        let r = report.lock().unwrap();
+        if r.best_target == 0 || r.segments_final == 0 {
+            return;
+        }
+        let total = total_size.unwrap_or(r.bytes_downloaded);
+        if total == 0 {
+            return;
+        }
+        let segment_size = total / r.segments_final as u64;
+        if segment_size == 0 {
+            return;
+        }
+        let best_target = r.best_target;
+        drop(r);
+        let mut settings = self.settings.write().unwrap();
+        settings.record_host_learning(url, best_target, segment_size, Utc::now());
+        let _ = settings.save(&self.data_dir.join("settings.json"));
+    }
+
     async fn run_download(
         self: &Arc<Self>,
         id: DownloadId,
@@ -1483,6 +1512,7 @@ impl Manager {
         let part = rec.part_path();
         match rec.kind {
             DownloadKind::Http => {
+                let report = Arc::new(Mutex::new(AdaptiveReport::default()));
                 let job = HttpJob {
                     url: rec.request_url().to_string(),
                     headers: rec.headers.clone(),
@@ -1496,9 +1526,16 @@ impl Manager {
                     progress_base: 0,
                     max_request: http_download::max_request_for(rec.request_url()),
                     limiter: limiter.clone(),
+                    adaptive: AdaptiveConfig::default(),
+                    learned_start: Some(settings.learned_start(
+                        &p.final_url,
+                        AdaptiveConfig::default().initial_connections,
+                    )),
+                    report: Some(report.clone()),
                 };
                 http_download::run(self.shared.clone(), job, segs, progress.clone(), cancel)
                     .await?;
+                self.record_learning(&p.final_url, &report, rec.total_size);
             }
             DownloadKind::Hls => {
                 let job = HlsJob {
@@ -1932,20 +1969,28 @@ impl Manager {
                 });
             }
 
-            let video_job = HttpJob {
-                url: vp.final_url.clone(),
-                headers: rec.headers.clone(),
-                user_agent: ua.clone(),
-                total_size: vp.total_size,
-                resumable: vp.resumable,
-                part_path: rec.video_part_path(),
-                connections: rec.connections,
-                min_split: settings.min_split(),
-                retries: settings.retries,
-                progress_base: 0,
-                max_request: http_download::max_request_for(&vp.final_url),
-                limiter: limiter.clone(),
-            };
+            let video_report = Arc::new(Mutex::new(AdaptiveReport::default()));
+            let video_job =
+                HttpJob {
+                    url: vp.final_url.clone(),
+                    headers: rec.headers.clone(),
+                    user_agent: ua.clone(),
+                    total_size: vp.total_size,
+                    resumable: vp.resumable,
+                    part_path: rec.video_part_path(),
+                    connections: rec.connections,
+                    min_split: settings.min_split(),
+                    retries: settings.retries,
+                    progress_base: 0,
+                    max_request: http_download::max_request_for(&vp.final_url),
+                    limiter: limiter.clone(),
+                    adaptive: AdaptiveConfig::default(),
+                    learned_start: Some(settings.learned_start(
+                        &vp.final_url,
+                        AdaptiveConfig::default().initial_connections,
+                    )),
+                    report: Some(video_report.clone()),
+                };
             http_download::run(
                 self.shared.clone(),
                 video_job.clone(),
@@ -1954,18 +1999,26 @@ impl Manager {
                 cancel.clone(),
             )
             .await?;
+            self.record_learning(&vp.final_url, &video_report, vp.total_size);
             let video_bytes = vp
                 .total_size
                 .unwrap_or_else(|| progress.bytes.load(Ordering::Relaxed));
-            let audio_job = HttpJob {
-                url: ap.final_url.clone(),
-                total_size: ap.total_size,
-                resumable: ap.resumable,
-                part_path: rec.audio_part_path(),
-                progress_base: video_bytes,
-                max_request: http_download::max_request_for(&ap.final_url),
-                ..video_job
-            };
+            let audio_report = Arc::new(Mutex::new(AdaptiveReport::default()));
+            let audio_job =
+                HttpJob {
+                    url: ap.final_url.clone(),
+                    total_size: ap.total_size,
+                    resumable: ap.resumable,
+                    part_path: rec.audio_part_path(),
+                    progress_base: video_bytes,
+                    max_request: http_download::max_request_for(&ap.final_url),
+                    learned_start: Some(settings.learned_start(
+                        &ap.final_url,
+                        AdaptiveConfig::default().initial_connections,
+                    )),
+                    report: Some(audio_report.clone()),
+                    ..video_job
+                };
             http_download::run(
                 self.shared.clone(),
                 audio_job,
@@ -1974,6 +2027,7 @@ impl Manager {
                 cancel.clone(),
             )
             .await?;
+            self.record_learning(&ap.final_url, &audio_report, ap.total_size);
         } else {
             self.update(id, |x| {
                 if x.status == Status::Connecting {

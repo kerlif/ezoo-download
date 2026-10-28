@@ -72,6 +72,20 @@ the resolution and date.
    Default: keep. Resolution needs: none unless a server is found
    where the double count is visibly wrong.
 
+9. **Scaling rule read as probe-then-measure.** The spec says to add
+   a connection only while throughput rises by ≥10% and to stop
+   after two intervals without that gain. Phase 5 reads this as
+   probe-then-measure: the scaler adds a connection and then judges
+   the next window, because on a server that caps each connection the
+   aggregate is flat at the starting count and waiting for a rise
+   before adding would never add at all (proven by the first
+   benchmark run: adaptive never grew past 4 connections on the
+   capped server). The implemented rule still adds only following a
+   rise, removes on a fall, and stops after two no-gain windows.
+   Default: keep the probe reading. Resolution needs: a decision if
+   the literal wait-for-a-rise reading was intended instead, in
+   which case scaling would effectively be off for capped servers.
+
 ## Resolved
 
 1. **InstaArabi font license** (resolved 2026-10-28, font-licensing

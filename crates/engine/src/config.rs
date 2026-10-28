@@ -1,5 +1,6 @@
 //! User settings, stored as JSON in the app data folder.
 
+use crate::adaptive::{AdaptiveConfig, HostLearning};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -339,6 +340,12 @@ pub struct Settings {
     /// Options > Connection type: 0 low, 1 medium, 2 high speed
     pub connection_type: u32,
     pub server_limits: Vec<ServerLimit>,
+    /// What the adaptive engine learned about each host (local only):
+    /// the connection count and segment size that performed best, as
+    /// moving averages. Keyed by lowercase host. The explicit server
+    /// limits above stay separate and still cap these values.
+    #[serde(default)]
+    pub host_learning: std::collections::BTreeMap<String, HostLearning>,
     /// download no more than quota_mb every quota_hours
     pub quota_on: bool,
     pub quota_mb: u64,
@@ -440,6 +447,7 @@ impl Default for Settings {
             virus_args: "[File]".into(),
             connection_type: 2,
             server_limits: Vec::new(),
+            host_learning: Default::default(),
             quota_on: false,
             quota_mb: 2000,
             quota_hours: 24,
@@ -570,6 +578,54 @@ impl Settings {
             .find(|l| host_matches(&host, &l.host))
             .map(|l| wanted.min(l.connections.max(1)))
             .unwrap_or(wanted)
+    }
+
+    /// Starting connection count the adaptive engine should use for
+    /// this address: the learned value when the host has a fresh entry,
+    /// else `fallback`. Expired entries (older than the learning expiry)
+    /// are ignored. The result is still capped by `connections_for`
+    /// at the call site; this method only supplies the starting point.
+    /// The explicit server limits are untouched by learning: they are
+    /// user-set caps, while learning is only an observation.
+    pub fn learned_start(&self, url: &str, fallback: u32) -> u32 {
+        let cfg = AdaptiveConfig::default();
+        let key = crate::adaptive::host_key(url);
+        let now = chrono::Utc::now();
+        self.host_learning
+            .get(&key)
+            .filter(|h| !h.expired(now, cfg.learning_expiry_days))
+            .map(|h| h.starting_connections(&cfg))
+            .unwrap_or(fallback)
+    }
+
+    /// Fold one finished download's outcome into the per-host learning
+    /// store. Existing entries are kept as the prior average (the
+    /// exponential average in `HostLearning` does the fading); there is
+    /// nothing to migrate, because no per-host learning existed before
+    /// this phase — the server limits above are a separate mechanism
+    /// and are left exactly as the user set them.
+    pub fn record_host_learning(
+        &mut self,
+        url: &str,
+        connections: u32,
+        segment_size: u64,
+        now: chrono::DateTime<chrono::Utc>,
+    ) {
+        let cfg = AdaptiveConfig::default();
+        let key = crate::adaptive::host_key(url);
+        if key.is_empty() {
+            return;
+        }
+        // drop expired entries when writing, so the file stays small
+        self.host_learning
+            .retain(|_, h| !h.expired(now, cfg.learning_expiry_days));
+        match self.host_learning.get_mut(&key) {
+            Some(h) => h.update(connections, segment_size, cfg.learning_alpha, now),
+            None => {
+                self.host_learning
+                    .insert(key, HostLearning::new(connections, segment_size, now));
+            }
+        }
     }
 
     /// Saved login for this address (Options > Site Logins).
@@ -790,6 +846,33 @@ mod tests {
         });
         assert_eq!(s.connections_for("https://a.slow.example.com/x", 32), 2);
         assert_eq!(s.connections_for("https://fast.example.com/x", 32), 32);
+    }
+
+    #[test]
+    fn host_learning_starts_from_fresh_entries_and_ignores_expired_ones() {
+        let mut s = Settings::default();
+        let now = chrono::Utc::now();
+        assert_eq!(s.learned_start("https://fresh.example.com/f.bin", 4), 4);
+        s.record_host_learning("https://fresh.example.com/f.bin", 12, 500_000, now);
+        assert_eq!(
+            s.learned_start("https://fresh.example.com/other.bin", 4),
+            12
+        );
+        // a different host is untouched, and the server limit still caps
+        assert_eq!(s.learned_start("https://other.example.com/f.bin", 4), 4);
+        s.record_host_learning(
+            "https://old.example.com/f.bin",
+            12,
+            500_000,
+            now - chrono::Duration::days(31),
+        );
+        assert_eq!(s.learned_start("https://old.example.com/f.bin", 4), 4);
+        // recording a fresh observation prunes the expired entry
+        s.record_host_learning("https://fresh.example.com/f.bin", 12, 500_000, now);
+        assert!(!s.host_learning.contains_key("old.example.com"));
+        // old settings files without the field still load
+        let s2: Settings = serde_json::from_str("{\"version\":4}").unwrap();
+        assert!(s2.host_learning.is_empty());
     }
 }
 

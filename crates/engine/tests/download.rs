@@ -102,6 +102,9 @@ async fn segmented_download_with_pause_and_resume() {
         progress_base: 0,
         max_request: None,
         limiter: Arc::new(SpeedLimiter::new(0)),
+        adaptive: Default::default(),
+        learned_start: None,
+        report: None,
     };
     let segs = Arc::new(Mutex::new(Vec::new()));
     let progress = Arc::new(Progress::default());
@@ -173,6 +176,9 @@ async fn chunked_requests_with_32_connections() {
         progress_base: 0,
         max_request: Some(40 * 1024),
         limiter: Arc::new(SpeedLimiter::new(0)),
+        adaptive: Default::default(),
+        learned_start: None,
+        report: None,
     };
     let segs = Arc::new(Mutex::new(Vec::new()));
     let progress = Arc::new(Progress::default());
@@ -275,6 +281,9 @@ async fn waits_through_a_long_outage_and_resumes() {
         progress_base: 0,
         max_request: None,
         limiter: Arc::new(SpeedLimiter::new(0)),
+        adaptive: Default::default(),
+        learned_start: None,
+        report: None,
     };
     let segs = Arc::new(Mutex::new(Vec::new()));
     let progress = Arc::new(Progress::default());

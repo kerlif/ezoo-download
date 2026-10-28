@@ -8,6 +8,7 @@
 //!
 //! The UI only needs [`Manager`].
 
+pub mod adaptive;
 pub mod category;
 pub mod config;
 pub mod ef2;

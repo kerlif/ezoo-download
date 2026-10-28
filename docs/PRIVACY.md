@@ -1,10 +1,11 @@
 # Privacy — outbound network requests
 
 Inventory in progress. The entries below cover the capture-window
-probing added in Phase 4 of the v1.1.0 upgrade (complete). The full
-inventory — update checker, yt-dlp, torrents, and every other request
-the program makes — is completed in Phase 7; nothing outside this list
-was added or changed by Phase 4.
+probing added in Phase 4 of the v1.1.0 upgrade (complete) and the
+per-host learning store added in Phase 5 (complete, local only). The
+full inventory — update checker, yt-dlp, torrents, and every other
+request the program makes — is completed in Phase 7; nothing outside
+this list was added or changed by Phases 4–5.
 
 ## Rules that apply to every request below
 
@@ -35,3 +36,20 @@ and stop after ~5 seconds per stage.
 
 No other hosts are contacted by probing: no third-party metadata,
 thumbnail, or search service is queried.
+
+## Per-host learning store (Phase 5)
+
+The adaptive engine remembers, for each host a file was downloaded
+from, the connection count that performed best and the mean segment
+size, as exponentially weighted averages. This is stored locally only:
+
+| Item | Detail |
+|---|---|
+| Where | `host_learning` in `settings.json`, in the app data folder, next to the other settings. |
+| Key | The lowercase host name only (no path, query, user info, or file name). |
+| Contents | Two moving averages, a sample count, and a last-updated timestamp. No URLs, file names, or content are stored. |
+| Expiry | Entries older than 30 days are ignored and pruned on the next write. |
+| Network | None. The store is read and written locally only; no host-learning data is sent anywhere, and Phase 5 adds no new network destination of any kind. The download requests themselves are unchanged: same hosts, same headers, same Range requests as before. |
+
+The explicit per-server connection exceptions (Options > Connection)
+are a separate, user-set mechanism and are unchanged.

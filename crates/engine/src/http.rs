@@ -56,6 +56,44 @@ impl std::fmt::Display for HttpStatus {
 }
 impl std::error::Error for HttpStatus {}
 
+/// The server is rate-limiting us (429 Too Many Requests or 503
+/// Service Unavailable). Carries the wait the server asked for, if it
+/// sent a `Retry-After` header, so the download loop can honour it
+/// instead of guessing.
+#[derive(Debug)]
+pub struct RateLimited {
+    pub status: u16,
+    pub retry_after: Option<Duration>,
+}
+
+impl RateLimited {
+    pub fn from_headers(status: u16, headers: &reqwest::header::HeaderMap) -> Self {
+        let retry_after = headers
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| crate::adaptive::parse_retry_after(v, Duration::from_secs(300)));
+        RateLimited {
+            status,
+            retry_after,
+        }
+    }
+}
+
+impl std::fmt::Display for RateLimited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.retry_after {
+            Some(d) => write!(
+                f,
+                "server answered HTTP {} (rate limited, retry after {}s)",
+                self.status,
+                d.as_secs()
+            ),
+            None => write!(f, "server answered HTTP {} (rate limited)", self.status),
+        }
+    }
+}
+impl std::error::Error for RateLimited {}
+
 /// A problem of the connection (no internet, DNS, reset, timeout), not of
 /// the file or the link: worth waiting for and trying again without limit.
 pub fn is_network_error(e: &anyhow::Error) -> bool {
