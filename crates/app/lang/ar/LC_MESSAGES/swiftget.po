@@ -466,6 +466,12 @@ msgstr "تذكّر هذا المسار لتصنيف \"{}\""
 msgid "optional note"
 msgstr "ملاحظة اختيارية"
 
+msgid "Duration"
+msgstr "المدة"
+
+msgid "Quality"
+msgstr "الجودة"
+
 msgid "Use authorization"
 msgstr "استخدام تسجيل الدخول"
 
@@ -1341,9 +1347,6 @@ msgstr "جارٍ جلب فيديوهات القائمة…"
 
 msgid "The videos of the playlist show up here."
 msgstr "ستظهر فيديوهات القائمة هنا."
-
-msgid "Quality"
-msgstr "الجودة"
 
 msgid "Best quality (MP4)"
 msgstr "أفضل جودة (MP4)"

@@ -1763,6 +1763,17 @@ export component AddDialog inherits ThemedWindow {
     in property <string> info;
     in property <bool> probing;
     in property <bool> info-error;
+    // Stream metadata (Phase 4): duration, quality selector and the
+    // estimated size of the selected quality. Hidden until the probe
+    // has stream details (a direct file shows one "Direct file" entry).
+    in property <[string]> stream-variants: [];
+    in-out property <int> stream-index: 0;
+    in property <string> stream-duration-text;
+    in property <string> stream-size-text;
+    in property <bool> stream-available;
+    // DRM-signaled stream: the Start / Later buttons stay disabled.
+    in property <bool> drm-blocked;
+    callback quality-changed(int);
     in property <[string]> queue-names: ["Main queue"];
     in-out property <int> queue-index: 0;
     in property <[string]> category-names: ["General", "Compressed", "Documents", "Music", "Programs", "Video", "Images"];
@@ -1907,6 +1918,61 @@ export component AddDialog inherits ThemedWindow {
                 }
             }
         }
+        if root.stream-available: GridLayout {
+            spacing: 8px;
+            Text {
+                col: Theme.rtl ? 1 : 0;
+                row: 0;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: @tr("Duration");
+                vertical-alignment: center;
+                color: Theme.text;
+            }
+            Text {
+                col: Theme.rtl ? 0 : 1;
+                row: 0;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: root.stream-duration-text;
+                vertical-alignment: center;
+                color: Theme.text;
+                font-weight: 600;
+            }
+            Text {
+                col: Theme.rtl ? 1 : 0;
+                row: 1;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: @tr("Quality");
+                vertical-alignment: center;
+                color: Theme.text;
+            }
+            ComboBox {
+                col: Theme.rtl ? 0 : 1;
+                row: 1;
+                model: root.stream-variants;
+                current-index <=> root.stream-index;
+                selected(v) => {
+                    root.quality-changed(root.stream-index);
+                }
+            }
+            Text {
+                col: Theme.rtl ? 1 : 0;
+                row: 2;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: @tr("Size");
+                vertical-alignment: center;
+                color: Theme.text;
+            }
+            Text {
+                col: Theme.rtl ? 0 : 1;
+                row: 2;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: root.stream-size-text;
+                vertical-alignment: center;
+                color: Theme.text;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+        }
         HRow {
             spacing: 8px;
             CheckBox {
@@ -2019,7 +2085,7 @@ export component AddDialog inherits ThemedWindow {
             }
             Button {
                 text: @tr("Download Later");
-                enabled: root.url != "";
+                enabled: root.url != "" && !root.drm-blocked;
                 clicked => {
                     root.later();
                 }
@@ -2027,7 +2093,7 @@ export component AddDialog inherits ThemedWindow {
             Button {
                 text: @tr("Start Download");
                 primary: true;
-                enabled: root.url != "";
+                enabled: root.url != "" && !root.drm-blocked;
                 clicked => {
                     root.start-now();
                 }

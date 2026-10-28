@@ -32,6 +32,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use swiftget_engine::config::MAIN_QUEUE;
 use swiftget_engine::filename;
+use swiftget_engine::stream_meta::{SizeSource, StreamMeta, VariantInfo};
 use swiftget_engine::{
     default_data_dir, fmt_duration, fmt_size, AfterDone, DownloadKind, DownloadView, Event,
     Manager, NewDownload, ProbeResult, RequestHeaders, Settings, Status,
@@ -57,6 +58,10 @@ pub(crate) struct AddState {
     /// the URL the window was opened with (video extras only apply to it)
     origin_url: String,
     probe: Option<ProbeResult>,
+    /// Stream metadata of the open window (duration, qualities, sizes),
+    /// for `stream_url` only; a DRM signal in it blocks the download.
+    stream_meta: Option<StreamMeta>,
+    stream_url: String,
     probe_url: String,
     probe_seq: u64,
     /// last "Save As" we filled in ourselves (so we don't overwrite the user's)
@@ -1389,16 +1394,19 @@ fn wire_add(ui: &Ui) {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "download".into());
-            let path = ctx
-                .mgr
-                .settings()
-                .dir_for(&cat)
-                .join(&name)
+            let path = filename::safe_join(&ctx.mgr.settings().dir_for(&cat), &name)
                 .display()
                 .to_string();
             d.set_save_as(path.clone().into());
             d.set_category_name(t(&cat).into());
             ctx.add_state.lock().unwrap().auto_path = path;
+        });
+    }
+    {
+        let ctx = ui.ctx.clone();
+        add.on_quality_changed(move |i| {
+            let Some(d) = ctx.add.upgrade() else { return };
+            apply_stream_selection(&ctx, &d, i.max(0) as usize);
         });
     }
     {
@@ -2170,7 +2178,9 @@ fn close_complete(ui: &Ui) {
 fn show_name_in_dialog(ctx: &Ctx, d: &AddDialog, name: &str, url: &str) -> String {
     let s = ctx.mgr.settings();
     let cat = s.category_of(name, url);
-    let path = s.dir_for(&cat).join(name).display().to_string();
+    let path = filename::safe_join(&s.dir_for(&cat), name)
+        .display()
+        .to_string();
     d.set_save_as(path.clone().into());
     let cats = ctx.add_state.lock().unwrap().categories.clone();
     d.set_category_index(cats.iter().position(|c| *c == cat).unwrap_or(0) as i32);
@@ -2232,6 +2242,8 @@ pub(crate) fn open_add_dialog(
         st.extra = extra;
         st.origin_url = url.clone();
         st.probe = None;
+        st.stream_meta = None;
+        st.stream_url.clear();
         st.probe_url.clear();
         // a name from the browser is final; one guessed from the URL is not
         st.auto_path = if name_hint.is_some() {
@@ -2266,6 +2278,12 @@ pub(crate) fn open_add_dialog(
         .into(),
     );
     d.set_info(t("Paste a link and press Check").into());
+    d.set_stream_variants(ModelRc::new(VecModel::from(Vec::<SharedString>::new())));
+    d.set_stream_index(0);
+    d.set_stream_duration_text(SharedString::new());
+    d.set_stream_size_text(SharedString::new());
+    d.set_stream_available(false);
+    d.set_drm_blocked(false);
     d.set_can_use_browser(false);
     d.set_info_error(false);
     d.set_probing(false);
@@ -2319,13 +2337,100 @@ pub(crate) fn early_download(ctx: &Ctx) -> Option<u64> {
     ctx.add_state.lock().unwrap().early_id
 }
 
+/// HH:MM:SS for a stream duration, as the capture window shows it.
+fn fmt_clock(secs: f64) -> String {
+    let total = secs.round() as u64;
+    format!(
+        "{:02}:{:02}:{:02}",
+        total / 3600,
+        (total % 3600) / 60,
+        total % 60
+    )
+}
+
+/// One quality-selector entry: resolution, frame rate, codec, bitrate.
+/// The audio bitrate is shown separately from the video bitrate.
+fn variant_label(v: &VariantInfo) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if v.is_audio_only {
+        parts.push(t("Audio only"));
+    } else if v.height > 0 {
+        parts.push(format!("{}p", v.height));
+    }
+    if let Some(fps) = v.frame_rate {
+        if fps > 0.0 {
+            parts.push(format!("{fps} fps"));
+        }
+    }
+    let codec = v.codecs.split(',').next().unwrap_or("").trim();
+    if !codec.is_empty() {
+        parts.push(codec.to_string());
+    }
+    let video_kbps = v.video_bps / 1000;
+    if video_kbps > 0 || v.audio_bps > 0 {
+        if v.audio_bps > 0 {
+            parts.push(format!(
+                "{} kbps + {} kbps {}",
+                video_kbps,
+                v.audio_bps / 1000,
+                t("audio")
+            ));
+        } else {
+            parts.push(format!("{video_kbps} kbps"));
+        }
+    }
+    if parts.is_empty() {
+        t("Direct file")
+    } else {
+        parts.join(" · ")
+    }
+}
+
+/// The size of one quality, always labeled with how it was estimated.
+fn stream_size_label(v: &VariantInfo) -> String {
+    match v.estimated_size {
+        Some(size) => match v.size_source {
+            SizeSource::Bitrate => tf("≈ {} (estimated from bitrate)", &[&fmt_size(size)]),
+            SizeSource::Sampled => tf("≈ {} (estimated from sampled segments)", &[&fmt_size(size)]),
+            SizeSource::Unknown => format!("≈ {}", fmt_size(size)),
+        },
+        None => t("Unknown size"),
+    }
+}
+
+/// Fill the duration/size texts for the selected quality, and the
+/// selector model on first fill.
+fn apply_stream_selection(ctx: &Ctx, d: &AddDialog, index: usize) {
+    let Some(meta) = ctx.add_state.lock().unwrap().stream_meta.clone() else {
+        return;
+    };
+    let Some(v) = meta.variants.get(index) else {
+        return;
+    };
+    d.set_stream_index(index as i32);
+    d.set_stream_duration_text(
+        meta.duration_secs
+            .or(v.duration_secs)
+            .map(fmt_clock)
+            .unwrap_or_else(|| t("Unknown"))
+            .into(),
+    );
+    d.set_stream_size_text(stream_size_label(v).into());
+}
+
 /// Ask the server about the file in the background, then show the result.
+/// The probe (and, for streams, the metadata probe after it) must not
+/// keep the window waiting: each stage is bounded to ~5 seconds, the
+/// work runs off the UI thread, and a stale answer (the window was
+/// reused meanwhile) is dropped by the sequence check.
 fn start_probe(ctx: &Ctx, url: String) {
     let Some(d) = ctx.add.upgrade() else { return };
     let (seq, mut headers) = {
         let mut st = ctx.add_state.lock().unwrap();
         st.probe_seq += 1;
         st.probe = None;
+        st.stream_meta = None;
+        st.stream_url.clear();
         (st.probe_seq, st.headers.clone())
     };
     if d.get_use_login() && !d.get_user().trim().is_empty() {
@@ -2336,26 +2441,65 @@ fn start_probe(ctx: &Ctx, url: String) {
     }
     d.set_probing(true);
     d.set_info_error(false);
+    d.set_stream_available(false);
+    d.set_drm_blocked(false);
     let ctx2 = ctx.clone();
     ctx.rt.spawn(async move {
-        let result = ctx2.mgr.probe(&url, &headers).await;
+        // The plain probe, bounded: a slow server yields an error, not a hang.
+        let probed = tokio::time::timeout(Duration::from_secs(5), ctx2.mgr.probe(&url, &headers)).await;
+        let result: anyhow::Result<(ProbeResult, Option<StreamMeta>)> = match probed {
+            Ok(Ok(p)) => {
+                // Streams get their metadata (duration, qualities, sizes)
+                // from the playlist/manifest, with the captured headers.
+                // A failed metadata probe only hides the stream section;
+                // the plain probe result still stands.
+                let meta = if matches!(p.kind, DownloadKind::Hls | DownloadKind::Dash) {
+                    ctx2.mgr.stream_probe(&url, &headers).await.ok()
+                } else {
+                    None
+                };
+                Ok((p, meta))
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(anyhow::anyhow!("__PROBE_TIMEOUT__")),
+        };
         let _ = slint::invoke_from_event_loop(move || {
             let Some(d) = ctx2.add.upgrade() else { return };
-            let mut st = ctx2.add_state.lock().unwrap();
+            let st = ctx2.add_state.lock().unwrap();
             if st.probe_seq != seq {
                 return; // the window was reused for something else meanwhile
             }
             d.set_probing(false);
+            drop(st);
             match result {
-                Ok(p) => {
-                    if d.get_save_as().as_str() == st.auto_path && !st.auto_path.is_empty() {
-                        drop(st);
-                        let path = show_name_in_dialog(&ctx2, &d, &p.file_name, &url);
-                        st = ctx2.add_state.lock().unwrap();
-                        st.auto_path = path;
+                Ok((p, meta)) => {
+                    // The window fills its own "Save As" from the probe
+                    // name, unless the user already typed their own.
+                    {
+                        let auto = {
+                            let st = ctx2.add_state.lock().unwrap();
+                            st.auto_path.clone()
+                        };
+                        if d.get_save_as().as_str() == auto && !auto.is_empty() {
+                            let path = show_name_in_dialog(&ctx2, &d, &p.file_name, &url);
+                            ctx2.add_state.lock().unwrap().auto_path = path;
+                        }
                     }
-                    let has_audio = st.extra.audio_url.is_some() && st.origin_url == url;
-                    let size = p.total_size.map(fmt_size).unwrap_or_else(|| t("Unknown size"));
+                    let (has_audio, origin, early_id) = {
+                        let st = ctx2.add_state.lock().unwrap();
+                        (
+                            st.extra.audio_url.is_some() && st.origin_url == url,
+                            st.origin_url.clone(),
+                            st.early_id,
+                        )
+                    };
+                    let size = match p.total_size {
+                        Some(size) if p.total_size_unverified => {
+                            tf("≈ {} (from server headers, unverified)", &[&fmt_size(size)])
+                        }
+                        Some(size) => fmt_size(size),
+                        None => t("Unknown size"),
+                    };
                     let size_text = if has_audio { format!("{size}\n{}", t("+ audio")) } else { size };
                     d.set_size_text(size_text.into());
                     let kind = match (p.kind, p.resumable) {
@@ -2373,11 +2517,107 @@ fn start_probe(ctx: &Ctx, url: String) {
                                 .into(),
                         );
                     }
-                    st.probe_url = url;
-                    st.probe = Some(p);
+                    // Stream metadata: duration, quality selector, sizes.
+                    if let Some(meta) = meta {
+                        if let Some(drm) = meta.drm.clone() {
+                            // Refuse DRM: show it clearly, block the buttons,
+                            // and drop a download that started early while
+                            // the window was open.
+                            if origin == url {
+                                if let Some(id) = early_id {
+                                    ctx2.mgr.discard(id);
+                                    ctx2.add_state.lock().unwrap().early_id = None;
+                                }
+                            }
+                            d.set_warning(
+                                t("This stream is DRM protected and cannot be downloaded.").into(),
+                            );
+                            d.set_info(drm.into());
+                            d.set_info_error(true);
+                            d.set_stream_available(false);
+                            d.set_drm_blocked(true);
+                            let mut st = ctx2.add_state.lock().unwrap();
+                            st.stream_meta = Some(meta);
+                            st.stream_url = url.clone();
+                            st.probe_url = url.clone();
+                            st.probe = Some(p);
+                            return;
+                        }
+                        let labels: Vec<SharedString> =
+                            meta.variants.iter().map(variant_label).map(Into::into).collect();
+                        d.set_stream_variants(ModelRc::new(VecModel::from(labels)));
+                        d.set_stream_available(true);
+                        {
+                            let mut st = ctx2.add_state.lock().unwrap();
+                            st.stream_meta = Some(meta);
+                            st.stream_url = url.clone();
+                        }
+                        apply_stream_selection(&ctx2, &d, 0);
+                        let mut st = ctx2.add_state.lock().unwrap();
+                        st.probe_url = url;
+                        st.probe = Some(p);
+                    } else if p.kind == DownloadKind::Http {
+                        // A direct file is one selector entry of its own.
+                        let direct = StreamMeta {
+                            kind: DownloadKind::Http,
+                            duration_secs: None,
+                            variants: vec![VariantInfo {
+                                width: 0,
+                                height: 0,
+                                frame_rate: None,
+                                codecs: String::new(),
+                                video_bps: 0,
+                                audio_bps: 0,
+                                duration_secs: None,
+                                estimated_size: p.total_size,
+                                size_source: if p.total_size_unverified {
+                                    SizeSource::Unknown
+                                } else {
+                                    SizeSource::Bitrate
+                                },
+                                url: url.clone(),
+                                is_audio_only: false,
+                            }],
+                            drm: None,
+                        };
+                        d.set_stream_variants(ModelRc::new(VecModel::from(vec![SharedString::from(
+                            t("Direct file"),
+                        )])));
+                        d.set_stream_available(true);
+                        {
+                            let mut st = ctx2.add_state.lock().unwrap();
+                            st.stream_meta = Some(direct);
+                            st.stream_url = url.clone();
+                        }
+                        // The direct entry's size text is the probe size,
+                        // with its source label when the server's length
+                        // was never confirmed by a byte range.
+                        d.set_stream_duration_text(t("Unknown").into());
+                        let direct_label = match p.total_size {
+                            None => t("Unknown size"),
+                            Some(size) if p.total_size_unverified => tf(
+                                "≈ {} (from server headers, unverified)",
+                                &[&fmt_size(size)],
+                            ),
+                            Some(size) => fmt_size(size),
+                        };
+                        d.set_stream_size_text(direct_label.into());
+                        let mut st = ctx2.add_state.lock().unwrap();
+                        st.probe_url = url;
+                        st.probe = Some(p);
+                    } else {
+                        let mut st = ctx2.add_state.lock().unwrap();
+                        st.probe_url = url;
+                        st.probe = Some(p);
+                    }
                 }
                 Err(e) => {
                     let text = format!("{e:#}");
+                    let text = if text == "__PROBE_TIMEOUT__" {
+                        t("The server did not answer in time.")
+                    } else {
+                        text
+                    };
                     // refused (often a site that only serves its own browser
                     // session): the browser can still take it
                     d.set_can_use_browser(["HTTP 403", "HTTP 406", "HTTP 429"].iter().any(|c| text.contains(c)));
@@ -2400,6 +2640,17 @@ fn confirm_add(ui: &Ui, start: bool) {
         d.set_info(t("Please enter a valid http:// or https:// address").into());
         d.set_info_error(true);
         return;
+    }
+    // A DRM-signaled stream is refused in this window, even if the
+    // user presses a button before the probe finished drawing.
+    {
+        let st = ctx.add_state.lock().unwrap();
+        if st.stream_url == url && st.stream_meta.as_ref().is_some_and(|m| m.drm.is_some()) {
+            drop(st);
+            d.set_info(t("This stream is DRM protected and cannot be downloaded.").into());
+            d.set_info_error(true);
+            return;
+        }
     }
     let save_as = PathBuf::from(d.get_save_as().trim());
     let name = save_as

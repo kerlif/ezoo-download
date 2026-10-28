@@ -466,6 +466,12 @@ msgstr "Lembrar este caminho para a categoria \"{}\""
 msgid "optional note"
 msgstr "nota opcional"
 
+msgid "Duration"
+msgstr "Duração"
+
+msgid "Quality"
+msgstr "Qualidade"
+
 msgid "Use authorization"
 msgstr "Usar autenticação"
 
@@ -1341,9 +1347,6 @@ msgstr "Obtendo os vídeos da playlist…"
 
 msgid "The videos of the playlist show up here."
 msgstr "Os vídeos da playlist aparecem aqui."
-
-msgid "Quality"
-msgstr "Qualidade"
 
 msgid "Best quality (MP4)"
 msgstr "Melhor qualidade (MP4)"

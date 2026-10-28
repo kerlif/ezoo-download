@@ -388,9 +388,50 @@ fn parse_range(s: &str) -> Option<(u64, u64)> {
 
 fn drm_scheme(scheme: &str) -> bool {
     let s = scheme.to_ascii_lowercase();
-    ["widevine", "playready", "fairplay", "clearkey"]
-        .iter()
-        .any(|d| s.contains(d))
+    // Names, and the scheme UUIDs the DASH spec assigns to each system:
+    // Widevine edef8ba9, PlayReady 9a04f079, FairPlay 94ce86fb, ClearKey
+    // 1077efec. A bare schemeIdUri UUID carries no name, so the name-only
+    // check used to miss it (the old DRM test only failed incidentally,
+    // because the manifest had no usable track either).
+    [
+        "widevine",
+        "playready",
+        "fairplay",
+        "clearkey",
+        "edef8ba9",
+        "9a04f079",
+        "94ce86fb",
+        "1077efec",
+    ]
+    .iter()
+    .any(|d| s.contains(d))
+}
+
+/// Walk an element tree depth-first.
+fn walk<'a>(el: &'a El, f: &mut impl FnMut(&'a El)) {
+    f(el);
+    for c in &el.children {
+        walk(c, f);
+    }
+}
+
+/// The DRM scheme signaled anywhere in a manifest, if any: every
+/// ContentProtection element's schemeIdUri/value, at any level. Used by
+/// the capture-window probe, which reports DRM instead of downloading.
+pub fn drm_reason(xml: &str) -> Option<String> {
+    let root = parse_xml(xml.trim()).ok()?;
+    let mut found: Option<String> = None;
+    walk(&root, &mut |el| {
+        if found.is_some() || el.name != "ContentProtection" {
+            return;
+        }
+        if let Some(scheme) = el.attr("schemeIdUri").or(el.attr("value")) {
+            if drm_scheme(scheme) {
+                found = Some(scheme.to_string());
+            }
+        }
+    });
+    found
 }
 
 /// Collect a SegmentTemplate from any element level (child fields win).
@@ -721,6 +762,141 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
         bail!("the manifest has no usable track");
     }
     Ok(manifest)
+}
+
+// ------------------------------------------------------- metadata only
+
+/// One representation, as the capture window shows it: quality, codec and
+/// bitrate, without expanding its segments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DashRepMeta {
+    pub id: String,
+    pub is_video: bool,
+    pub bandwidth: u64,
+    pub width: u32,
+    pub height: u32,
+    pub codecs: String,
+    pub frame_rate: Option<f32>,
+}
+
+/// Manifest metadata for the capture window: the summed duration of ALL
+/// Periods, every representation (video and audio kept separate), and any
+/// DRM signal. The download path still uses [`parse`], which expands only
+/// the first Period's segments.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DashMeta {
+    pub duration_secs: f64,
+    pub videos: Vec<DashRepMeta>,
+    pub audios: Vec<DashRepMeta>,
+    pub drm: Option<String>,
+}
+
+fn parse_frame_rate(s: &str) -> Option<f32> {
+    let s = s.trim();
+    if let Some((a, b)) = s.split_once('/') {
+        let (a, b): (f32, f32) = (a.trim().parse().ok()?, b.trim().parse().ok()?);
+        if b != 0.0 {
+            return Some(a / b);
+        }
+        return None;
+    }
+    s.parse().ok()
+}
+
+/// Parse a manifest's metadata without expanding segments.
+pub fn parse_metadata(xml: &str) -> anyhow::Result<DashMeta> {
+    let xml = xml.trim();
+    if !xml.starts_with('<') {
+        bail!("not a valid DASH manifest");
+    }
+    if xml.len() > crate::m3u8::MAX_PLAYLIST_BYTES {
+        bail!("the manifest is too big");
+    }
+    let root = parse_xml(xml).context("could not read the DASH manifest")?;
+    if root.name != "MPD" {
+        bail!("not a DASH manifest (no <MPD>)");
+    }
+    let mpd_type = root.attr("type").unwrap_or("static");
+    if mpd_type.eq_ignore_ascii_case("dynamic") {
+        bail!("live streams are not supported (the manifest is dynamic)");
+    }
+    let mut meta = DashMeta {
+        drm: drm_reason(xml),
+        ..Default::default()
+    };
+    let total = root
+        .attr("mediaPresentationDuration")
+        .and_then(parse_iso_duration)
+        .unwrap_or(0.0);
+    // Sum the Period durations; a Period without one falls back to the
+    // manifest duration only when it is the sole Period.
+    let periods: Vec<&El> = root.children_named("Period").collect();
+    if periods.is_empty() {
+        bail!("the manifest has no Period");
+    }
+    let mut summed = 0.0f64;
+    let mut any_period_duration = false;
+    for period in &periods {
+        if let Some(d) = period.attr("duration").and_then(parse_iso_duration) {
+            summed += d;
+            any_period_duration = true;
+        }
+    }
+    meta.duration_secs = if any_period_duration { summed } else { total };
+    let mut seen: Vec<(bool, u32, u32, String, u64)> = Vec::new();
+    for period in &periods {
+        for aset in period.children_named("AdaptationSet") {
+            for rep in aset.children_named("Representation") {
+                let bandwidth = rep.attr_u64("bandwidth").unwrap_or(0);
+                let width = rep.attr_u64("width").unwrap_or(0) as u32;
+                let height = rep.attr_u64("height").unwrap_or(0) as u32;
+                let codecs = rep
+                    .attr("codecs")
+                    .or(aset.attr("codecs"))
+                    .unwrap_or("")
+                    .to_string();
+                let mime = rep.attr("mimeType").or(aset.attr("mimeType")).unwrap_or("");
+                let ctype = rep
+                    .attr("contentType")
+                    .or(aset.attr("contentType"))
+                    .unwrap_or("");
+                let is_video = if !ctype.is_empty() {
+                    ctype.starts_with("video")
+                } else if !mime.is_empty() {
+                    mime.starts_with("video")
+                } else {
+                    width > 0 || height > 0
+                };
+                // The same quality repeated in a later Period is one entry.
+                let key = (is_video, width, height, codecs.clone(), bandwidth);
+                if seen.contains(&key) {
+                    continue;
+                }
+                seen.push(key);
+                let entry = DashRepMeta {
+                    id: rep.attr("id").unwrap_or("0").to_string(),
+                    is_video,
+                    bandwidth,
+                    width,
+                    height,
+                    codecs,
+                    frame_rate: rep
+                        .attr("frameRate")
+                        .or(aset.attr("frameRate"))
+                        .and_then(parse_frame_rate),
+                };
+                if is_video {
+                    meta.videos.push(entry);
+                } else {
+                    meta.audios.push(entry);
+                }
+            }
+        }
+    }
+    if meta.videos.is_empty() && meta.audios.is_empty() {
+        bail!("the manifest has no usable track");
+    }
+    Ok(meta)
 }
 
 // ------------------------------------------------------------ downloading
@@ -1067,6 +1243,55 @@ mod tests {
           <Representation id="v" bandwidth="1"><SegmentTemplate media="s.m4s" duration="1"/></AdaptationSet>
         </Period></MPD>"#;
         assert!(parse("https://x.example/a.mpd", live).is_err());
+    }
+
+    #[test]
+    fn metadata_sums_periods_and_keeps_audio_separate() {
+        let m = r#"<MPD type="static" mediaPresentationDuration="PT2M">
+         <Period duration="PT1M"><AdaptationSet contentType="video">
+          <Representation id="v1" bandwidth="3000000" width="1920" height="1080" codecs="avc1.640028" frameRate="30"/>
+          <Representation id="v2" bandwidth="800000" width="640" height="360" codecs="avc1.42c01e"/>
+         </AdaptationSet><AdaptationSet contentType="audio">
+          <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2"/>
+         </AdaptationSet></Period>
+         <Period duration="PT1M"><AdaptationSet contentType="video">
+          <Representation id="v1" bandwidth="3000000" width="1920" height="1080" codecs="avc1.640028" frameRate="30000/1001"/>
+         </AdaptationSet><AdaptationSet contentType="audio">
+          <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2"/>
+         </AdaptationSet></Period>
+        </MPD>"#;
+        let meta = parse_metadata(m).unwrap();
+        assert_eq!(meta.duration_secs, 120.0, "Period durations must be summed");
+        assert_eq!(meta.videos.len(), 2, "repeated Period quality deduped");
+        assert_eq!(meta.audios.len(), 1);
+        assert_eq!(meta.videos[0].frame_rate, Some(30.0));
+        assert_eq!(meta.audios[0].bandwidth, 128000);
+        assert!(meta.drm.is_none());
+    }
+
+    #[test]
+    fn metadata_reports_drm_uuids() {
+        let widevine = r#"<MPD type="static"><Period><AdaptationSet contentType="video">
+          <ContentProtection schemeIdUri="urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"/>
+          <Representation id="v" bandwidth="1" width="640" height="360"/>
+        </AdaptationSet></Period></MPD>"#;
+        assert!(
+            drm_reason(widevine).is_some(),
+            "Widevine UUID must be detected"
+        );
+        assert!(parse_metadata(widevine).unwrap().drm.is_some());
+        let playready = r#"<MPD type="static"><Period><AdaptationSet contentType="video">
+          <ContentProtection schemeIdUri="urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95"/>
+          <Representation id="v" bandwidth="1" width="640" height="360"/>
+        </AdaptationSet></Period></MPD>"#;
+        assert!(
+            drm_reason(playready).is_some(),
+            "PlayReady UUID must be detected"
+        );
+        let clear = r#"<MPD type="static"><Period><AdaptationSet contentType="video">
+          <Representation id="v" bandwidth="1" width="640" height="360"/>
+        </AdaptationSet></Period></MPD>"#;
+        assert!(drm_reason(clear).is_none());
     }
 
     #[test]

@@ -42,6 +42,36 @@ the resolution and date.
    systems always ship at least one font, so impact is limited to
    fontless test/container environments.
 
+6. **Phase 4 translations marked needs-review.** The Russian and
+   Turkish wordings of the two size-estimation labels ("estimated from
+   bitrate" / "estimated from sampled segments") are marked
+   `needs-review` in the locale files (`crates/app/lang/rs/*.json` and
+   `crates/app/lang/ui/*.json`, key `"needs-review"`). Default: ship
+   them as written; they are short technical phrases and the UI always
+   shows the number first. Resolution needs: a native speaker's check
+   of those four strings.
+7. **Capture-window quality selector is display-only in Phase 4.**
+   The selector shows every parsed variant/representation with the
+   estimated size of the selected quality, but choosing one does not
+   steer the download: the engine still downloads the best quality,
+   exactly as before Phase 4. Steering a download to the selected
+   variant/representation needs new plumbing through `NewDownload` /
+   the HLS and DASH runners and was not in the Phase 4 spec's
+   no-download-behavior-change rule. Default: keep display-only until
+   a later phase orders the plumbing. Resolution needs: a decision on
+   whether selection should steer downloads, and if so, in which phase.
+8. **HLS BANDWIDTH with a separate audio group.** When a variant
+   refers to a separate audio group, Phase 4 treats its
+   AVERAGE-BANDWIDTH/BANDWIDTH tag as the video bitrate and ADDS the
+   audio bitrate (sampled from the audio rendition's segments), as the
+   spec orders. If the audio bitrate cannot be sampled, the tag is
+   used on its own and no audio bitrate is added, rather than showing
+   no size at all. This follows the spec's ADD rule literally when the
+   audio bitrate is measurable; servers whose BANDWIDTH tag already
+   includes the audio will show a slightly high estimate in that case.
+   Default: keep. Resolution needs: none unless a server is found
+   where the double count is visibly wrong.
+
 ## Resolved
 
 1. **InstaArabi font license** (resolved 2026-10-28, font-licensing

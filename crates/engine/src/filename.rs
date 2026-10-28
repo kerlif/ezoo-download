@@ -50,6 +50,9 @@ pub fn from_url(u: &str) -> Option<String> {
 }
 
 /// Make a name valid on Windows (the strictest file system we target).
+/// Path separators are flattened, ".." sequences are removed (a name from
+/// a Content-Disposition header or a URL must never climb out of the
+/// download folder), and reserved names are prefixed.
 pub fn sanitize(name: &str) -> String {
     let mut out: String = name
         .chars()
@@ -59,7 +62,17 @@ pub fn sanitize(name: &str) -> String {
             c => c,
         })
         .collect();
-    // no trailing dots or spaces on Windows
+    // no trailing dots or spaces on Windows (".." alone strips to
+    // nothing here and becomes "download" below)
+    while out.ends_with('.') || out.ends_with(' ') {
+        out.pop();
+    }
+    // ".." must not survive: after the separators above are gone it can
+    // only appear inside the name itself (e.g. "../../etc/passwd").
+    // Single dots (".hidden", "a.tar.gz") are left alone.
+    while out.contains("..") {
+        out = out.replace("..", "_");
+    }
     while out.ends_with('.') || out.ends_with(' ') {
         out.pop();
     }
@@ -172,6 +185,34 @@ pub fn part_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{name}.{PART_EXT}"))
 }
 
+/// A file name resolved inside `dir`, guaranteed: the name is sanitized
+/// first (no separators, no "..", no reserved name), then the result is
+/// verified to still start with `dir`. A name that would escape the
+/// folder falls back to a plain "download" inside it.
+pub fn safe_join(dir: &Path, name: &str) -> PathBuf {
+    let name = sanitize(name);
+    let joined = dir.join(&name);
+    let mut dir_parts: Vec<_> = dir.components().collect();
+    while matches!(dir_parts.last(), Some(std::path::Component::CurDir)) {
+        dir_parts.pop();
+    }
+    let mut joined_parts: Vec<_> = joined.components().collect();
+    while matches!(joined_parts.last(), Some(std::path::Component::CurDir)) {
+        joined_parts.pop();
+    }
+    let inside = joined_parts.len() > dir_parts.len()
+        && joined_parts[..dir_parts.len()] == dir_parts[..]
+        && matches!(
+            joined_parts.get(dir_parts.len()),
+            Some(std::path::Component::Normal(_))
+        );
+    if inside {
+        joined
+    } else {
+        dir.join("download")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,6 +248,43 @@ mod tests {
         assert_eq!(sanitize("CON.txt"), "_CON.txt");
         assert_eq!(sanitize("name. . "), "name");
         assert_eq!(sanitize(""), "download");
+        // ".." sequences are removed; ordinary single dots survive
+        assert_eq!(sanitize("a.tar.gz"), "a.tar.gz");
+        assert_eq!(sanitize(".hidden"), ".hidden");
+        assert_eq!(sanitize(".."), "download");
+        assert_eq!(sanitize("..."), "download");
+        assert_eq!(sanitize("a..b.zip"), "a_b.zip");
+    }
+
+    #[test]
+    fn traversal_names_stay_inside() {
+        // Content-Disposition / URL traversal attempts from the gate list
+        let dir = Path::new("/tmp/dl");
+        for raw in [
+            "../../etc/passwd",
+            "..\\..\\evil.exe",
+            "..%2f..%2fetc%2fpasswd",
+            "CON",
+            "LPT1.txt",
+            "a/b/c.zip",
+        ] {
+            let name = from_content_disposition(&format!("attachment; filename=\"{raw}\""))
+                .unwrap_or_else(|| raw.to_string());
+            let joined = safe_join(dir, &name);
+            assert!(joined.starts_with(dir), "{raw:?} escaped to {joined:?}");
+            assert!(
+                !joined.to_string_lossy().contains(".."),
+                "{raw:?} kept .. in {joined:?}"
+            );
+        }
+        assert_eq!(
+            safe_join(dir, "../../etc/passwd").file_name().unwrap(),
+            "____etc_passwd"
+        );
+        assert_eq!(safe_join(dir, "report.pdf"), dir.join("report.pdf"));
+        // a reserved name is prefixed, a very long name is truncated
+        assert_eq!(safe_join(dir, "CON.txt").file_name().unwrap(), "_CON.txt");
+        assert!(safe_join(dir, &"x".repeat(300)).file_name().unwrap().len() <= 180);
     }
 
     #[test]

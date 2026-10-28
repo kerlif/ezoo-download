@@ -466,6 +466,12 @@ msgstr "Bu yolu \"{}\" kategorisi için hatırla"
 msgid "optional note"
 msgstr "isteğe bağlı not"
 
+msgid "Duration"
+msgstr "Süre"
+
+msgid "Quality"
+msgstr "Kalite"
+
 msgid "Use authorization"
 msgstr "Kimlik doğrulama kullan"
 
@@ -1341,9 +1347,6 @@ msgstr "Oynatma listesinin videoları alınıyor…"
 
 msgid "The videos of the playlist show up here."
 msgstr "Oynatma listesinin videoları burada görünür."
-
-msgid "Quality"
-msgstr "Kalite"
 
 msgid "Best quality (MP4)"
 msgstr "En iyi kalite (MP4)"

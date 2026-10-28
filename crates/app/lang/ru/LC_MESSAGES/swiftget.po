@@ -466,6 +466,12 @@ msgstr "Запомнить этот путь для категории \"{}\""
 msgid "optional note"
 msgstr "примечание (необязательно)"
 
+msgid "Duration"
+msgstr "Длительность"
+
+msgid "Quality"
+msgstr "Качество"
+
 msgid "Use authorization"
 msgstr "Использовать авторизацию"
 
@@ -1341,9 +1347,6 @@ msgstr "Получение видео из плейлиста…"
 
 msgid "The videos of the playlist show up here."
 msgstr "Здесь появятся видео из плейлиста."
-
-msgid "Quality"
-msgstr "Качество"
 
 msgid "Best quality (MP4)"
 msgstr "Лучшее качество (MP4)"

@@ -250,6 +250,20 @@ impl Manager {
         http::probe(&self.shared.client(), url, &headers, &ua).await
     }
 
+    /// Stream metadata (duration, qualities, estimated size) for the
+    /// capture window. Metadata only; the download path is untouched.
+    pub async fn stream_probe(
+        &self,
+        url: &str,
+        headers: &RequestHeaders,
+    ) -> anyhow::Result<crate::stream_meta::StreamMeta> {
+        let (ua, headers) = {
+            let s = self.settings.read().unwrap();
+            (s.user_agent.clone(), with_login(&s, url, headers))
+        };
+        crate::stream_meta::probe_stream(&self.shared.client(), url, &headers, &ua).await
+    }
+
     /// The HTTP client (with the proxy settings), for the site grabber.
     pub fn client(&self) -> reqwest::Client {
         self.shared.client()

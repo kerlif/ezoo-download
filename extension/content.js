@@ -481,6 +481,8 @@
       fmtLen(y.duration),
       kbps ? `${kbps.toLocaleString("en")} kbps` : "",
       y.size ? (y.quality === "mp3" ? "about " : "") + fmtSize(y.size) : "",
+      y.sizeSource === "filesize_approx" ? "approx. size (yt-dlp estimate)" : "",
+      y.sizeSource === "estimated" ? "estimated size" : "",
       y.quality === "mp3" ? "made into MP3 after the download" : "",
     ]
       .filter(Boolean)

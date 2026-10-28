@@ -466,6 +466,12 @@ msgstr "Diesen Pfad für die Kategorie \"{}\" merken"
 msgid "optional note"
 msgstr "optionale Notiz"
 
+msgid "Duration"
+msgstr "Dauer"
+
+msgid "Quality"
+msgstr "Qualität"
+
 msgid "Use authorization"
 msgstr "Anmeldung verwenden"
 
@@ -1341,9 +1347,6 @@ msgstr "Videos der Playlist werden geholt…"
 
 msgid "The videos of the playlist show up here."
 msgstr "Die Videos der Playlist erscheinen hier."
-
-msgid "Quality"
-msgstr "Qualität"
 
 msgid "Best quality (MP4)"
 msgstr "Beste Qualität (MP4)"

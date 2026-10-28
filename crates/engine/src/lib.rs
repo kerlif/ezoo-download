@@ -27,6 +27,7 @@ pub mod secret;
 pub mod segments;
 pub mod selfupdate;
 pub mod store;
+pub mod stream_meta;
 pub mod system;
 pub mod tools;
 pub mod torrent;

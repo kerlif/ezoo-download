@@ -28,6 +28,12 @@ pub struct YtOption {
     pub audio_url: Option<String>,
     pub ext: String,
     pub size: u64,
+    /// Where `size` came from, shown in the browser panel: "filesize"
+    /// (exact), "filesize_approx" (an estimate), "estimated" (computed
+    /// here, e.g. the MP3 conversion), or "" (unknown). Only ever set
+    /// from a yt-dlp run the user asked for; probing never runs yt-dlp.
+    #[serde(rename = "sizeSource")]
+    pub size_source: String,
     /// headers these links need (mostly the User-Agent and Referer)
     pub headers: Vec<(String, String)>,
     /// plain words for the resolution: "SD", "HD", "Full HD", "2K", "4K", "8K"
@@ -77,6 +83,8 @@ struct Fmt {
     height: u64,
     fps: u64,
     size: u64,
+    /// "filesize" or "filesize_approx": which field supplied `size`.
+    size_source: &'static str,
     abr: f64,
     tbr: f64,
     note: String,
@@ -175,6 +183,13 @@ fn parse_one(f: &Value) -> Option<Fmt> {
         size: as_u64(&f["filesize"])
             .or_else(|| as_u64(&f["filesize_approx"]))
             .unwrap_or(0),
+        size_source: if f["filesize"].is_number() {
+            "filesize"
+        } else if f["filesize_approx"].is_number() {
+            "filesize_approx"
+        } else {
+            ""
+        },
         abr: f["abr"]
             .as_f64()
             .or_else(|| f["tbr"].as_f64())
@@ -349,6 +364,7 @@ pub fn build_options(full: &Value) -> YtInfo {
                 audio_url: None,
                 ext: ext.into(),
                 size: v.size,
+                size_source: v.size_source.into(),
                 headers: v.headers.clone(),
                 tag: quality_tag(v.height).into(),
                 codec: v.codec_name().into(),
@@ -383,6 +399,15 @@ pub fn build_options(full: &Value) -> YtInfo {
         } else {
             0
         };
+        let size_source = if size == 0 {
+            ""
+        } else if v.size_source == "filesize_approx" || audio.size_source == "filesize_approx" {
+            "filesize_approx"
+        } else if v.size_source == "filesize" && audio.size_source == "filesize" {
+            "filesize"
+        } else {
+            ""
+        };
         options.push(YtOption {
             label: format!(
                 "{} · {}{}",
@@ -397,6 +422,7 @@ pub fn build_options(full: &Value) -> YtInfo {
             audio_url: Some(audio.url.clone()),
             ext,
             size,
+            size_source: size_source.into(),
             headers: v.headers.clone(),
             tag: quality_tag(v.height).into(),
             codec: v.codec_name().into(),
@@ -426,6 +452,7 @@ pub fn build_options(full: &Value) -> YtInfo {
             audio_url: None,
             ext: ext.into(),
             size: a.size,
+            size_source: a.size_source.into(),
             headers: a.headers.clone(),
             tag: String::new(),
             codec: String::new(),
@@ -449,6 +476,7 @@ pub fn build_options(full: &Value) -> YtInfo {
                 audio_url: None,
                 ext: "mp3".into(),
                 size: mp3_size,
+                size_source: "estimated".into(),
                 headers: a.headers.clone(),
                 tag: String::new(),
                 codec: String::new(),

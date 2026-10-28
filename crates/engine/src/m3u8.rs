@@ -78,6 +78,169 @@ pub fn best_variant(base: &str, text: &str) -> anyhow::Result<Option<String>> {
     Ok(best.map(|(_, u)| u))
 }
 
+/// One quality of a master playlist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Variant {
+    pub url: String,
+    /// AVERAGE-BANDWIDTH when present, else BANDWIDTH (0 = not tagged).
+    pub bandwidth: u64,
+    pub average_bandwidth: Option<u64>,
+    pub resolution: Option<(u32, u32)>,
+    pub frame_rate: Option<f32>,
+    pub codecs: String,
+    /// EXT-X-MEDIA audio group this variant refers to, if any.
+    pub audio_group: Option<String>,
+}
+
+/// An audio rendition of a master playlist (EXT-X-MEDIA TYPE=AUDIO).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AudioRendition {
+    pub group_id: String,
+    pub uri: Option<String>,
+    pub name: String,
+}
+
+fn parse_resolution(s: &str) -> Option<(u32, u32)> {
+    let (w, h) = s.split_once('x')?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+}
+
+/// Parse a master playlist into its variants (resolution, frame rate,
+/// codecs, bandwidth). A media playlist yields no variants.
+pub fn parse_master(base: &str, text: &str) -> anyhow::Result<Vec<Variant>> {
+    let mut out = Vec::new();
+    let mut pending: Option<Variant> = None;
+    for line in text.lines().map(str::trim) {
+        if let Some(attrs) = line.strip_prefix("#EXT-X-STREAM-INF:") {
+            let a = parse_attrs(attrs);
+            let bw = a.get("BANDWIDTH").and_then(|b| b.parse().ok()).unwrap_or(0);
+            let avg = a.get("AVERAGE-BANDWIDTH").and_then(|b| b.parse().ok());
+            pending = Some(Variant {
+                url: String::new(),
+                bandwidth: avg.unwrap_or(bw),
+                average_bandwidth: avg,
+                resolution: a.get("RESOLUTION").and_then(|r| parse_resolution(r)),
+                frame_rate: a.get("FRAME-RATE").and_then(|f| f.parse().ok()),
+                codecs: a.get("CODECS").cloned().unwrap_or_default(),
+                audio_group: a.get("AUDIO").cloned(),
+            });
+        } else if !line.is_empty() && !line.starts_with('#') {
+            if let Some(mut v) = pending.take() {
+                v.url = resolve(base, line)?;
+                out.push(v);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Audio renditions of a master playlist.
+pub fn parse_audio_renditions(base: &str, text: &str) -> Vec<AudioRendition> {
+    let mut out = Vec::new();
+    for line in text.lines().map(str::trim) {
+        let Some(attrs) = line.strip_prefix("#EXT-X-MEDIA:") else {
+            continue;
+        };
+        let a = parse_attrs(attrs);
+        if a.get("TYPE").map(|t| t.to_ascii_uppercase()).as_deref() != Some("AUDIO") {
+            continue;
+        }
+        let uri = a.get("URI").and_then(|u| resolve(base, u).ok());
+        out.push(AudioRendition {
+            group_id: a.get("GROUP-ID").cloned().unwrap_or_default(),
+            uri,
+            name: a.get("NAME").cloned().unwrap_or_default(),
+        });
+    }
+    out
+}
+
+/// Whether a KEYFORMAT value signals DRM (FairPlay / Widevine / PlayReady).
+/// AES-128 uses no KEYFORMAT or "identity" and stays supported: its key
+/// is delivered in the playlist, so using it is not circumvention.
+pub fn is_drm_keyformat(format: &str) -> bool {
+    let f = format.to_ascii_lowercase();
+    f.contains("fairplay")
+        || f.contains("playready")
+        || f.contains("widevine")
+        || f.contains("streamingkeydelivery")
+        || f.contains("edef8ba9")
+        || f.contains("9a04f079")
+        || f.contains("94ce86fb")
+        || f.contains("1077efec")
+}
+
+/// Why a media playlist is DRM-protected, if it is: the EXT-X-KEY method
+/// or KEYFORMAT. `None` means clear or AES-128 with a playlist key.
+pub fn drm_reason(text: &str) -> Option<String> {
+    for line in text.lines().map(str::trim) {
+        let Some(attrs) = line.strip_prefix("#EXT-X-KEY:") else {
+            continue;
+        };
+        let a = parse_attrs(attrs);
+        let method = a
+            .get("METHOD")
+            .map(|m| m.to_ascii_uppercase())
+            .unwrap_or_default();
+        if let Some(kf) = a.get("KEYFORMAT") {
+            if is_drm_keyformat(kf) {
+                return Some(format!("DRM key format {kf}"));
+            }
+        }
+        match method.as_str() {
+            "NONE" | "" | "AES-128" => {}
+            other => return Some(format!("DRM key method {other}")),
+        }
+    }
+    None
+}
+
+/// Metadata of a media playlist: total duration, segment URLs with their
+/// EXTINF durations, and any DRM signal. Unlike [`parse_media`] this does
+/// not fail on DRM: the caller reports it instead of downloading.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MediaMeta {
+    pub duration_secs: f64,
+    pub segment_urls: Vec<String>,
+    pub segment_durations: Vec<f64>,
+    pub drm: Option<String>,
+}
+
+pub fn parse_media_meta(base: &str, text: &str) -> anyhow::Result<MediaMeta> {
+    if text.len() > MAX_PLAYLIST_BYTES {
+        bail!("the stream's list is too big");
+    }
+    let mut meta = MediaMeta {
+        drm: drm_reason(text),
+        ..Default::default()
+    };
+    let mut pending: Option<f64> = None;
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("#EXTINF:") {
+            let num: String = v
+                .split(',')
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            pending = num.parse().ok();
+        } else if !line.starts_with('#') {
+            if meta.segment_urls.len() >= MAX_PARTS {
+                bail!("the stream has too many parts");
+            }
+            let dur = pending.take().unwrap_or(0.0);
+            meta.duration_secs += dur;
+            meta.segment_urls.push(resolve(base, line)?);
+            meta.segment_durations.push(dur);
+        }
+    }
+    Ok(meta)
+}
+
 fn parse_iv(s: &str) -> Option<[u8; 16]> {
     let hex = s.trim().trim_start_matches("0x").trim_start_matches("0X");
     if hex.len() != 32 || !hex.is_ascii() {
@@ -199,6 +362,47 @@ mod tests {
             p.parts[0].key.as_ref().unwrap().uri,
             "https://cdn.x/v/key.bin"
         );
+    }
+
+    #[test]
+    fn master_variants_and_audio_group() {
+        let m = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,AVERAGE-BANDWIDTH=4200000,RESOLUTION=1920x1080,FRAME-RATE=30,CODECS=\"avc1.640028,mp4a.40.2\",AUDIO=\"aud\"\nhigh/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\nlow/index.m3u8\n";
+        let vs = parse_master("https://cdn.x/v/master.m3u8", m).unwrap();
+        assert_eq!(vs.len(), 2);
+        assert_eq!(vs[0].bandwidth, 4200000, "AVERAGE-BANDWIDTH wins");
+        assert_eq!(vs[0].average_bandwidth, Some(4200000));
+        assert_eq!(vs[0].resolution, Some((1920, 1080)));
+        assert_eq!(vs[0].frame_rate, Some(30.0));
+        assert_eq!(vs[0].audio_group.as_deref(), Some("aud"));
+        assert_eq!(vs[1].bandwidth, 800000, "BANDWIDTH fallback");
+        assert_eq!(vs[0].url, "https://cdn.x/v/high/index.m3u8");
+        let rend = parse_audio_renditions("https://cdn.x/v/master.m3u8", m);
+        assert_eq!(rend.len(), 1);
+        assert_eq!(rend[0].uri.as_deref(), Some("https://cdn.x/v/audio.m3u8"));
+    }
+
+    #[test]
+    fn media_meta_sums_extinf() {
+        let m =
+            "#EXTM3U\n#EXTINF:4.0,\na.ts\n#EXTINF:6.5,\nb.ts\n#EXTINF:2,\nc.ts\n#EXT-X-ENDLIST\n";
+        let meta = parse_media_meta("https://cdn.x/v/index.m3u8", m).unwrap();
+        assert_eq!(meta.duration_secs, 12.5);
+        assert_eq!(meta.segment_urls.len(), 3);
+        assert_eq!(meta.segment_durations, vec![4.0, 6.5, 2.0]);
+        assert!(meta.drm.is_none());
+    }
+
+    #[test]
+    fn media_meta_reports_drm_keyformats() {
+        let fairplay = "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://x\",KEYFORMAT=\"com.apple.streamingkeydelivery\"\na.ts\n";
+        let meta = parse_media_meta("https://cdn.x/index.m3u8", fairplay).unwrap();
+        assert!(meta.drm.is_some(), "FairPlay KEYFORMAT must be reported");
+        let widevine = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"https://k/key\",KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\"\na.ts\n";
+        let meta = parse_media_meta("https://cdn.x/index.m3u8", widevine).unwrap();
+        assert!(meta.drm.is_some(), "Widevine KEYFORMAT must be reported");
+        let aes = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\na.ts\n";
+        let meta = parse_media_meta("https://cdn.x/index.m3u8", aes).unwrap();
+        assert!(meta.drm.is_none(), "AES-128 stays supported");
     }
 
     #[test]

@@ -30,6 +30,14 @@
  "General": "Общие",
  "Paste a link and press Check": "Вставьте ссылку и нажмите «Проверить»",
  "Unknown size": "Размер неизвестен",
+ "This stream is DRM protected and cannot be downloaded.": "Этот поток защищён DRM и не может быть загружен.",
+ "≈ {} (estimated from bitrate)": "≈ {} (оценка по битрейту)",
+ "≈ {} (estimated from sampled segments)": "≈ {} (оценка по выборочным сегментам)",
+ "≈ {} (from server headers, unverified)": "≈ {} (из заголовков сервера, не проверено)",
+ "The server did not answer in time.": "Сервер не ответил вовремя.",
+ "Direct file": "Прямой файл",
+ "Audio only": "Только аудио",
+ "audio": "аудио",
  "+ audio": "+ аудио",
  "Video + audio, joined after download": "Видео + аудио, объединяются после загрузки",
  "Video stream (HLS)": "Видеопоток (HLS)",
@@ -244,5 +252,6 @@
  "A clear message when the download folder is on a drive locked by BitLocker.": "Понятное сообщение, если папка загрузок находится на диске, заблокированном BitLocker.",
  "Fixed videos that could not be downloaded on some computers because of the Windows temporary folder.": "Исправлены видео, которые не скачивались на некоторых компьютерах из-за временной папки Windows.",
  "The Grabber also finds links written as plain text, and the menu next to the clock is in the program's language.": "Сборщик находит и ссылки, написанные простым текстом, а меню у часов теперь на языке программы.",
- "The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.": "Ограничение скорости остаётся ровным при многих подключениях, а буфер обмена ловит и добавленные вами типы файлов."
+ "The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.": "Ограничение скорости остаётся ровным при многих подключениях, а буфер обмена ловит и добавленные вами типы файлов.",
+ "needs-review": "estimated from bitrate; estimated from sampled segments"
 }

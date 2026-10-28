@@ -68,6 +68,7 @@ AR = {
     "By order of addition": "حسب ترتيب الإضافة",
     "File name": "اسم الملف",
     "Size": "الحجم",
+    "Duration": "المدة",
     "Status": "الحالة",
     "Time left": "الوقت المتبقي",
     "Transfer rate": "سرعة النقل",

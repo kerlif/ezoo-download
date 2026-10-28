@@ -79,6 +79,11 @@ pub struct ProbeResult {
     pub final_url: String,
     pub file_name: String,
     pub total_size: Option<u64>,
+    /// The size came from a plain Content-Length with no byte-range
+    /// confirmation, so it is untrusted: the server may be lying (a
+    /// wrong length is shown with "~" and never trusted for planning).
+    /// Sizes confirmed by a 206 Content-Range total are verified.
+    pub total_size_unverified: bool,
     pub resumable: bool,
     pub content_type: Option<String>,
     pub kind: DownloadKind,
