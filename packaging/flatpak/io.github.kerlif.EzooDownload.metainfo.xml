@@ -51,11 +51,11 @@
     </screenshot>
     <screenshot>
       <caption>Add download dialog</caption>
-      <image type="source" width="962" height="502">https://kerlif.github.io/ezoo-download/screenshots/03-add-dialog-ar.png</image>
+      <image type="source" width="640" height="488">https://kerlif.github.io/ezoo-download/screenshots/03-add-dialog-ar.png</image>
     </screenshot>
   </screenshots>
   <releases>
-    <release version="1.1.0" date="2026-10-28" type="stable">
+    <release version="1.1.0" date="2026-10-29" type="stable">
       <description>
         <p>Fork release: adaptive multi-connection download engine, bundled
         Carlito, Noto Sans Arabic and Liberation Serif fonts, update checker
