@@ -12,7 +12,7 @@
 
 [![الإصدار](https://img.shields.io/github/v/release/kerlif/ezoo-download?label=release&color=2ba59a)](https://github.com/kerlif/ezoo-download/releases/latest)
 [![التنزيلات](https://img.shields.io/github/downloads/kerlif/ezoo-download/total?label=downloads&color=0d1b2a)](https://github.com/kerlif/ezoo-download/releases)
-[![الترخيص](https://img.shields.io/github/license/kerlif/ezoo-download?color=f5a524)](#الترخيص)
+[![الترخيص: MIT](https://img.shields.io/badge/license-MIT-f5a524)](#الترخيص)
 ![المنصات](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-0d1b2a)
 ![اللغات](https://img.shields.io/badge/interface-8%20languages-2ba59a)
 

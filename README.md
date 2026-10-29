@@ -12,7 +12,7 @@ Free and open source. No ads. No accounts.
 
 [![Release](https://img.shields.io/github/v/release/kerlif/ezoo-download?label=release&color=2ba59a)](https://github.com/kerlif/ezoo-download/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/kerlif/ezoo-download/total?label=downloads&color=0d1b2a)](https://github.com/kerlif/ezoo-download/releases)
-[![License](https://img.shields.io/github/license/kerlif/ezoo-download?color=f5a524)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f5a524)](#license)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-0d1b2a)
 ![Languages](https://img.shields.io/badge/interface-8%20languages-2ba59a)
 
