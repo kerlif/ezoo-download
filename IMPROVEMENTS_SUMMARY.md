@@ -227,6 +227,66 @@
   `continue-on-error` + رفع مصنوعات) مُصعَّد للمنسّق في
   `~/workspace/ezoo/workflow-escalations/phase10/`.
 
+## 11. نقاط القوة / ما أُصلح في 1.1.0 / ما هو مخطط له لاحقًا
+
+**نقاط القوة في 1.1.0:**
+
+- **خطوط مضمّنة بلا اعتماد على النظام**: Carlito وNoto Sans Arabic
+  وLiberation Serif (SIL OFL 1.1، تُشحَن دون تعديل)، تُسجَّل في
+  الذاكرة عند بدء التشغيل، فتعمل الواجهة بالكامل من الخطوط
+  المضمّنة (أُثبت بلقطات متطابقة البكسل مع صفر خطوط نظام قابلة
+  للاستخدام، بالاختبار البديل الموثّق في المرحلة 3).
+- **إصلاح حوارات Wayland بالتحميل الكسول**: الحوارات تُنشَأ عند أول
+  فتح فقط، فلا تُعيَّن إلا نافذة واحدة عند بدء التشغيل (أُثبت تحت
+  Xvfb: نافذة واحدة عند البدء، ونافذة واحدة لكل حوار يُفتَح،
+  وإعادة استخدام عند إعادة الفتح)؛ التحقق على KDE Plasma
+  الحقيقي ما زال معلّقًا (انظر «مخطط له لاحقًا»).
+- **محرك تجزئة تكيفي مع تعلّم لكل مضيف**: تعلّم محلي فقط في
+  `settings.json` (متوسطات أسّية بوزن 0.3، وانتهاء بعد 30 يومًا،
+  والمفتاح اسم المضيف فقط)، بلا أي حركة شبكة إضافية.
+- **فاحص تحديثات موقَّع**: مصدر وحيد هو إصدارات المستودع الفرعي،
+  وتوقيع Ed25519 على البيان قبل أي عرض، ومطابقة SHA-256 مزدوجة،
+  وذاكرة ETag، وقابل للإيقاف من الخيارات.
+- **رفض DRM بلا التفاف**: البثوث المحمية تُرفَض مبكرًا، وAES-128
+  ما زال مدعومًا.
+- **لا تتبّع إطلاقًا**: لا قياس ولا تحليلات ولا تقارير أعطال في
+  أي مكان (انظر `docs/PRIVACY.md`)، وكل طلبات الشبكة الصادرة
+  مخزونة هناك.
+- **تحضير Flatpak**: بناء دون اتصال بمصادر مُورَّدة (709/709
+  حزمة تطابق `Cargo.lock`)، وبأذونات دنيا فقط (لا `home` ولا
+  `host`)؛ البناء والتشغيل الفعليان بانتظار CI.
+- **موقع ثنائي اللغة**: عربي RTL افتراضيًا وإنجليزي LTR، بلا
+  إطار وبلا متتبّعات ولا نصوص طرف ثالث، وaxe-core: 0 مخالفة.
+
+**ما أُصلح في 1.1.0:**
+
+- تَخطيط الحوارات جنبًا إلى جنب كألسنة مسطّحة على Wayland
+  (المرحلة 6، بالتحميل الكسول)؛ التحقق الحقيقي على KDE Plasma
+  ما زال معلّقًا.
+- إزالة الخط غير المرخّص (InstaArabi) والملفات المُعاد تسميتها
+  (المرحلة 3).
+- إزالة واجهات التبرّع والترويج مع بقاء كل الإشادات
+  (المرحلة 2).
+- دقة حجم الملف في نافذة الالتقاط: فحص HEAD أولًا ثم تأكيد عبر
+  GET جزئي، وتقديرات البث موسومة دائمًا كمقدَّرة مع مصدرها
+  (المرحلة 4).
+- تصحيح مصدر التحديثات إلى المستودع الفرعي
+  (`kerlif/ezoo-download`) بدل المستودع الأصلي (المرحلة 7).
+
+**مخطط له لإصدارات لاحقة (ليس في 1.1.0):**
+
+- التحقق الحقيقي على KDE Plasma (Wayland) لإصلاح الحوارات
+  (سؤال مفتوح 2).
+- لقطات ويندوز (سؤال مفتوح 15).
+- قياس Lighthouse للموقع الحي (سؤال مفتوح 14).
+- مصنوع Flatpak من CI (المرحلة 8 بانتظار CI).
+- توجيه محدِّد الجودة للتنزيل فعلًا بدل العرض فقط
+  (سؤال مفتوح 7).
+- إعادة تصميم واجهة الإضافة: زر عائم على طراز IDM «Download
+  this video (N)» يظهر على الفيديوهات، أجمل وأوضح، ويُبرز
+  الملفات الملتقَطة مع جودتها وحجمها (سؤال مفتوح 16؛ لا شيفرة
+  في 1.1.0).
+
 ## قيود معروفة
 
 1. **محدِّد الجودة للعرض فقط** (المرحلة 4، سؤال مفتوح 7):
@@ -531,6 +591,66 @@ other product is named in UI or website copy.
   best-effort amendment (`continue-on-error` step + artifact
   upload) is staged for the coordinator at
   `~/workspace/ezoo/workflow-escalations/phase10/`.
+
+## 11. Strengths, fixes, and later work
+
+**Strengths of 1.1.0:**
+
+- **Bundled fonts, no system dependency**: Carlito, Noto Sans Arabic,
+  and Liberation Serif (SIL OFL 1.1, shipped unmodified), registered
+  in memory at startup, so the UI renders entirely from bundled fonts
+  (proven by pixel-identical screenshots with zero usable system
+  fonts, via the documented substitute test in Phase 3).
+- **Lazy-dialog Wayland fix**: dialogs are created only on first open,
+  so exactly one window maps at startup (proven under Xvfb: one window
+  at startup, one per opened dialog, reuse on re-open); real KDE
+  Plasma verification is still pending (see "Planned for later").
+- **Adaptive segmentation engine with per-host learning**: learning is
+  local only, in `settings.json` (exponential averages, weight 0.3,
+  30-day expiry, keyed by host name only), with no extra network
+  traffic of any kind.
+- **Signed update checker**: a single source — the fork's releases —
+  Ed25519 signature verification of the manifest before anything is
+  offered, dual SHA-256 matching, an ETag cache, and an opt-out in
+  Options.
+- **DRM refusal, no circumvention**: DRM-signaled streams are refused
+  early; AES-128 stays supported.
+- **No telemetry**: no analytics, no crash reporting anywhere (see
+  `docs/PRIVACY.md`); every outbound request is inventoried there.
+- **Flatpak preparation**: fully offline build with vendored sources
+  (709/709 crates matching `Cargo.lock`), minimal permissions only
+  (no `home`, no `host`); the actual build and run await CI.
+- **Bilingual website**: Arabic RTL by default and English LTR,
+  framework-free, no trackers and no third-party scripts, axe-core:
+  0 violations.
+
+**Fixed in 1.1.0:**
+
+- The side-by-side flat-tab dialog layout on Wayland (Phase 6, lazy
+  creation); real KDE Plasma verification is still pending.
+- Removal of the unlicensed font (InstaArabi) and the misleadingly
+  renamed files (Phase 3).
+- Removal of the donation and promotional UI, with all credits kept
+  (Phase 2).
+- Capture-window file-size accuracy: HEAD-first probing with ranged-GET
+  confirmation, and stream estimates always labeled as estimates with
+  their source (Phase 4).
+- Update-source correction to the fork (`kerlif/ezoo-download`)
+  instead of the upstream repository (Phase 7).
+
+**Planned for later releases (not in 1.1.0):**
+
+- Real KDE Plasma (Wayland) verification of the dialog fix (open
+  question 2).
+- Windows screenshots (open question 15).
+- Lighthouse measurement of the live site (open question 14).
+- A Flatpak CI artifact (Phase 8 awaits CI).
+- Quality-selector steering of downloads, instead of display-only
+  (open question 7).
+- Extension-UI redesign: an IDM-style floating "Download this video
+  (N)" overlay button appearing on videos, more aesthetic and clearer,
+  highlighting the captured files with their quality and size (open
+  question 16; no code in 1.1.0).
 
 ## Known limitations
 

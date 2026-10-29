@@ -83,6 +83,15 @@ pub(crate) fn register() {
         eprintln!("ezoo: no bundled font registered; using system fonts");
         return;
     }
+    wire_fallbacks(&mut collection);
+}
+
+/// Wire the script fallbacks and generic families on a collection the
+/// bundled fonts were registered into. Split out of [`register`] so the
+/// wiring can be tested on a fresh collection with no system fonts
+/// (see `script_fallbacks_resolve_to_the_bundled_fonts`).
+fn wire_fallbacks(collection: &mut slint::fontique_011::fontique::Collection) {
+    use slint::fontique_011::fontique;
 
     // Noto Sans Arabic covers Arabic only (no Latin glyphs), and Carlito
     // covers Latin only: without explicit script fallbacks, mixed text
@@ -113,8 +122,14 @@ pub(crate) fn register() {
     }
 
     // Generic families back the "no family requested" stack Slint builds
-    // (named family, SansSerif, SystemUi): the bundled fonts go after
-    // the system ones, so they only show where no system font answers.
+    // (named family, SansSerif, SystemUi). fontique iterates the
+    // registered families before the system ones for a generic family,
+    // so (with no SLINT_DEFAULT_FONT / SLINT_FONT_PATH override) the
+    // bundled fonts are consulted before any system font when the named
+    // family has no glyph for a character. The script fallbacks above
+    // are consulted after the whole stack: parley chains the stack
+    // families, then the fallback families, and takes the first font
+    // whose charmap covers the character.
     let mut bundled = Vec::new();
     if let Some(id) = latin {
         bundled.push(id);
@@ -242,6 +257,177 @@ mod tests {
         assert_eq!(
             resolve_font_family("Liberation Serif", "ar"),
             "Liberation Serif"
+        );
+    }
+
+    #[test]
+    fn defaults_never_return_a_system_only_family() {
+        // An empty or unknown stored choice means the bundled default
+        // for the language — never a font that only exists on the
+        // system. An explicit dropdown choice is the user's own and
+        // passes through unchanged (its Arabic glyphs still reach
+        // Noto Sans Arabic through the Arab script fallback).
+        for lang in ["ar", "en", "fr", "es", "de", "pt", "tr", "ru"] {
+            let expected = if lang == "ar" {
+                ARABIC_FAMILY
+            } else {
+                LATIN_FAMILY
+            };
+            assert_eq!(resolve_font_family("", lang), expected, "{lang}");
+            assert_eq!(resolve_font_family("NoSuchFont", lang), expected, "{lang}");
+            assert_eq!(crate::default_family(lang), expected, "{lang}");
+        }
+        assert_eq!(resolve_font_family("Tahoma", "ar"), "Tahoma");
+    }
+
+    /// The first font in a fontique query chain whose charmap covers
+    /// `ch`, following exactly the selection parley performs: the
+    /// requested families in order, then the script fallback families,
+    /// first covering font wins.
+    fn first_covering(
+        collection: &mut slint::fontique_011::fontique::Collection,
+        cache: &mut slint::fontique_011::fontique::SourceCache,
+        families: &[slint::fontique_011::fontique::QueryFamily<'static>],
+        script: [u8; 4],
+        ch: char,
+    ) -> Option<slint::fontique_011::fontique::FamilyId> {
+        use slint::fontique_011::fontique;
+        let mut query = collection.query(cache);
+        query.set_families(families.iter().copied());
+        query.set_fallbacks(fontique::FallbackKey::new(
+            fontique::Script::from_bytes(script),
+            None,
+        ));
+        let mut found = None;
+        query.matches_with(|font| {
+            let covers = font
+                .charmap()
+                .is_some_and(|cmap| cmap.map(ch).is_some_and(|glyph| glyph != 0));
+            if covers {
+                found = Some(font.family.0);
+                fontique::QueryStatus::Stop
+            } else {
+                fontique::QueryStatus::Continue
+            }
+        });
+        found
+    }
+
+    #[test]
+    fn script_fallbacks_resolve_to_the_bundled_fonts() {
+        use slint::fontique_011::fontique;
+
+        // A fresh collection with no system fonts at all: fontconfig
+        // is never consulted, so anything that resolves here resolves
+        // from the bundled fonts alone. This is the API-level form of
+        // the Phase 3 one-glyph substitute render test (see
+        // docs/FONTS.md); it proves font selection, not shaping —
+        // shaping is what the render test's screenshots show.
+        let mut collection = fontique::Collection::new(fontique::CollectionOptions {
+            shared: false,
+            system_fonts: false,
+        });
+        for data in [
+            CARLITO,
+            CARLITO_BOLD,
+            NOTO_ARABIC,
+            NOTO_ARABIC_BOLD,
+            LIBERATION_SERIF,
+            LIBERATION_SERIF_BOLD,
+        ] {
+            let blob = fontique::Blob::new(std::sync::Arc::new(data));
+            assert!(!collection.register_fonts(blob, None).is_empty());
+        }
+        wire_fallbacks(&mut collection);
+
+        let arabic = collection
+            .family_id(ARABIC_FAMILY)
+            .expect("Noto Sans Arabic registered");
+        let latin = collection
+            .family_id(LATIN_FAMILY)
+            .expect("Carlito registered");
+        let serif = collection
+            .family_id(SERIF_FAMILY)
+            .expect("Liberation Serif registered");
+        assert_ne!(arabic, latin);
+        assert_ne!(arabic, serif);
+        assert_ne!(latin, serif);
+
+        // Fallback identity: the Arab script fallback is exactly the
+        // Noto Sans Arabic family, the Latin fallback exactly Carlito.
+        let arab_fallbacks: Vec<_> = collection
+            .fallback_families(fontique::FallbackKey::new(
+                fontique::Script::from_bytes(*b"Arab"),
+                None,
+            ))
+            .collect();
+        assert_eq!(arab_fallbacks, vec![arabic]);
+        let latn_fallbacks: Vec<_> = collection
+            .fallback_families(fontique::FallbackKey::new(
+                fontique::Script::from_bytes(*b"Latn"),
+                None,
+            ))
+            .collect();
+        assert_eq!(latn_fallbacks, vec![latin]);
+
+        // Generic order: the bundled families come before any system
+        // family in the SansSerif / SystemUi lists, so a glyph missing
+        // from the named family meets a bundled font first.
+        let sans: Vec<_> = collection
+            .generic_families(fontique::GenericFamily::SansSerif)
+            .collect();
+        assert_eq!(sans, vec![latin, arabic]);
+        let system_ui: Vec<_> = collection
+            .generic_families(fontique::GenericFamily::SystemUi)
+            .collect();
+        assert_eq!(system_ui, vec![latin, arabic]);
+
+        let mut cache = fontique::SourceCache::new(fontique::SourceCacheOptions::default());
+        let named = |id: fontique::FamilyId| vec![fontique::QueryFamily::Id(id)];
+        // The named family alone, so only the script fallback can
+        // supply the other script: Arabic under Carlito resolves to
+        // Noto Sans Arabic, Latin under Noto Sans Arabic resolves to
+        // Carlito, and Liberation Serif covers Latin itself.
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &named(latin), *b"Arab", 'ب'),
+            Some(arabic)
+        );
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &named(arabic), *b"Latn", 'A'),
+            Some(latin)
+        );
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &named(serif), *b"Latn", 'A'),
+            Some(serif)
+        );
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &named(serif), *b"Arab", 'ب'),
+            Some(arabic)
+        );
+        // The full stack Slint builds — [named, SansSerif, SystemUi] —
+        // with the same outcomes: no system font is ever reached.
+        let stack = |id: fontique::FamilyId| {
+            vec![
+                fontique::QueryFamily::Id(id),
+                fontique::QueryFamily::Generic(fontique::GenericFamily::SansSerif),
+                fontique::QueryFamily::Generic(fontique::GenericFamily::SystemUi),
+            ]
+        };
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &stack(latin), *b"Arab", 'ب'),
+            Some(arabic)
+        );
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &stack(arabic), *b"Latn", 'A'),
+            Some(latin)
+        );
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &stack(arabic), *b"Arab", 'ب'),
+            Some(arabic)
+        );
+        assert_eq!(
+            first_covering(&mut collection, &mut cache, &stack(latin), *b"Latn", 'A'),
+            Some(latin)
         );
     }
 

@@ -5,6 +5,56 @@ licensed. The program embeds its fonts in the binary and registers
 them in memory at startup; it never depends on system fonts, and it
 never writes fonts to the user's font folder any more.
 
+## Verdict (selective merge)
+
+- **Arabic UI text: Noto Sans Arabic.** This is not a poor-quality
+  font: it is a professionally designed member of Google's Noto
+  family — the family built so that no script renders as tofu
+  ("Noto" = "no tofu") — designed for complete, correctly shaped
+  coverage of the Arabic script, including the joining behaviour
+  Arabic needs. The bundled files are the official release's hinted
+  static instances (NotoSansArabic v2.013, `notofonts/arabic`),
+  shipped unmodified; their cmap holds the Arabic-block codepoints
+  the UI needs (verified: 256 Arabic-block codepoints, 0 Latin
+  A–Z) and they carry the GSUB table shaping relies on. The Phase 3
+  substitute render test (see §Verification) showed clean, connected
+  Arabic with no tofu, and the coordinator's screenshot inspection
+  of both builds confirmed clean shaped Arabic. There is no
+  Arabic-quality concern with this choice.
+- **Latin UI text: Carlito**, metric-compatible with Calibri, the
+  same family the program has used for Latin text.
+- **Serif text: Liberation Serif**, metric-compatible with Times New
+  Roman, for document-style text only. It is never a UI default: it
+  appears only when the user picks it explicitly in the Options
+  font dropdown. The alt-build tree has no serif font at all; the
+  serif face is kept here deliberately and is not dropped to
+  match it.
+
+**Fallback order** (verified against the fontique 0.11.1 and parley
+0.11.1 sources Slint 1.18.1 uses, and pinned by the test in
+`script_fallbacks_resolve_to_the_bundled_fonts`): for each run of
+text Slint asks for the stack [named family, SansSerif, SystemUi],
+where the named family is `resolve_font_family`'s answer
+(`default_family`: Noto Sans Arabic for Arabic, Carlito otherwise;
+an empty or unknown stored choice always lands on that bundled
+default, never on a system-only family). For the generic families,
+fontique consults the registered (bundled) families before the
+system ones, so Carlito then Noto Sans Arabic are tried before any
+system font when the named family has no glyph. After the whole
+stack, parley consults the script fallback for the run's script:
+`Arab` → Noto Sans Arabic, `Latn` → Carlito. Because the script
+fallbacks are registered in fontique's own fallback map, they take
+precedence over fontconfig's system fallback for those two scripts.
+The one exception to "no system font": the dropdown also offers
+system fonts (Tahoma, Arial, Calibri, Verdana, Courier New) and an
+explicit user pick of one passes through unchanged — that is the
+user's choice, not a default, and Arabic glyphs under such a pick
+still reach Noto Sans Arabic through the Arab script fallback when
+the picked font has none. (If `SLINT_DEFAULT_FONT` /
+`SLINT_FONT_PATH` are set in the environment, Slint pre-seeds the
+generic lists with those fonts ahead of the bundled ones; that is
+an explicit developer override, not the shipped behaviour.)
+
 ## Bundled fonts
 
 | File | Family / weight | Role |
@@ -79,8 +129,13 @@ parley/fontique (vendored sources read in Phase 3:
   - Arabic script (`Arab`) → Noto Sans Arabic family,
   - Latin script (`Latn`) → Carlito family,
   - generic families `SansSerif` and `SystemUi` → Carlito, then Noto
-    Sans Arabic, appended after the system families, so the bundled
-    fonts answer only where no system font does.
+    Sans Arabic. fontique consults the registered families before
+    the system ones for a generic family (with no
+    `SLINT_DEFAULT_FONT` / `SLINT_FONT_PATH` override, which would
+    pre-seed the lists), so the bundled fonts are tried before any
+    system font when the named family has no glyph for a character;
+    the script fallbacks are consulted after the whole
+    [named, SansSerif, SystemUi] stack.
 - The UI font family is a single name per window
   (`Theme.font-family` → `default-font-family` in
   `crates/app/ui/common.slint`): `Look::of` resolves the stored
@@ -231,6 +286,27 @@ extracted to `/tmp/xkb/ext` and put on `LD_LIBRARY_PATH` for the
 runs only (no system change). Note: `debian/control` lists
 `libxkbcommon0` but not `libxkbcommon-x11-0` — flagged for Phase 8;
 a minimal install would hit the same winit failure.
+
+### Fontique query test (selective merge)
+
+`crates/app/src/fonts.rs::script_fallbacks_resolve_to_the_bundled_fonts`
+(plus `defaults_never_return_a_system_only_family`) pins the
+selection path without a display or a fontconfig: a fresh
+fontique collection is created with `system_fonts: false`, the six
+bundled fonts are registered into it, and the same
+`wire_fallbacks` production code uses is applied. The test asserts
+that the `Arab` fallback list is exactly the Noto Sans Arabic
+family id and the `Latn` list exactly Carlito's; that the
+SansSerif/SystemUi generic lists start with Carlito then Noto Sans
+Arabic; and — replicating parley's selection (stack families, then
+script fallbacks, first font whose charmap covers the character) —
+that Arabic 'ب' under a Carlito-only request resolves to Noto Sans
+Arabic, Latin 'A' under a Noto-only request resolves to Carlito,
+and the full [named, SansSerif, SystemUi] stack resolves the same
+way. Honest limit: this proves font *selection* from the bundled
+fonts with no system font in the collection; it does not shape
+text or produce pixels. Shaping is what the substitute render test
+below proves, with screenshots.
 
 ### No-font render test (Phase 3 gate) — literal variant BLOCKED upstream
 

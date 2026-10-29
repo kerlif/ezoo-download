@@ -779,6 +779,9 @@ gate: promo removal never removed a credit).
 | 13 | Flatpak ffmpeg binary presence | OPEN — needs a real Flatpak run |
 | 14 | Site font binaries + Lighthouse | OPEN — binaries escalated, Lighthouse unmeasured |
 | 15 | Screenshot binaries + metainfo dimensions + Windows screenshots | OPEN — see §10/§14 |
+| 16 | Browser-extension overlay redesign (future work) | OPEN — no code in 1.1.0; redesign only, see `docs/OPEN-QUESTIONS.md` Q16 |
+| 17 | No top-level LICENSE file; MIT terms stated in LICENSE-DEB only | OPEN — redistribution only within the stated terms; see `docs/OPEN-QUESTIONS.md` Q17 |
+| 18 | On-disk protection of stored browser-session headers on Linux | OPEN — DPAPI confirmed on Windows; no mode-0600 code found; see `docs/OPEN-QUESTIONS.md` Q18 |
 
 (Resolved items 1–4 in the file's Resolved section — InstaArabi
 verdict, AboutDialog buttons, Cairo statics, Flatpak yt-dlp —
@@ -881,3 +884,172 @@ BEFORE creating the tag.
 | Promo / FluxDown / analytics greps | 0 hits outside `docs/PHASES.md` audit history |
 | Update-checker mocked tests | included in `cargo test` (22 Phase 7 tests) |
 | Flatpak-offline + CI gates | PENDING (Phase 8) — not claimed |
+
+## §16 — Strengths, fixes, and later work
+
+Additive summary only: every claim below is already evidenced in
+§§Phase 0–10 above or in the phase documents they cite. Nothing
+here adds a new measurement, and nothing here upgrades a pending
+item to verified.
+
+### Strengths
+
+- **Bundled fonts, no system dependency** (Phase 3): Carlito, Noto
+  Sans Arabic, and Liberation Serif, all SIL OFL 1.1 and shipped
+  unmodified, registered in memory at startup through Slint's
+  shared fontique collection. The substitute test (fontconfig
+  seeing exactly one font covering zero UI glyphs) rendered
+  pixel-identical to full-system-font runs, proving bundled-only
+  rendering; the literal empty-fontconfig gate fails inside
+  upstream fontique itself (Q5).
+- **Lazy-dialog Wayland fix** (Phase 6): every dialog is created
+  lazily on first open instead of ~20 windows at startup. Xvfb/X11
+  verification showed exactly 1 mapped toplevel at startup, one
+  dialog toplevel per opened dialog, unmapping on close, and reuse
+  of the same window id on re-open. Real KDE Plasma (Wayland)
+  verification is still pending (Q2) — the fix claim is X11
+  evidence plus code-level proof from the Slint/winit sources, and
+  is stated that way everywhere in this report.
+- **Adaptive segmentation engine with per-host learning**
+  (Phase 5): clean-room design, scaler / stall rescue / dynamic
+  splitting, and a local-only learning store (EMA weight 0.3,
+  30-day expiry, host-name key only, no network traffic). Benchmarks
+  are loopback numbers on one VM, reported honestly: adaptive beats
+  fixed-1 and fixed-4 and loses to fixed-8 and fixed-16 on both
+  profiles (`docs/BENCHMARKS.md`); per-host learning across runs was
+  not measured.
+- **Signed update checker** (Phase 7): single fork source
+  (`kerlif/ezoo-download`), Ed25519-signed manifest verified before
+  anything is offered, dual SHA-256 matching, ETag cache,
+  hand-followed redirects to GitHub hosts only, silent failures with
+  backoff, and an opt-out in Options > General. No live GitHub API
+  call was made in testing; a signed `version.json` in a real
+  release is still pending (Q3, §11 item 10).
+- **DRM refusal** (Phase 4): Widevine/PlayReady/FairPlay scheme
+  UUIDs and HLS DRM KEYFORMATs refuse the download early; AES-128
+  stays supported. No DRM circumvention anywhere.
+- **No telemetry** (all phases): no analytics, tracking, or crash
+  reporting; every outbound request is inventoried in
+  `docs/PRIVACY.md`, and every phase's grep gate confirmed no
+  analytics domains and no new network destinations beyond the
+  inventoried ones.
+- **Flatpak preparation** (Phase 8, prepared — awaiting CI):
+  manifest, desktop file, and metainfo for
+  `io.github.kerlif.EzooDownload`, vendored sources 709/709 crates
+  matching `Cargo.lock`, minimal permissions (no `home`, no
+  `host`). No Flatpak artifact was built or run; the ffmpeg-on-PATH
+  question is open (Q13).
+- **Bilingual website** (Phase 9): framework-free rebuild, Arabic
+  RTL by default and English LTR, no trackers, no third-party
+  scripts, no external fonts, axe-core 0 violations in both
+  languages. Lighthouse scores were not measured (Q14).
+
+### Fixed in 1.1.0
+
+- The Wayland side-by-side dialog layout: dialogs rendered as flat
+  tabs in one stretched view; fixed by lazy creation (Phase 6),
+  subject to the pending real-KDE verification above.
+- Unlicensed-font removal: InstaArabi (no published license) and
+  the misleadingly renamed Liberation Serif files removed and
+  replaced by the three OFL 1.1 families (Phase 3).
+- Donation and promotional UI removal: donation blocks, channel
+  buttons, and the InstaPay QR asset removed, with all credits to
+  Ahmed Ezzat / Ezoo Tech and the upstream repository kept
+  (Phase 2).
+- Capture-window size accuracy: HEAD-first probing with ranged-GET
+  confirmation corrects lying HEAD lengths, and HLS/DASH estimates
+  are always labeled as estimates with their source (Phase 4).
+- Update-source correction: the checker now points at the fork's
+  releases instead of the upstream repository (Phase 7).
+
+### Planned for later releases (not in 1.1.0)
+
+- Real KDE Plasma (Wayland) verification of the dialog fix (Q2).
+- Windows screenshots (Q15).
+- Lighthouse measurement of the live site (Q14).
+- A Flatpak CI artifact: the Phase 8 build/run verification
+  follow-up.
+- Quality-selector steering of downloads, instead of the current
+  display-only selector (Q7).
+- Browser-extension overlay redesign (Q16): an IDM-style floating
+  "Download this video (N)" overlay button appearing on videos,
+  more aesthetic and clearer, highlighting the captured files with
+  their quality and size. No code for it exists in 1.1.0.
+
+## §17 — Selective merge from the alt-build (2026-10-29)
+
+The user built v1.1.0 a second time in a different container under
+the same spec and sent the resulting tree for review. This merge
+quotes ONLY what benefits the project from that tree
+(`~/workspace/ezoo/alt-build-110/` as preserved); it is not a
+wholesale replacement and the alt-build is not a reference import.
+Nothing from it was taken on trust: every adopted item was
+re-verified in this tree, and every rejected item is listed below
+with its reason.
+
+Adopted:
+
+- Font evidence: `wire_fallbacks` extracted from `register()` in
+  `crates/app/src/fonts.rs` (same behavior, now testable) plus two
+  tests pinning that, with no system font in the collection, Arab
+  script fallback resolves to Noto Sans Arabic, Latn to Carlito,
+  and empty/unknown stored choices resolve to the bundled default
+  for all 8 languages. `docs/FONTS.md` records the verdict
+  (Arabic = Noto Sans Arabic, Latin = Carlito, serif = Liberation
+  Serif) and corrects the generic-family order (bundled fonts are
+  consulted before system generics). The 6-font set is kept; the
+  alt-build's lack of a serif font was NOT copied. No font
+  attribution text was adopted: our `FONTS-LICENSE.txt` is a
+  strict superset of the alt-build's.
+- Docs: §11 (strengths / fixed / planned, bilingual) in
+  `IMPROVEMENTS_SUMMARY.md`; §16 in this report; the
+  paired-comparison methodology description in
+  `docs/BENCHMARKS.md` (no alt-build numbers copied); Q16
+  (extension overlay redesign, future work) and Q17 (no
+  top-level LICENSE file) in `docs/OPEN-QUESTIONS.md`; a website
+  paragraph in `docs/PRIVACY.md`. Q18 (Linux secret-storage
+  mode) added during this merge.
+- Code: `crates/engine/examples/gen_update_key.rs`, a local
+  key-derivation utility matching our Ed25519 scheme and the
+  committed inline public key (docstrings corrected to our secret
+  name; never executed, nothing generated).
+- Staged outside the repo
+  (`~/workspace/ezoo/workflow-escalations/merge110/`): the
+  corrected metainfo file (one line: screenshot 03 dimensions
+  962x502 to 640x488, verified against the PNG headers; the
+  1.1.0 release date still needs correcting to the actual tag
+  date at browser-commit time).
+
+Rejected, with reasons: the alt-build's `probe.rs`/
+`probe_fixtures.rs` (every behavior already covered equally or
+better by `stream_meta.rs`; its false-length handling is worse);
+its `flatpak.yml` (EOL runtime 24.08, retired ffmpeg-full
+extension, wrong sources file, git-source rewrite our manifest
+does not have, duplicate release path); its `packaging/keys/`
+public-key file (our public key stays inline in `selfupdate.rs`
+as the single source); its "dialog architecture not rewritten"
+statement (describes the alt-build; our lazy-dialog fix stands);
+all of its benchmark numbers, privacy-details, and engine
+parameters that contradict this tree's verified evidence.
+
+Gates re-run after this merge (this container, 2026-10-29):
+`cargo fmt --check` clean; `cargo clippy --all-targets -- -D
+warnings` exit 0; `cargo test` 158 passed / 0 failed / 1 ignored
+(156 at Phase 7 + 2 new font tests); `cargo build --release`
+exit 0 in 462 s, binary 44,859,256 B. Keypair check: the
+committed inline public key matches the private key file
+(hash comparison, boolean only). Xvfb re-verification (release
+binary, `/tmp/xkb` workaround recreated, 1280x800): fresh
+profile shows the main window plus the first-run
+browser-extension prompt as a separate floating window; after
+closing it exactly 1 mapped toplevel; the Add dialog is created
+on first open, unmaps on close, and the same window id is reused
+on reopen; the re-captured Arabic main window is visually
+identical to `docs/screenshots/06-main-ar-light.png`, so no
+screenshot was replaced. Ctrl+N via XTest did not open the
+dialog in this harness (toolbar click did); the shortcut handler
+is unchanged since Phase 6 and this is recorded as a harness
+limitation, not a regression. Windows-target compile, real KDE
+Plasma/Wayland behavior, Flatpak build/run, and Lighthouse
+remain unverified (see §11); Phase 8 is still NOT passed — no
+Flatpak/CI artifact exists yet.

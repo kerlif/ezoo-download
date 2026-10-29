@@ -131,3 +131,14 @@ new network destination:
   runtime (codecs-extra extension, installed automatically with
   the runtime); no ffmpeg binary is bundled by the Flatpak
   manifest — see `docs/FLATPAK.md` §5 and Open Question 13.
+
+## The website
+
+The project website (`docs/`, published on GitHub Pages) is static
+files only: no trackers, no third-party scripts, no externally
+loaded fonts, and no `fetch`/XHR/beacon calls in its script. The
+only external host it references is `github.com` (release download
+links and the upstream link). It sets no cookies beyond the
+language/theme preferences the page itself stores locally in the
+browser. The website makes no request on behalf of the program,
+and the program makes no request on behalf of the website.

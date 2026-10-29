@@ -12,6 +12,31 @@ default, so that scaling can act inside a short transfer); the fixed
 runs used the same engine with scaling disabled. "Peak" is the most
 connections the scaler reached (not applicable to fixed runs).
 
+## Methodology — paired comparison on identical servers
+
+Scope first: the numbers below are a regression baseline for the
+scaler's decisions, not marketing figures and not internet speeds.
+They were produced on one VM against a local loopback HTTP server
+with synthetic per-connection behaviour; they say nothing about any
+real host, and they must not be quoted as download speeds a user
+will see.
+
+Each profile is compared in two passes in the same harness, on
+the same file from the same server behaviour: one pass with each
+fixed connection count (1, 4, 8, 16) and one pass with the
+adaptive engine. Both sides use the
+same engine and the same deterministic in-memory file (byte
+`i * 31 % 251`); the fixed runs use that engine with scaling
+disabled, and the adaptive runs use it with scaling enabled, so the
+only difference between the two sides is the connection-count
+decision. Every run is verified by SHA-256 against the served
+bytes, and each configuration is run 3 times with the mean
+reported. The adaptive runs use a 500 ms measurement window
+(shortened from the 3 s production default, so that scaling can
+act inside a short transfer); the fixed runs use the same engine
+with scaling disabled. "Peak" is the most connections the scaler
+reached (not applicable to fixed runs).
+
 ## Profiles
 
 | Profile | File | Server behaviour |

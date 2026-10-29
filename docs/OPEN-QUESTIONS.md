@@ -191,6 +191,58 @@ the resolution and date.
     coordinator to accept or reject); until Windows shots exist,
     the release report states them as PENDING. Default: ship the
     Linux screenshots, capture Windows shots on Windows.
+16. **Browser-extension overlay redesign — FUTURE work, NOT part
+    of v1.1.0.** The extension (`extension/content.js`) already
+    shows a floating "Download this video" button on videos, with
+    the count of captured items in its label, and its dropdown
+    panel already lists captured items with their quality and size
+    where known. The redesign requested for a later release is a
+    visual/UX one only: an IDM-style floating "Download this
+    video (N)" overlay button appearing on videos, more aesthetic
+    and clearer than the current button, highlighting the captured
+    files with their quality and size more prominently in the
+    overlay presentation. A reference screenshot sent by the user
+    is the design reference; it is not in the repository and no
+    design detail is claimed from it here. No code for this
+    redesign exists in v1.1.0 and no capture, plumbing, or
+    download-behaviour change is implied by recording it: the
+    current button and panel stay exactly as they are until a
+    later phase orders the redesign. Default: keep the current
+    button/panel unchanged. Resolution needs: a design decision
+    in a later phase, made against the reference screenshot, and
+    only then implementation in the extension.
+17. **No top-level LICENSE file; MIT terms stated in LICENSE-DEB
+    only.** The task brief named a root `LICENSE` file, but no
+    such file exists in this tree (verified: `git ls-files`
+    lists `LICENSE-DEB` and `THIRD-PARTY-NOTICES.txt` only). The MIT terms
+    (© 2026 Ahmed Ezzat) are stated in `LICENSE-DEB` in Debian
+    copyright format (`Files: *`, full MIT text) and repeated in
+    the headers of `docs/RELEASE-REPORT.md` and
+    `IMPROVEMENTS_SUMMARY.md`; `THIRD-PARTY-NOTICES.txt` covers
+    the third-party components. Default: redistribute only
+    within those stated terms; keep every existing copyright
+    notice and credit to Ahmed Ezzat (Ezoo Tech) and the upstream
+    repository; do not expand redistribution beyond what the
+    stated licenses allow, and do not change any license terms.
+    Resolution needs: a decision whether to add a top-level
+    `LICENSE` file mirroring the MIT text in `LICENSE-DEB`, or
+    to confirm `LICENSE-DEB` as the canonical copy. No license
+    terms were changed by the v1.1.0 upgrade either way.
+
+18. **On-disk protection of stored browser-session headers on Linux
+    — unverified.** The alt-build's privacy notes claim session
+    headers are encrypted via Windows DPAPI and stored with mode
+    0600 on Linux. The Windows half is confirmed in this tree
+    (`crates/engine/src/secret.rs`: DPAPI `CryptProtectData`,
+    `dpapi:<hex>` format). No mode-0600 or permission-setting
+    code was found in `secret.rs`/`store.rs`, so the Linux half
+    of the claim is unverified and was NOT adopted into
+    `docs/PRIVACY.md`. Default: describe only what is verified
+    (DPAPI on Windows; encrypted-at-rest as before on Linux).
+    Resolution needs: inspect the Linux secret-storage write
+    path and record the actual file mode, or set 0600
+    explicitly if it is not already restricted.
+
 ## Resolved
 
 4. **Flatpak yt-dlp** (resolved 2026-10-28, Phase 8). Decision:
