@@ -44,6 +44,7 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 /// told about (notify-only), this run: asking again every 24 hours about
 /// the same release would be nagging. A newer version asks again.
 static DECLINED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+#[cfg(not(windows))]
 static NOTIFIED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 fn update_dir() -> PathBuf {

@@ -34,6 +34,7 @@ fn env_path(var: &str, rest: &str) -> Option<PathBuf> {
 }
 
 /// A program on PATH (Linux: chrome, firefox... are plain names).
+#[cfg(not(windows))]
 fn on_path(name: &str) -> Option<PathBuf> {
     let paths = std::env::var_os("PATH")?;
     std::env::split_paths(&paths)
