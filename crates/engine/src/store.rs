@@ -4,6 +4,7 @@ use crate::model::DownloadRecord;
 use serde::Serialize;
 use std::path::Path;
 
+/// Write JSON to `path` atomically (temporary file + rename), pretty-printed.
 pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> anyhow::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -14,6 +15,7 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> anyhow::Result
     Ok(())
 }
 
+/// Load the download list; a missing or corrupt file yields an empty list.
 pub fn load_downloads(path: &Path) -> Vec<DownloadRecord> {
     std::fs::read_to_string(path)
         .ok()

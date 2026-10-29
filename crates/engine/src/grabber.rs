@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio_util::sync::CancellationToken;
 
+/// Site Grabber settings: where to start, how deep to explore, and what to collect.
 #[derive(Debug, Clone)]
 pub struct GrabOptions {
     pub start_url: String,
@@ -35,6 +36,7 @@ pub struct GrabOptions {
     pub user_agent: String,
 }
 
+/// A file link found on a grabbed page.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FoundFile {
     pub url: String,
@@ -55,9 +57,11 @@ pub struct GrabProgress {
     pub current: Mutex<String>,
 }
 
-const PAGE_EXTS: [&str; 13] =
-    ["", "html", "htm", "php", "asp", "aspx", "jsp", "shtml", "cfm", "cgi", "pl", "xhtml", "phtml"];
+const PAGE_EXTS: [&str; 13] = [
+    "", "html", "htm", "php", "asp", "aspx", "jsp", "shtml", "cfm", "cgi", "pl", "xhtml", "phtml",
+];
 
+/// Whether an extension belongs to a web page rather than a downloadable file.
 pub fn is_page_ext(ext: &str) -> bool {
     PAGE_EXTS.contains(&ext)
 }
@@ -65,14 +69,18 @@ pub fn is_page_ext(ext: &str) -> bool {
 fn anchor_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
-        Regex::new(r#"(?is)<a\b[^>]*?\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>(.*?)</a\s*>"#).unwrap()
+        Regex::new(
+            r#"(?is)<a\b[^>]*?\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>(.*?)</a\s*>"#,
+        )
+        .unwrap()
     })
 }
 
 fn attr_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
-        Regex::new(r#"(?i)\b(?:src|href|data-src|data-href|poster)\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap()
+        Regex::new(r#"(?i)\b(?:src|href|data-src|data-href|poster)\s*=\s*(?:"([^"]*)"|'([^']*)')"#)
+            .unwrap()
     })
 }
 
@@ -93,7 +101,9 @@ fn decode_entities(s: &str) -> String {
 
 /// Every link of an HTML page as (absolute address, link text).
 pub fn extract_links(html: &str, base: &str) -> Vec<(String, String)> {
-    let Ok(base) = url::Url::parse(base) else { return Vec::new() };
+    let Ok(base) = url::Url::parse(base) else {
+        return Vec::new();
+    };
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     let mut push = |raw: &str, text: String| {
@@ -117,9 +127,20 @@ pub fn extract_links(html: &str, base: &str) -> Vec<(String, String)> {
         }
     };
     for c in anchor_re().captures_iter(html) {
-        let href = c.get(1).or(c.get(2)).or(c.get(3)).map(|m| m.as_str()).unwrap_or("");
-        let text = c.get(4).map(|m| tag_re().replace_all(m.as_str(), " ").to_string()).unwrap_or_default();
-        let text = decode_entities(&text).split_whitespace().collect::<Vec<_>>().join(" ");
+        let href = c
+            .get(1)
+            .or(c.get(2))
+            .or(c.get(3))
+            .map(|m| m.as_str())
+            .unwrap_or("");
+        let text = c
+            .get(4)
+            .map(|m| tag_re().replace_all(m.as_str(), " ").to_string())
+            .unwrap_or_default();
+        let text = decode_entities(&text)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         push(href, text);
     }
     for c in attr_re().captures_iter(html) {
@@ -129,9 +150,14 @@ pub fn extract_links(html: &str, base: &str) -> Vec<(String, String)> {
     // addresses written as text (lists of links in a post, a note, JSON in
     // a script): many pages have their file links only like that
     for m in text_url_re().find_iter(html) {
-        let u = m.as_str().trim_end_matches(['.', ',', ';', ':', '!', '?', '\\']);
+        let u = m
+            .as_str()
+            .trim_end_matches(['.', ',', ';', ':', '!', '?', '\\']);
         // written inside JSON: "\/" is "/", "\u0026" is "&"
-        push(&u.replace("\\/", "/").replace("\\u0026", "&"), String::new());
+        push(
+            &u.replace("\\/", "/").replace("\\u0026", "&"),
+            String::new(),
+        );
     }
     out
 }
@@ -142,8 +168,13 @@ fn text_url_re() -> &'static regex::Regex {
 }
 
 fn ext_of(u: &url::Url) -> String {
-    let last = u.path_segments().and_then(|mut s| s.next_back()).unwrap_or("");
-    let last = percent_encoding::percent_decode_str(last).decode_utf8_lossy().to_string();
+    let last = u
+        .path_segments()
+        .and_then(|mut s| s.next_back())
+        .unwrap_or("");
+    let last = percent_encoding::percent_decode_str(last)
+        .decode_utf8_lossy()
+        .to_string();
     filename::extension(&last)
 }
 
@@ -151,18 +182,31 @@ fn wanted_ext(opts: &GrabOptions, ext: &str) -> bool {
     if opts.exts.is_empty() {
         return !is_page_ext(ext);
     }
-    opts.exts.iter().any(|e| wildcard_match(e.trim_start_matches('.'), ext))
+    opts.exts
+        .iter()
+        .any(|e| wildcard_match(e.trim_start_matches('.'), ext))
 }
 
 fn allowed(opts: &GrabOptions, url: &str) -> bool {
-    if opts.exclude.iter().any(|p| !p.is_empty() && wildcard_match(p, url)) {
+    if opts
+        .exclude
+        .iter()
+        .any(|p| !p.is_empty() && wildcard_match(p, url))
+    {
         return false;
     }
-    opts.include.iter().all(|p| p.is_empty()) || opts.include.iter().any(|p| !p.is_empty() && wildcard_match(p, url))
+    opts.include.iter().all(|p| p.is_empty())
+        || opts
+            .include
+            .iter()
+            .any(|p| !p.is_empty() && wildcard_match(p, url))
 }
 
 async fn fetch_page(client: &Client, url: &str, opts: &GrabOptions) -> Option<(String, String)> {
-    let resp = request(client, url, &opts.headers, &opts.user_agent).send().await.ok()?;
+    let resp = request(client, url, &opts.headers, &opts.user_agent)
+        .send()
+        .await
+        .ok()?;
     if !resp.status().is_success() {
         return None;
     }
@@ -196,7 +240,9 @@ pub async fn crawl(
     cancel: CancellationToken,
     on_file: impl Fn(FoundFile) + Send + Sync + 'static,
 ) -> Vec<FoundFile> {
-    let Ok(start) = url::Url::parse(&opts.start_url) else { return Vec::new() };
+    let Ok(start) = url::Url::parse(&opts.start_url) else {
+        return Vec::new();
+    };
     let start_host = start.host_str().unwrap_or("").to_ascii_lowercase();
     let start_dir = {
         let p = start.path();
@@ -237,11 +283,17 @@ pub async fn crawl(
             r = tasks.join_next() => r,
             _ = cancel.cancelled() => None,
         } {
-            let Ok((url, level, foreign, page)) = res else { continue };
+            let Ok((url, level, foreign, page)) = res else {
+                continue;
+            };
             progress.pages_done.fetch_add(1, Ordering::Relaxed);
-            let Some((page_url, html)) = page else { continue };
+            let Some((page_url, html)) = page else {
+                continue;
+            };
             for (link, text) in extract_links(&html, &page_url) {
-                let Ok(u) = url::Url::parse(&link) else { continue };
+                let Ok(u) = url::Url::parse(&link) else {
+                    continue;
+                };
                 let host = u.host_str().unwrap_or("").to_ascii_lowercase();
                 let ext = ext_of(&u);
                 if !allowed(&opts, &link) {
@@ -266,7 +318,13 @@ pub async fn crawl(
                 }
                 if wanted_ext(&opts, &ext) && seen_files.insert(link.clone()) {
                     let name = filename::from_url(&link).unwrap_or_else(|| "download".into());
-                    let f = FoundFile { url: link, name, ext, text: text.clone(), page: url.clone() };
+                    let f = FoundFile {
+                        url: link,
+                        name,
+                        ext,
+                        text: text.clone(),
+                        page: url.clone(),
+                    };
                     progress.files.fetch_add(1, Ordering::Relaxed);
                     on_file(f.clone());
                     found.push(f);
@@ -303,11 +361,26 @@ mod tests {
     fn links_written_as_text() {
         let html = r#"<pre>Mirror 1: https://files.example/part1.rar, and https://files.example/part2.rar.</pre>
             <script>var u = "https:\/\/cdn.example\/v.mp4"; var w = "https:\/\/cdn.example\/get?id=1\u0026t=2";</script>"#;
-        let links: Vec<String> = extract_links(html, "https://site/").into_iter().map(|(u, _)| u).collect();
-        assert!(links.contains(&"https://files.example/part1.rar".to_string()), "{links:?}");
-        assert!(links.contains(&"https://files.example/part2.rar".to_string()), "{links:?}");
-        assert!(links.contains(&"https://cdn.example/v.mp4".to_string()), "{links:?}");
-        assert!(links.contains(&"https://cdn.example/get?id=1&t=2".to_string()), "{links:?}");
+        let links: Vec<String> = extract_links(html, "https://site/")
+            .into_iter()
+            .map(|(u, _)| u)
+            .collect();
+        assert!(
+            links.contains(&"https://files.example/part1.rar".to_string()),
+            "{links:?}"
+        );
+        assert!(
+            links.contains(&"https://files.example/part2.rar".to_string()),
+            "{links:?}"
+        );
+        assert!(
+            links.contains(&"https://cdn.example/v.mp4".to_string()),
+            "{links:?}"
+        );
+        assert!(
+            links.contains(&"https://cdn.example/get?id=1&t=2".to_string()),
+            "{links:?}"
+        );
     }
 
     #[test]
@@ -324,7 +397,12 @@ mod tests {
         assert!(urls.contains(&"https://example.com/b.pdf?x=1&y=2"));
         assert!(urls.contains(&"https://cdn.example.com/p.png"));
         assert!(urls.contains(&"https://example.com/dir/page2.html"));
-        assert!(!urls.iter().any(|u| u.contains("mailto") || u.ends_with("#top")));
-        assert_eq!(l.iter().find(|(u, _)| u.ends_with("a.pdf")).unwrap().1, "Document A");
+        assert!(!urls
+            .iter()
+            .any(|u| u.contains("mailto") || u.ends_with("#top")));
+        assert_eq!(
+            l.iter().find(|(u, _)| u.ends_with("a.pdf")).unwrap().1,
+            "Document A"
+        );
     }
 }

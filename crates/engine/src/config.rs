@@ -1,5 +1,6 @@
 //! User settings, stored as JSON in the app data folder.
 
+use crate::adaptive::{AdaptiveConfig, HostLearning};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -38,7 +39,10 @@ impl AfterDone {
     }
     /// Needs the countdown window (the computer goes off / to sleep).
     pub fn is_power(self) -> bool {
-        matches!(self, AfterDone::Sleep | AfterDone::Shutdown | AfterDone::Hibernate)
+        matches!(
+            self,
+            AfterDone::Sleep | AfterDone::Shutdown | AfterDone::Hibernate
+        )
     }
 }
 
@@ -162,12 +166,24 @@ pub fn default_categories() -> Vec<CategoryDef> {
         builtin: true,
     };
     vec![
-        c("Compressed", "zip rar 7z tar gz tgz bz2 xz zst iso img cab arj lzh ace"),
-        c("Documents", "pdf doc docx xls xlsx ppt pptx txt rtf odt ods odp epub csv md pps"),
+        c(
+            "Compressed",
+            "zip rar 7z tar gz tgz bz2 xz zst iso img cab arj lzh ace",
+        ),
+        c(
+            "Documents",
+            "pdf doc docx xls xlsx ppt pptx txt rtf odt ods odp epub csv md pps",
+        ),
         c("Music", "mp3 wav flac aac ogg m4a wma opus mid mka ra"),
         c("Programs", "exe msi msix appx apk xapk dmg deb rpm bat jar"),
-        c("Video", "mp4 mkv avi mov wmv flv webm m4v ts 3gp mpg mpeg vob rm rmvb asf ogv"),
-        c("Images", "jpg jpeg png gif webp bmp svg tif tiff heic ico psd"),
+        c(
+            "Video",
+            "mp4 mkv avi mov wmv flv webm m4v ts 3gp mpg mpeg vob rm rmvb asf ogv",
+        ),
+        c(
+            "Images",
+            "jpg jpeg png gif webp bmp svg tif tiff heic ico psd",
+        ),
     ]
 }
 
@@ -195,11 +211,12 @@ pub struct SiteLogin {
 pub const MAIN_QUEUE: u64 = 1;
 
 /// Bump when defaults change in a way old settings files should pick up.
-const SETTINGS_VERSION: u32 = 4;
+const SETTINGS_VERSION: u32 = 5;
 
 /// Columns of the download list that can be shown or hidden (View > Columns).
-pub const ALL_COLUMNS: [&str; 11] =
-    ["q", "size", "status", "eta", "speed", "last", "desc", "added", "saveto", "referer", "parent"];
+pub const ALL_COLUMNS: [&str; 11] = [
+    "q", "size", "status", "eta", "speed", "last", "desc", "added", "saveto", "referer", "parent",
+];
 /// Width a column starts with (pixels).
 pub fn default_column_width(key: &str) -> u32 {
     match key {
@@ -251,7 +268,8 @@ pub struct Settings {
     pub opacity: u32,
     /// size of all texts, 80..=150 (%)
     pub font_scale: u32,
-    /// font of all windows ("" = Windows' own, Segoe UI)
+    /// font of all windows ("" = the bundled default: Carlito,
+    /// Noto Sans Arabic when the language is Arabic)
     pub font_family: String,
     /// a picture behind the main window ("" = none, the theme's colors)
     pub background_image: String,
@@ -322,6 +340,12 @@ pub struct Settings {
     /// Options > Connection type: 0 low, 1 medium, 2 high speed
     pub connection_type: u32,
     pub server_limits: Vec<ServerLimit>,
+    /// What the adaptive engine learned about each host (local only):
+    /// the connection count and segment size that performed best, as
+    /// moving averages. Keyed by lowercase host. The explicit server
+    /// limits above stay separate and still cap these values.
+    #[serde(default)]
+    pub host_learning: std::collections::BTreeMap<String, HostLearning>,
     /// download no more than quota_mb every quota_hours
     pub quota_on: bool,
     pub quota_mb: u64,
@@ -359,6 +383,9 @@ pub struct Settings {
     pub start_while_info: bool,
     /// "en", "ar", or "" = the language of Windows
     pub language: String,
+    /// automatic update checks (Options > General); turning it off stops
+    /// the startup / 24-hour checks, Help > Check for updates still works
+    pub update_check: bool,
 }
 
 impl Default for Settings {
@@ -423,6 +450,7 @@ impl Default for Settings {
             virus_args: "[File]".into(),
             connection_type: 2,
             server_limits: Vec::new(),
+            host_learning: Default::default(),
             quota_on: false,
             quota_mb: 2000,
             quota_hours: 24,
@@ -447,6 +475,7 @@ impl Default for Settings {
             extension_prompted: false,
             start_while_info: true,
             language: String::new(),
+            update_check: true,
         }
     }
 }
@@ -494,9 +523,16 @@ impl Settings {
             }
             s.schedule.enabled = false;
         }
+        if s.version < 5 {
+            // v5: automatic update checks are on unless the user turns
+            // them off (files written before the setting existed have no
+            // value; the struct default already fills it in as on)
+            s.update_check = true;
+        }
         s.version = SETTINGS_VERSION;
         if !s.queues.iter().any(|q| q.id == MAIN_QUEUE) {
-            s.queues.insert(0, QueueDef::new(MAIN_QUEUE, "Main download queue", 1, None));
+            s.queues
+                .insert(0, QueueDef::new(MAIN_QUEUE, "Main download queue", 1, None));
         }
         if s.categories.is_empty() {
             s.categories = default_categories();
@@ -554,6 +590,54 @@ impl Settings {
             .unwrap_or(wanted)
     }
 
+    /// Starting connection count the adaptive engine should use for
+    /// this address: the learned value when the host has a fresh entry,
+    /// else `fallback`. Expired entries (older than the learning expiry)
+    /// are ignored. The result is still capped by `connections_for`
+    /// at the call site; this method only supplies the starting point.
+    /// The explicit server limits are untouched by learning: they are
+    /// user-set caps, while learning is only an observation.
+    pub fn learned_start(&self, url: &str, fallback: u32) -> u32 {
+        let cfg = AdaptiveConfig::default();
+        let key = crate::adaptive::host_key(url);
+        let now = chrono::Utc::now();
+        self.host_learning
+            .get(&key)
+            .filter(|h| !h.expired(now, cfg.learning_expiry_days))
+            .map(|h| h.starting_connections(&cfg))
+            .unwrap_or(fallback)
+    }
+
+    /// Fold one finished download's outcome into the per-host learning
+    /// store. Existing entries are kept as the prior average (the
+    /// exponential average in `HostLearning` does the fading); there is
+    /// nothing to migrate, because no per-host learning existed before
+    /// this phase — the server limits above are a separate mechanism
+    /// and are left exactly as the user set them.
+    pub fn record_host_learning(
+        &mut self,
+        url: &str,
+        connections: u32,
+        segment_size: u64,
+        now: chrono::DateTime<chrono::Utc>,
+    ) {
+        let cfg = AdaptiveConfig::default();
+        let key = crate::adaptive::host_key(url);
+        if key.is_empty() {
+            return;
+        }
+        // drop expired entries when writing, so the file stays small
+        self.host_learning
+            .retain(|_, h| !h.expired(now, cfg.learning_expiry_days));
+        match self.host_learning.get_mut(&key) {
+            Some(h) => h.update(connections, segment_size, cfg.learning_alpha, now),
+            None => {
+                self.host_learning
+                    .insert(key, HostLearning::new(connections, segment_size, now));
+            }
+        }
+    }
+
     /// Saved login for this address (Options > Site Logins).
     pub fn login_for(&self, url: &str) -> Option<(String, String)> {
         let u = url::Url::parse(url).ok()?;
@@ -563,8 +647,15 @@ impl Settings {
             .iter()
             .filter(|l| !l.user.is_empty())
             .find(|l| {
-                let site = l.site.trim().trim_start_matches("http://").trim_start_matches("https://");
-                let (h, p) = site.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((site, String::new()));
+                let site = l
+                    .site
+                    .trim()
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://");
+                let (h, p) = site
+                    .split_once('/')
+                    .map(|(h, p)| (h, format!("/{p}")))
+                    .unwrap_or((site, String::new()));
                 host_matches(&host, h) && (p.is_empty() || path.starts_with(&p))
             })
             .map(|l| (l.user.clone(), l.password.clone()))
@@ -593,7 +684,11 @@ impl Settings {
             .into_iter()
             .filter(|k| k == "name" || self.column_visible(k))
             .map(|k| {
-                let w = self.column_widths.get(&k).copied().unwrap_or_else(|| default_column_width(&k));
+                let w = self
+                    .column_widths
+                    .get(&k)
+                    .copied()
+                    .unwrap_or_else(|| default_column_width(&k));
                 (k, w.clamp(36, 2000))
             })
             .collect()
@@ -628,7 +723,11 @@ impl Settings {
     /// files go straight into the download folder.
     /// (A folder set in the category's properties wins.)
     pub fn dir_for(&self, category: &str) -> PathBuf {
-        if let Some(p) = self.category_dirs.get(category).filter(|p| !p.as_os_str().is_empty()) {
+        if let Some(p) = self
+            .category_dirs
+            .get(category)
+            .filter(|p| !p.as_os_str().is_empty())
+        {
             return p.clone();
         }
         if self.category_folders && category != "General" {
@@ -663,7 +762,10 @@ fn default_sound(name: &str) -> String {
 /// "example.com" matches example.com and www.example.com; "*.x.com" and
 /// "*" patterns work too.
 pub fn host_matches(host: &str, pattern: &str) -> bool {
-    let p = pattern.trim().trim_start_matches("http://").trim_start_matches("https://");
+    let p = pattern
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
     let p = p.split('/').next().unwrap_or("").to_ascii_lowercase();
     if p.is_empty() {
         return false;
@@ -726,7 +828,10 @@ mod tests {
     #[test]
     fn categories_and_logins() {
         let mut s = Settings::default();
-        assert_eq!(s.category_of("a.ZIP", "https://example.com/get?id=1"), "Compressed");
+        assert_eq!(
+            s.category_of("a.ZIP", "https://example.com/get?id=1"),
+            "Compressed"
+        );
         assert_eq!(s.category_of("noext", "https://example.com/"), "General");
         s.categories.push(CategoryDef {
             name: "Courses".into(),
@@ -734,13 +839,66 @@ mod tests {
             sites: vec!["courses.example.com".into()],
             builtin: false,
         });
-        assert_eq!(s.category_of("v.mp4", "https://www.courses.example.com/v.mp4"), "Courses");
-        s.logins.push(SiteLogin { site: "example.com/members".into(), user: "u".into(), password: "p".into() });
+        assert_eq!(
+            s.category_of("v.mp4", "https://www.courses.example.com/v.mp4"),
+            "Courses"
+        );
+        s.logins.push(SiteLogin {
+            site: "example.com/members".into(),
+            user: "u".into(),
+            password: "p".into(),
+        });
         assert!(s.login_for("https://example.com/members/a.pdf").is_some());
         assert!(s.login_for("https://example.com/public/a.pdf").is_none());
-        s.server_limits.push(ServerLimit { host: "slow.example.com".into(), connections: 2 });
+        s.server_limits.push(ServerLimit {
+            host: "slow.example.com".into(),
+            connections: 2,
+        });
         assert_eq!(s.connections_for("https://a.slow.example.com/x", 32), 2);
         assert_eq!(s.connections_for("https://fast.example.com/x", 32), 32);
+    }
+
+    #[test]
+    fn host_learning_starts_from_fresh_entries_and_ignores_expired_ones() {
+        let mut s = Settings::default();
+        let now = chrono::Utc::now();
+        assert_eq!(s.learned_start("https://fresh.example.com/f.bin", 4), 4);
+        s.record_host_learning("https://fresh.example.com/f.bin", 12, 500_000, now);
+        assert_eq!(
+            s.learned_start("https://fresh.example.com/other.bin", 4),
+            12
+        );
+        // a different host is untouched, and the server limit still caps
+        assert_eq!(s.learned_start("https://other.example.com/f.bin", 4), 4);
+        s.record_host_learning(
+            "https://old.example.com/f.bin",
+            12,
+            500_000,
+            now - chrono::Duration::days(31),
+        );
+        assert_eq!(s.learned_start("https://old.example.com/f.bin", 4), 4);
+        // recording a fresh observation prunes the expired entry
+        s.record_host_learning("https://fresh.example.com/f.bin", 12, 500_000, now);
+        assert!(!s.host_learning.contains_key("old.example.com"));
+        // old settings files without the field still load
+        let s2: Settings = serde_json::from_str("{\"version\":4}").unwrap();
+        assert!(s2.host_learning.is_empty());
+    }
+
+    #[test]
+    fn update_check_is_on_unless_the_user_turned_it_off() {
+        let dir = std::env::temp_dir().join(format!("ezoo-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        // a file from before the setting existed: checks stay on
+        std::fs::write(&path, "{\"version\":4}").unwrap();
+        let s = Settings::load(&path);
+        assert!(s.update_check);
+        assert_eq!(s.version, 5);
+        // an explicit off survives a load
+        std::fs::write(&path, "{\"version\":5,\"update_check\":false}").unwrap();
+        assert!(!Settings::load(&path).update_check);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
@@ -751,7 +909,12 @@ mod column_tests {
     #[test]
     fn columns_keep_their_order_and_width() {
         let mut s = Settings::default();
-        let keys = |s: &Settings| s.column_layout().into_iter().map(|c| c.0).collect::<Vec<_>>();
+        let keys = |s: &Settings| {
+            s.column_layout()
+                .into_iter()
+                .map(|c| c.0)
+                .collect::<Vec<_>>()
+        };
         // new settings: the name first, then the default columns
         assert_eq!(keys(&s)[0], "name");
         assert!(keys(&s).contains(&"size".to_string()));

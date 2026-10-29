@@ -466,6 +466,12 @@ msgstr "Diesen Pfad für die Kategorie \"{}\" merken"
 msgid "optional note"
 msgstr "optionale Notiz"
 
+msgid "Duration"
+msgstr "Dauer"
+
+msgid "Quality"
+msgstr "Qualität"
+
 msgid "Use authorization"
 msgstr "Anmeldung verwenden"
 
@@ -606,6 +612,15 @@ msgstr "Schließen"
 
 msgid "Start positions and download progress by connections"
 msgstr "Startpositionen und Fortschritt je Verbindung"
+
+msgid "Receiving data…"
+msgstr "Daten werden empfangen…"
+
+msgid "Stalled"
+msgstr "Blockiert"
+
+msgid "Waiting"
+msgstr "Wartet"
 
 msgid "N."
 msgstr "Nr."
@@ -1009,8 +1024,8 @@ msgstr "Textgröße"
 msgid "Font"
 msgstr "Schriftart"
 
-msgid "Default (Segoe UI)"
-msgstr "Standard (Segoe UI)"
+msgid "Default"
+msgstr "Standard"
 
 msgid "Background picture"
 msgstr "Hintergrundbild"
@@ -1038,6 +1053,9 @@ msgstr "Links aus der Zwischenablage automatisch herunterladen"
 
 msgid "Show \"Tip of the day\" at startup"
 msgstr "\"Tipp des Tages\" beim Start anzeigen"
+
+msgid "Check for updates automatically"
+msgstr "Automatisch nach Updates suchen"
 
 msgid "On double click on a download"
 msgstr "Bei Doppelklick auf einen Download"
@@ -1077,9 +1095,6 @@ msgstr "Port der Browser-Erweiterung"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "Diese Dateitypen automatisch herunterladen (aus dem Browser):"
-
-msgid "Default"
-msgstr "Standard"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "Von diesen Websites nicht automatisch herunterladen:"
@@ -1345,9 +1360,6 @@ msgstr "Videos der Playlist werden geholt…"
 msgid "The videos of the playlist show up here."
 msgstr "Die Videos der Playlist erscheinen hier."
 
-msgid "Quality"
-msgstr "Qualität"
-
 msgid "Best quality (MP4)"
 msgstr "Beste Qualität (MP4)"
 
@@ -1402,23 +1414,8 @@ msgstr "Version {}"
 msgid "Coded by Ahmed Ezzat"
 msgstr "Programmiert von Ahmed Ezzat"
 
-msgid "Like Ezoo Download? You can support its development:"
-msgstr "Gefällt Ihnen Ezoo Download? Sie können die Entwicklung unterstützen:"
-
-msgid "Support with PayPal"
-msgstr "Mit PayPal unterstützen"
-
-msgid "Support with InstaPay"
-msgstr "Mit InstaPay unterstützen"
-
-msgid "InstaPay: a7medek@instapay (scan the code with your bank's app)"
-msgstr "InstaPay: a7medek@instapay (Code mit der App Ihrer Bank scannen)"
-
 msgid "What's new in Ezoo Download"
 msgstr "Neu in Ezoo Download"
-
-msgid "Ezoo Download is free and has no ads. If it helps you and you would like to support its development, you can send a gift with PayPal or InstaPay. Thank you!"
-msgstr "Ezoo Download ist kostenlos und werbefrei. Wenn es Ihnen hilft und Sie die Entwicklung unterstützen möchten, können Sie mit PayPal oder InstaPay etwas schenken. Danke!"
 
 msgid "Hide"
 msgstr "Ausblenden"

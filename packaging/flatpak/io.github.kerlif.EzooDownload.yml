@@ -1,0 +1,123 @@
+# Ezoo Download — Flatpak manifest (fork build, v1.1.0)
+#
+# App ID: io.github.kerlif.EzooDownload (fork of Ahmed Ezzat's Ezoo
+# Download; the author credit is kept — see the metainfo file and
+# docs/FLATPAK.md). Built only in GitHub Actions CI (see
+# .github/workflows/linux-release.yml, via the Phase 8 escalation):
+#   flatpak-builder --force-clean --install-deps-from=flathub \
+#       --repo=flatpak-repo flatpak-build \
+#       packaging/flatpak/io.github.kerlif.EzooDownload.yml
+#   flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+#       flatpak-repo dist/EzooDownload-x86_64.flatpak io.github.kerlif.EzooDownload
+#
+# Runtime 26.08: verified 2026-10-28 — the Flathub refs
+# runtime/org.freedesktop.Platform/x86_64/26.08,
+# runtime/org.freedesktop.Sdk/x86_64/26.08 and
+# runtime/org.freedesktop.Sdk.Extension.rust-stable/x86_64/26.08 all
+# resolve (HTTP 200), the freedesktop-sdk GitLab repo has a
+# release/26.08 branch, Flathub lists freedesktop-sdk-26.08.4 as the
+# latest Platform release, and the rust-stable extension's 26.08
+# branch ships Rust 1.98.0. 24.08 is end-of-life and is NOT used.
+#
+# Permissions (see docs/FLATPAK.md for the evidence behind each):
+#   --device=dri            OpenGL rendering (Slint femtovg renderer)
+#   --share=ipc             X11 MIT-SHM for the software-renderer
+#                           fallback (softbuffer 0.4.8 X11 backend uses
+#                           XCB SHM; see docs/FLATPAK.md §3)
+#   --share=network         downloads + the localhost browser bridge
+#                           (shares the host network namespace, so the
+#                           host browser reaches 127.0.0.1:9614)
+#   --socket=wayland / --socket=fallback-x11
+#                           Wayland first, X11 when Wayland is absent
+#   --filesystem=xdg-download
+#                           the default download folder (Settings
+#                           defaults to the XDG Downloads directory;
+#                           downloads land there without a chooser)
+#   --talk-name=org.freedesktop.portal.*
+#                           FileChooser portal (rfd file/folder dialogs)
+#   --talk-name=org.kde.StatusNotifierWatcher
+#                           system-tray icon (tray-icon ksni over D-Bus)
+# Deliberately NOT granted: no home/host filesystem access, no
+# session-bus blanket access, no PulseAudio socket (event sounds
+# spawn paplay/aplay and fail silently when absent — by design).
+#
+# ffmpeg: NO ffmpeg-full stanza. That extension was retired for
+# Freedesktop 25.08+ (its codecs moved to the codecs-extra extension,
+# which the runtime installs automatically; the
+# runtime/org.freedesktop.Platform.codecs-extra/x86_64/26.08-extra
+# ref resolves, while ffmpeg-full refs 404 for 25.08/26.08). No
+# ffmpeg binary is bundled by this manifest — whether the runtime
+# puts one on PATH for the muxer is UNVERIFIED and must be checked
+# in CI/a real Flatpak run (docs/FLATPAK.md §5, Open Question 13).
+# The .deb/.rpm/AppImage keep their bundled ffmpeg (unchanged).
+#
+# yt-dlp: NOT shipped (see docs/FLATPAK.md §6 and Open Question 1,
+# resolved). The app fetches a hash-checked yt-dlp_linux into its
+# sandbox data directory itself (tools.rs), exactly as on other
+# Linux installs; no manual user install is needed.
+#
+# Cargo sources: packaging/flatpak/cargo-sources.json, generated
+# offline from the CURRENT Cargo.lock with flatpak-cargo-generator
+# (flatpak-builder-tools, commit 41c20aa10819cdb2a4f3ca171758a96d1955c018).
+# Regenerate it whenever Cargo.lock changes; the build runs fully
+# offline (CARGO_NET_OFFLINE=true, --offline --locked).
+
+id: io.github.kerlif.EzooDownload
+runtime: org.freedesktop.Platform
+runtime-version: "26.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: EzooDownload
+finish-args:
+  - --device=dri
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --filesystem=xdg-download
+  - --talk-name=org.freedesktop.portal.*
+  - --talk-name=org.kde.StatusNotifierWatcher
+modules:
+  - name: ezoo-download
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/ezoo-download/cargo
+        CARGO_NET_OFFLINE: "true"
+    build-commands:
+      # Offline release build from the vendored sources. The SDK's
+      # fontconfig/freetype/xkbcommon/X11/xcb development files cover
+      # Slint's Linux backends; TLS is rustls (no OpenSSL headers
+      # needed) and the fonts are embedded in the binary, so no
+      # extra modules are required. Slint's build script compiles
+      # ui/app.slint (build.rs) exactly as the .deb/AppImage builds do.
+      - cargo --offline build --release --locked
+      - install -Dm755 target/release/EzooDownload ${FLATPAK_DEST}/bin/EzooDownload
+      - install -Dm644 packaging/flatpak/io.github.kerlif.EzooDownload.desktop ${FLATPAK_DEST}/share/applications/io.github.kerlif.EzooDownload.desktop
+      - install -Dm644 packaging/flatpak/io.github.kerlif.EzooDownload.metainfo.xml ${FLATPAK_DEST}/share/metainfo/io.github.kerlif.EzooDownload.metainfo.xml
+      # hicolor icons (only this app's icons live in this tree)
+      - mkdir -p ${FLATPAK_DEST}/share/icons/hicolor
+      - cp -a packaging/linux/hicolor/. ${FLATPAK_DEST}/share/icons/hicolor/
+      # Browser-extension sources, mirroring the .deb layout: the app
+      # looks for them at <exe>/../share/ezoo-download/ (browser.rs
+      # extension_dir), which is /app/share/ezoo-download/ here.
+      - mkdir -p ${FLATPAK_DEST}/share/ezoo-download
+      - cp -a extension ${FLATPAK_DEST}/share/ezoo-download/extension
+      - rm -rf ${FLATPAK_DEST}/share/ezoo-download/extension/test
+      - cp -a extension ${FLATPAK_DEST}/share/ezoo-download/extension-firefox
+      - mv ${FLATPAK_DEST}/share/ezoo-download/extension-firefox/manifest.firefox.json ${FLATPAK_DEST}/share/ezoo-download/extension-firefox/manifest.json
+      - rm -rf ${FLATPAK_DEST}/share/ezoo-download/extension-firefox/test
+      # Licences and notices, mirroring the .deb's doc directory.
+      - mkdir -p ${FLATPAK_DEST}/share/doc/ezoo-download
+      - cp THIRD-PARTY-NOTICES.txt README.md ${FLATPAK_DEST}/share/doc/ezoo-download/
+      - cp crates/app/ui/fonts/OFL-Carlito.txt crates/app/ui/fonts/OFL-NotoSansArabic.txt crates/app/ui/fonts/OFL-LiberationSerif.txt ${FLATPAK_DEST}/share/doc/ezoo-download/
+    sources:
+      # The whole checked-out tree (paths are relative to this file).
+      # Build from a clean tree: flatpak-builder copies the directory
+      # as-is, so a local target/ or dist/ would be copied too. CI
+      # runs this step before any cargo/packaging step for that reason.
+      - type: dir
+        path: ../..
+      - cargo-sources.json

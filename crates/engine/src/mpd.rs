@@ -70,7 +70,10 @@ struct El {
 
 impl El {
     fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.attrs
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
     }
     fn attr_u64(&self, name: &str) -> Option<u64> {
         self.attr(name)?.trim().parse().ok()
@@ -159,7 +162,9 @@ fn parse_xml(src: &str) -> anyhow::Result<El> {
             if s[i..].starts_with("</") {
                 let end = s[i..].find('>').ok_or_else(|| anyhow!("broken XML tag"))?;
                 let name = s[i + 2..i + end].trim();
-                let el = stack.pop().ok_or_else(|| anyhow!("XML: unexpected </{name}>"))?;
+                let el = stack
+                    .pop()
+                    .ok_or_else(|| anyhow!("XML: unexpected </{name}>"))?;
                 if !name.is_empty() && el.name != name && !el.name.ends_with(name) {
                     bail!("XML: <{}> closed by </{}>", el.name, name);
                 }
@@ -182,7 +187,12 @@ fn parse_xml(src: &str) -> anyhow::Result<El> {
                 None => (inner, ""),
             };
             let name = name.rsplit(':').next().unwrap_or(name).to_string();
-            let el = El { name, attrs: parse_attrs_str(rest), children: Vec::new(), text: String::new() };
+            let el = El {
+                name,
+                attrs: parse_attrs_str(rest),
+                children: Vec::new(),
+                text: String::new(),
+            };
             if self_closing {
                 match stack.last_mut() {
                     Some(p) => p.children.push(el),
@@ -227,7 +237,10 @@ fn parse_attrs_str(s: &str) -> Vec<(String, String)> {
         let (value, next) = if i < b.len() && (b[i] == b'"' || b[i] == b'\'') {
             let q = b[i];
             let start = i + 1;
-            let end = s[start..].find(q as char).map(|p| start + p).unwrap_or(b.len());
+            let end = s[start..]
+                .find(q as char)
+                .map(|p| start + p)
+                .unwrap_or(b.len());
             (unescape(&s[start..end]), end + 1)
         } else {
             let start = i;
@@ -319,13 +332,7 @@ fn join_chain(bases: &[String], rel: &str) -> anyhow::Result<String> {
 }
 
 /// Expand the `$…$` tokens of a SegmentTemplate URL.
-fn expand_template(
-    tpl: &str,
-    id: &str,
-    bandwidth: u64,
-    number: u64,
-    time: u64,
-) -> String {
+fn expand_template(tpl: &str, id: &str, bandwidth: u64, number: u64, time: u64) -> String {
     let mut out = String::with_capacity(tpl.len() + 16);
     let b = tpl.as_bytes();
     let mut i = 0;
@@ -341,7 +348,9 @@ fn expand_template(
             i += 2;
             continue;
         }
-        let Some(end) = tpl[i + 1..].find('$') else { break };
+        let Some(end) = tpl[i + 1..].find('$') else {
+            break;
+        };
         let token = &tpl[i + 1..i + 1 + end];
         let (name, width) = match token.find('%') {
             Some(p) => (&token[..p], Some(&token[p..])),
@@ -351,7 +360,15 @@ fn expand_template(
             "RepresentationID" => id.to_string(),
             "Bandwidth" => bandwidth.to_string(),
             "Number" => match width {
-                Some(w) => format!("{:0width$}", number, width = w.trim_start_matches('%').trim_end_matches('d').parse::<usize>().unwrap_or(1)),
+                Some(w) => format!(
+                    "{:0width$}",
+                    number,
+                    width = w
+                        .trim_start_matches('%')
+                        .trim_end_matches('d')
+                        .parse::<usize>()
+                        .unwrap_or(1)
+                ),
                 None => number.to_string(),
             },
             "Time" => time.to_string(),
@@ -371,9 +388,50 @@ fn parse_range(s: &str) -> Option<(u64, u64)> {
 
 fn drm_scheme(scheme: &str) -> bool {
     let s = scheme.to_ascii_lowercase();
-    ["widevine", "playready", "fairplay", "clearkey"]
-        .iter()
-        .any(|d| s.contains(d))
+    // Names, and the scheme UUIDs the DASH spec assigns to each system:
+    // Widevine edef8ba9, PlayReady 9a04f079, FairPlay 94ce86fb, ClearKey
+    // 1077efec. A bare schemeIdUri UUID carries no name, so the name-only
+    // check used to miss it (the old DRM test only failed incidentally,
+    // because the manifest had no usable track either).
+    [
+        "widevine",
+        "playready",
+        "fairplay",
+        "clearkey",
+        "edef8ba9",
+        "9a04f079",
+        "94ce86fb",
+        "1077efec",
+    ]
+    .iter()
+    .any(|d| s.contains(d))
+}
+
+/// Walk an element tree depth-first.
+fn walk<'a>(el: &'a El, f: &mut impl FnMut(&'a El)) {
+    f(el);
+    for c in &el.children {
+        walk(c, f);
+    }
+}
+
+/// The DRM scheme signaled anywhere in a manifest, if any: every
+/// ContentProtection element's schemeIdUri/value, at any level. Used by
+/// the capture-window probe, which reports DRM instead of downloading.
+pub fn drm_reason(xml: &str) -> Option<String> {
+    let root = parse_xml(xml.trim()).ok()?;
+    let mut found: Option<String> = None;
+    walk(&root, &mut |el| {
+        if found.is_some() || el.name != "ContentProtection" {
+            return;
+        }
+        if let Some(scheme) = el.attr("schemeIdUri").or(el.attr("value")) {
+            if drm_scheme(scheme) {
+                found = Some(scheme.to_string());
+            }
+        }
+    });
+    found
 }
 
 /// Collect a SegmentTemplate from any element level (child fields win).
@@ -398,7 +456,11 @@ fn read_template(el: &El, into: &mut Template) {
             .children_named("S")
             .filter_map(|s| {
                 let d = s.attr_u64("d")?;
-                Some((s.attr_u64("t").unwrap_or(0), d, s.attr("r").and_then(|r| r.trim().parse().ok()).unwrap_or(0)))
+                Some((
+                    s.attr_u64("t").unwrap_or(0),
+                    d,
+                    s.attr("r").and_then(|r| r.trim().parse().ok()).unwrap_or(0),
+                ))
             })
             .collect();
     }
@@ -420,7 +482,10 @@ fn representation_segments(
     let height = rep.attr_u64("height").unwrap_or(0) as u32;
     let codecs = rep.attr("codecs").unwrap_or("").to_string();
     let mime = rep.attr("mimeType").or(aset.attr("mimeType")).unwrap_or("");
-    let ctype = rep.attr("contentType").or(aset.attr("contentType")).unwrap_or("");
+    let ctype = rep
+        .attr("contentType")
+        .or(aset.attr("contentType"))
+        .unwrap_or("");
     let is_video = if !ctype.is_empty() {
         ctype.starts_with("video")
     } else if !mime.is_empty() {
@@ -431,7 +496,11 @@ fn representation_segments(
 
     // this level's BaseURL, if any
     let mut bases: Vec<String> = bases.to_vec();
-    if let Some(b) = rep.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+    if let Some(b) = rep
+        .child("BaseURL")
+        .map(El::text_of)
+        .filter(|s| !s.is_empty())
+    {
         bases.push(b);
     }
     let deepest = bases.last().cloned().unwrap_or_default();
@@ -441,7 +510,10 @@ fn representation_segments(
         for cp in scope.children_named("ContentProtection") {
             if let Some(scheme) = cp.attr("schemeIdUri").or(cp.attr("value")) {
                 if drm_scheme(scheme) {
-                    bail!("this stream is DRM protected ({}) and cannot be downloaded", scheme);
+                    bail!(
+                        "this stream is DRM protected ({}) and cannot be downloaded",
+                        scheme
+                    );
                 }
             }
         }
@@ -479,7 +551,10 @@ fn representation_segments(
                 });
             }
         }
-    } else if let Some(t) = rep.child("SegmentTemplate").or(aset.child("SegmentTemplate")) {
+    } else if let Some(t) = rep
+        .child("SegmentTemplate")
+        .or(aset.child("SegmentTemplate"))
+    {
         // a template that only lives on the representation, not inherited
         let mut own = tpl_base.clone();
         read_template(t, &mut own);
@@ -513,9 +588,14 @@ fn representation_segments(
                 };
                 for k in 0..count {
                     let time = t0 + k * d;
-                    let url = media_url.as_deref().ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
+                    let url = media_url
+                        .as_deref()
+                        .ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
                     segments.push(Segment {
-                        url: join_chain(&bases, &expand_template(url, &id, bandwidth, number, time))?,
+                        url: join_chain(
+                            &bases,
+                            &expand_template(url, &id, bandwidth, number, time),
+                        )?,
                         range: None,
                     });
                     number += 1;
@@ -537,9 +617,14 @@ fn representation_segments(
                 .unwrap_or(0);
             for k in 0..count.min(crate::m3u8::MAX_PARTS as u64) {
                 let time = pto + k * duration;
-                let url = media_url.as_deref().ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
+                let url = media_url
+                    .as_deref()
+                    .ok_or_else(|| anyhow!("SegmentTemplate without a media template"))?;
                 segments.push(Segment {
-                    url: join_chain(&bases, &expand_template(url, &id, bandwidth, start_number + k, time))?,
+                    url: join_chain(
+                        &bases,
+                        &expand_template(url, &id, bandwidth, start_number + k, time),
+                    )?,
                     range: None,
                 });
             }
@@ -555,15 +640,24 @@ fn representation_segments(
             .child("Initialization")
             .and_then(|i| i.attr("range"))
             .and_then(parse_range)
-            .map(|range| Segment { url: rep_url.clone(), range: Some(range) });
-        segments.push(Segment { url: rep_url, range: None });
+            .map(|range| Segment {
+                url: rep_url.clone(),
+                range: Some(range),
+            });
+        segments.push(Segment {
+            url: rep_url,
+            range: None,
+        });
     } else {
         // no segmentation at all: the BaseURL is the file (a plain .mp4)
         let rep_url = deepest;
         if rep_url.is_empty() {
             bail!("the representation has no URL and no segments");
         }
-        segments.push(Segment { url: rep_url, range: None });
+        segments.push(Segment {
+            url: rep_url,
+            range: None,
+        });
     }
 
     let _ = timescale; // (used through the segment counts computed above)
@@ -574,7 +668,16 @@ fn representation_segments(
     if segments.len() > crate::m3u8::MAX_PARTS {
         bail!("the stream has too many parts");
     }
-    Ok(Track { id, is_video, bandwidth, width, height, codecs, init, segments })
+    Ok(Track {
+        id,
+        is_video,
+        bandwidth,
+        width,
+        height,
+        codecs,
+        init,
+        segments,
+    })
 }
 
 /// Parse the text of an .mpd manifest. `manifest_url` resolves relative
@@ -601,7 +704,11 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
         .unwrap_or(0.0);
 
     let mut bases: Vec<String> = Vec::new();
-    if let Some(b) = root.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+    if let Some(b) = root
+        .child("BaseURL")
+        .map(El::text_of)
+        .filter(|s| !s.is_empty())
+    {
         bases.push(b);
     } else {
         bases.push(manifest_url.to_string());
@@ -611,7 +718,11 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
         bail!("the manifest has no Period");
     };
     let mut p_bases = bases.clone();
-    if let Some(b) = period.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+    if let Some(b) = period
+        .child("BaseURL")
+        .map(El::text_of)
+        .filter(|s| !s.is_empty())
+    {
         p_bases.push(b);
     }
     let period_seconds = period
@@ -622,7 +733,11 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
     let mut manifest = Manifest::default();
     for aset in period.children_named("AdaptationSet") {
         let mut a_bases = p_bases.clone();
-        if let Some(b) = aset.child("BaseURL").map(El::text_of).filter(|s| !s.is_empty()) {
+        if let Some(b) = aset
+            .child("BaseURL")
+            .map(El::text_of)
+            .filter(|s| !s.is_empty())
+        {
             a_bases.push(b);
         }
         let mut tpl = Template::default();
@@ -647,6 +762,141 @@ pub fn parse(manifest_url: &str, xml: &str) -> anyhow::Result<Manifest> {
         bail!("the manifest has no usable track");
     }
     Ok(manifest)
+}
+
+// ------------------------------------------------------- metadata only
+
+/// One representation, as the capture window shows it: quality, codec and
+/// bitrate, without expanding its segments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DashRepMeta {
+    pub id: String,
+    pub is_video: bool,
+    pub bandwidth: u64,
+    pub width: u32,
+    pub height: u32,
+    pub codecs: String,
+    pub frame_rate: Option<f32>,
+}
+
+/// Manifest metadata for the capture window: the summed duration of ALL
+/// Periods, every representation (video and audio kept separate), and any
+/// DRM signal. The download path still uses [`parse`], which expands only
+/// the first Period's segments.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DashMeta {
+    pub duration_secs: f64,
+    pub videos: Vec<DashRepMeta>,
+    pub audios: Vec<DashRepMeta>,
+    pub drm: Option<String>,
+}
+
+fn parse_frame_rate(s: &str) -> Option<f32> {
+    let s = s.trim();
+    if let Some((a, b)) = s.split_once('/') {
+        let (a, b): (f32, f32) = (a.trim().parse().ok()?, b.trim().parse().ok()?);
+        if b != 0.0 {
+            return Some(a / b);
+        }
+        return None;
+    }
+    s.parse().ok()
+}
+
+/// Parse a manifest's metadata without expanding segments.
+pub fn parse_metadata(xml: &str) -> anyhow::Result<DashMeta> {
+    let xml = xml.trim();
+    if !xml.starts_with('<') {
+        bail!("not a valid DASH manifest");
+    }
+    if xml.len() > crate::m3u8::MAX_PLAYLIST_BYTES {
+        bail!("the manifest is too big");
+    }
+    let root = parse_xml(xml).context("could not read the DASH manifest")?;
+    if root.name != "MPD" {
+        bail!("not a DASH manifest (no <MPD>)");
+    }
+    let mpd_type = root.attr("type").unwrap_or("static");
+    if mpd_type.eq_ignore_ascii_case("dynamic") {
+        bail!("live streams are not supported (the manifest is dynamic)");
+    }
+    let mut meta = DashMeta {
+        drm: drm_reason(xml),
+        ..Default::default()
+    };
+    let total = root
+        .attr("mediaPresentationDuration")
+        .and_then(parse_iso_duration)
+        .unwrap_or(0.0);
+    // Sum the Period durations; a Period without one falls back to the
+    // manifest duration only when it is the sole Period.
+    let periods: Vec<&El> = root.children_named("Period").collect();
+    if periods.is_empty() {
+        bail!("the manifest has no Period");
+    }
+    let mut summed = 0.0f64;
+    let mut any_period_duration = false;
+    for period in &periods {
+        if let Some(d) = period.attr("duration").and_then(parse_iso_duration) {
+            summed += d;
+            any_period_duration = true;
+        }
+    }
+    meta.duration_secs = if any_period_duration { summed } else { total };
+    let mut seen: Vec<(bool, u32, u32, String, u64)> = Vec::new();
+    for period in &periods {
+        for aset in period.children_named("AdaptationSet") {
+            for rep in aset.children_named("Representation") {
+                let bandwidth = rep.attr_u64("bandwidth").unwrap_or(0);
+                let width = rep.attr_u64("width").unwrap_or(0) as u32;
+                let height = rep.attr_u64("height").unwrap_or(0) as u32;
+                let codecs = rep
+                    .attr("codecs")
+                    .or(aset.attr("codecs"))
+                    .unwrap_or("")
+                    .to_string();
+                let mime = rep.attr("mimeType").or(aset.attr("mimeType")).unwrap_or("");
+                let ctype = rep
+                    .attr("contentType")
+                    .or(aset.attr("contentType"))
+                    .unwrap_or("");
+                let is_video = if !ctype.is_empty() {
+                    ctype.starts_with("video")
+                } else if !mime.is_empty() {
+                    mime.starts_with("video")
+                } else {
+                    width > 0 || height > 0
+                };
+                // The same quality repeated in a later Period is one entry.
+                let key = (is_video, width, height, codecs.clone(), bandwidth);
+                if seen.contains(&key) {
+                    continue;
+                }
+                seen.push(key);
+                let entry = DashRepMeta {
+                    id: rep.attr("id").unwrap_or("0").to_string(),
+                    is_video,
+                    bandwidth,
+                    width,
+                    height,
+                    codecs,
+                    frame_rate: rep
+                        .attr("frameRate")
+                        .or(aset.attr("frameRate"))
+                        .and_then(parse_frame_rate),
+                };
+                if is_video {
+                    meta.videos.push(entry);
+                } else {
+                    meta.audios.push(entry);
+                }
+            }
+        }
+    }
+    if meta.videos.is_empty() && meta.audios.is_empty() {
+        bail!("the manifest has no usable track");
+    }
+    Ok(meta)
 }
 
 // ------------------------------------------------------------ downloading
@@ -687,7 +937,10 @@ async fn fetch_bytes(shared: &Shared, job: &MpdJob, seg: &Segment) -> anyhow::Re
 }
 
 async fn fetch_text(shared: &Shared, job: &MpdJob, url: &str) -> anyhow::Result<String> {
-    let seg = Segment { url: url.to_string(), range: None };
+    let seg = Segment {
+        url: url.to_string(),
+        range: None,
+    };
     let b = fetch_bytes(shared, job, &seg).await?;
     Ok(String::from_utf8_lossy(&b).into_owned())
 }
@@ -715,17 +968,23 @@ async fn download_track(
     if let Some(init) = &track.init {
         let path = init_file(&job.temp_dir, prefix);
         if !path.exists() {
-            let data = fetch_bytes(&shared, &job, init).await.context("could not load the init segment")?;
+            let data = fetch_bytes(&shared, &job, init)
+                .await
+                .context("could not load the init segment")?;
             shared.limiter.acquire(data.len()).await;
             job.limiter.acquire(data.len()).await;
             let tmp = path.with_extension("tmp");
             std::fs::write(&tmp, &data)?;
             std::fs::rename(&tmp, &path)?;
-            progress.bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+            progress
+                .bytes
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
         }
         progress.parts_done.fetch_add(1, Ordering::Relaxed);
     }
-    progress.parts_total.fetch_add(track.segments.len() as u32, Ordering::Relaxed);
+    progress
+        .parts_total
+        .fetch_add(track.segments.len() as u32, Ordering::Relaxed);
 
     // count what is already on the disk (resume)
     let mut done_bytes = 0u64;
@@ -789,7 +1048,8 @@ async fn download_track(
                             if attempt > job.retries {
                                 return Err(e);
                             }
-                            tokio::time::sleep(Duration::from_secs((attempt as u64 * 2).min(20))).await;
+                            tokio::time::sleep(Duration::from_secs((attempt as u64 * 2).min(20)))
+                                .await;
                         }
                     }
                 }
@@ -798,7 +1058,9 @@ async fn download_track(
     }
     let mut first_error = None;
     while let Some(r) = set.join_next().await {
-        let r = r.map_err(|e| anyhow!("worker crashed: {e}")).and_then(|r| r);
+        let r = r
+            .map_err(|e| anyhow!("worker crashed: {e}"))
+            .and_then(|r| r);
         if let Err(e) = r {
             if first_error.is_none() && !cancel.is_cancelled() {
                 first_error = Some(e);
@@ -815,7 +1077,13 @@ async fn download_track(
 
     // join init + segments into one file
     let temp_dir = job.temp_dir.clone();
-    let out = if prefix == "v" { job.video_out.clone() } else { job.audio_out.clone().unwrap_or_else(|| job.video_out.clone()) };
+    let out = if prefix == "v" {
+        job.video_out.clone()
+    } else {
+        job.audio_out
+            .clone()
+            .unwrap_or_else(|| job.video_out.clone())
+    };
     let has_init = track.init.is_some();
     let total = segments.len();
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
@@ -846,7 +1114,9 @@ pub async fn run(
     cancel: CancellationToken,
 ) -> anyhow::Result<bool> {
     let job = Arc::new(job);
-    let text = fetch_text(&shared, &job, &job.url).await.context("could not load the manifest")?;
+    let text = fetch_text(&shared, &job, &job.url)
+        .await
+        .context("could not load the manifest")?;
     let manifest = parse(&job.url, &text)?;
     let (video, audio) = manifest.best();
     let video = video.ok_or_else(|| anyhow!("the manifest has no video track"))?;
@@ -855,7 +1125,15 @@ pub async fn run(
     let temp_dir = job.temp_dir.clone();
 
     // two tracks share one temp folder, so each keeps its own prefix
-    download_track(shared.clone(), job.clone(), video.clone(), "v", progress.clone(), cancel.clone()).await?;
+    download_track(
+        shared.clone(),
+        job.clone(),
+        video.clone(),
+        "v",
+        progress.clone(),
+        cancel.clone(),
+    )
+    .await?;
     if let Some(audio) = audio.cloned() {
         download_track(shared, job, audio, "a", progress, cancel).await?;
     }
@@ -895,11 +1173,20 @@ mod tests {
     #[test]
     fn tokens_expand() {
         assert_eq!(
-            expand_template("$RepresentationID$/seg-$Number%05d$.m4s", "1080p", 100, 42, 0),
+            expand_template(
+                "$RepresentationID$/seg-$Number%05d$.m4s",
+                "1080p",
+                100,
+                42,
+                0
+            ),
             "1080p/seg-00042.m4s"
         );
         assert_eq!(expand_template("a$$b$Bandwidth$", "x", 800, 1, 0), "a$b800");
-        assert_eq!(expand_template("$Time$-$Unknown$.mp4", "x", 1, 2, 3000), "3000-$Unknown$.mp4");
+        assert_eq!(
+            expand_template("$Time$-$Unknown$.mp4", "x", 1, 2, 3000),
+            "3000-$Unknown$.mp4"
+        );
     }
 
     #[test]
@@ -909,10 +1196,19 @@ mod tests {
         let (v, a) = m.best();
         let v = v.unwrap();
         assert_eq!(v.id, "1080p");
-        assert_eq!(v.init.as_ref().unwrap().url, "https://cdn.example/video/1080p/init.mp4");
+        assert_eq!(
+            v.init.as_ref().unwrap().url,
+            "https://cdn.example/video/1080p/init.mp4"
+        );
         assert_eq!(v.segments.len(), 16); // 64 s / 4 s
-        assert_eq!(v.segments[0].url, "https://cdn.example/video/1080p/seg-00001.m4s");
-        assert_eq!(v.segments[15].url, "https://cdn.example/video/1080p/seg-00016.m4s");
+        assert_eq!(
+            v.segments[0].url,
+            "https://cdn.example/video/1080p/seg-00001.m4s"
+        );
+        assert_eq!(
+            v.segments[15].url,
+            "https://cdn.example/video/1080p/seg-00016.m4s"
+        );
         let a = a.unwrap();
         assert_eq!(a.segments.len(), 16); // 192000/48000 = 4 s per part
         assert_eq!(a.segments[0].url, "https://cdn.example/video/audio-1.m4s");
@@ -947,6 +1243,55 @@ mod tests {
           <Representation id="v" bandwidth="1"><SegmentTemplate media="s.m4s" duration="1"/></AdaptationSet>
         </Period></MPD>"#;
         assert!(parse("https://x.example/a.mpd", live).is_err());
+    }
+
+    #[test]
+    fn metadata_sums_periods_and_keeps_audio_separate() {
+        let m = r#"<MPD type="static" mediaPresentationDuration="PT2M">
+         <Period duration="PT1M"><AdaptationSet contentType="video">
+          <Representation id="v1" bandwidth="3000000" width="1920" height="1080" codecs="avc1.640028" frameRate="30"/>
+          <Representation id="v2" bandwidth="800000" width="640" height="360" codecs="avc1.42c01e"/>
+         </AdaptationSet><AdaptationSet contentType="audio">
+          <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2"/>
+         </AdaptationSet></Period>
+         <Period duration="PT1M"><AdaptationSet contentType="video">
+          <Representation id="v1" bandwidth="3000000" width="1920" height="1080" codecs="avc1.640028" frameRate="30000/1001"/>
+         </AdaptationSet><AdaptationSet contentType="audio">
+          <Representation id="a1" bandwidth="128000" codecs="mp4a.40.2"/>
+         </AdaptationSet></Period>
+        </MPD>"#;
+        let meta = parse_metadata(m).unwrap();
+        assert_eq!(meta.duration_secs, 120.0, "Period durations must be summed");
+        assert_eq!(meta.videos.len(), 2, "repeated Period quality deduped");
+        assert_eq!(meta.audios.len(), 1);
+        assert_eq!(meta.videos[0].frame_rate, Some(30.0));
+        assert_eq!(meta.audios[0].bandwidth, 128000);
+        assert!(meta.drm.is_none());
+    }
+
+    #[test]
+    fn metadata_reports_drm_uuids() {
+        let widevine = r#"<MPD type="static"><Period><AdaptationSet contentType="video">
+          <ContentProtection schemeIdUri="urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed"/>
+          <Representation id="v" bandwidth="1" width="640" height="360"/>
+        </AdaptationSet></Period></MPD>"#;
+        assert!(
+            drm_reason(widevine).is_some(),
+            "Widevine UUID must be detected"
+        );
+        assert!(parse_metadata(widevine).unwrap().drm.is_some());
+        let playready = r#"<MPD type="static"><Period><AdaptationSet contentType="video">
+          <ContentProtection schemeIdUri="urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95"/>
+          <Representation id="v" bandwidth="1" width="640" height="360"/>
+        </AdaptationSet></Period></MPD>"#;
+        assert!(
+            drm_reason(playready).is_some(),
+            "PlayReady UUID must be detected"
+        );
+        let clear = r#"<MPD type="static"><Period><AdaptationSet contentType="video">
+          <Representation id="v" bandwidth="1" width="640" height="360"/>
+        </AdaptationSet></Period></MPD>"#;
+        assert!(drm_reason(clear).is_none());
     }
 
     #[test]

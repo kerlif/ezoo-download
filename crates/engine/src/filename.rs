@@ -13,7 +13,9 @@ pub fn from_content_disposition(value: &str) -> Option<String> {
     let mut extended: Option<String> = None;
     for part in value.split(';') {
         let part = part.trim();
-        let Some((key, val)) = part.split_once('=') else { continue };
+        let Some((key, val)) = part.split_once('=') else {
+            continue;
+        };
         let key = key.trim().to_ascii_lowercase();
         let val = val.trim().trim_matches('"');
         if key == "filename*" {
@@ -48,6 +50,9 @@ pub fn from_url(u: &str) -> Option<String> {
 }
 
 /// Make a name valid on Windows (the strictest file system we target).
+/// Path separators are flattened, ".." sequences are removed (a name from
+/// a Content-Disposition header or a URL must never climb out of the
+/// download folder), and reserved names are prefixed.
 pub fn sanitize(name: &str) -> String {
     let mut out: String = name
         .chars()
@@ -57,7 +62,17 @@ pub fn sanitize(name: &str) -> String {
             c => c,
         })
         .collect();
-    // no trailing dots or spaces on Windows
+    // no trailing dots or spaces on Windows (".." alone strips to
+    // nothing here and becomes "download" below)
+    while out.ends_with('.') || out.ends_with(' ') {
+        out.pop();
+    }
+    // ".." must not survive: after the separators above are gone it can
+    // only appear inside the name itself (e.g. "../../etc/passwd").
+    // Single dots (".hidden", "a.tar.gz") are left alone.
+    while out.contains("..") {
+        out = out.replace("..", "_");
+    }
     while out.ends_with('.') || out.ends_with(' ') {
         out.pop();
     }
@@ -65,14 +80,10 @@ pub fn sanitize(name: &str) -> String {
     if out.is_empty() {
         return "download".into();
     }
-    let stem_upper = out
-        .split('.')
-        .next()
-        .unwrap_or("")
-        .to_ascii_uppercase();
+    let stem_upper = out.split('.').next().unwrap_or("").to_ascii_uppercase();
     const RESERVED: [&str; 22] = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
     let out = if RESERVED.contains(&stem_upper.as_str()) {
         format!("_{out}")
@@ -152,9 +163,7 @@ pub fn ensure_extension(name: String, content_type: Option<&str>) -> String {
 /// Pick a path in `dir` that is not taken yet by a finished file or a
 /// partial download: "file.zip", "file (1).zip", "file (2).zip", ...
 pub fn unique_name(dir: &Path, name: &str) -> String {
-    let taken = |n: &str| {
-        dir.join(n).exists() || dir.join(format!("{n}.{PART_EXT}")).exists()
-    };
+    let taken = |n: &str| dir.join(n).exists() || dir.join(format!("{n}.{PART_EXT}")).exists();
     if !taken(name) {
         return name.to_string();
     }
@@ -176,6 +185,34 @@ pub fn part_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{name}.{PART_EXT}"))
 }
 
+/// A file name resolved inside `dir`, guaranteed: the name is sanitized
+/// first (no separators, no "..", no reserved name), then the result is
+/// verified to still start with `dir`. A name that would escape the
+/// folder falls back to a plain "download" inside it.
+pub fn safe_join(dir: &Path, name: &str) -> PathBuf {
+    let name = sanitize(name);
+    let joined = dir.join(&name);
+    let mut dir_parts: Vec<_> = dir.components().collect();
+    while matches!(dir_parts.last(), Some(std::path::Component::CurDir)) {
+        dir_parts.pop();
+    }
+    let mut joined_parts: Vec<_> = joined.components().collect();
+    while matches!(joined_parts.last(), Some(std::path::Component::CurDir)) {
+        joined_parts.pop();
+    }
+    let inside = joined_parts.len() > dir_parts.len()
+        && joined_parts[..dir_parts.len()] == dir_parts[..]
+        && matches!(
+            joined_parts.get(dir_parts.len()),
+            Some(std::path::Component::Normal(_))
+        );
+    if inside {
+        joined
+    } else {
+        dir.join("download")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,8 +224,10 @@ mod tests {
             Some("report.pdf")
         );
         assert_eq!(
-            from_content_disposition("attachment; filename=a.zip; filename*=UTF-8''%D9%85%D9%84%D9%81.zip")
-                .as_deref(),
+            from_content_disposition(
+                "attachment; filename=a.zip; filename*=UTF-8''%D9%85%D9%84%D9%81.zip"
+            )
+            .as_deref(),
             Some("ملف.zip")
         );
         assert_eq!(from_content_disposition("inline"), None);
@@ -209,13 +248,53 @@ mod tests {
         assert_eq!(sanitize("CON.txt"), "_CON.txt");
         assert_eq!(sanitize("name. . "), "name");
         assert_eq!(sanitize(""), "download");
+        // ".." sequences are removed; ordinary single dots survive
+        assert_eq!(sanitize("a.tar.gz"), "a.tar.gz");
+        assert_eq!(sanitize(".hidden"), ".hidden");
+        assert_eq!(sanitize(".."), "download");
+        assert_eq!(sanitize("..."), "download");
+        assert_eq!(sanitize("a..b.zip"), "a_b.zip");
+    }
+
+    #[test]
+    fn traversal_names_stay_inside() {
+        // Content-Disposition / URL traversal attempts from the gate list
+        let dir = Path::new("/tmp/dl");
+        for raw in [
+            "../../etc/passwd",
+            "..\\..\\evil.exe",
+            "..%2f..%2fetc%2fpasswd",
+            "CON",
+            "LPT1.txt",
+            "a/b/c.zip",
+        ] {
+            let name = from_content_disposition(&format!("attachment; filename=\"{raw}\""))
+                .unwrap_or_else(|| raw.to_string());
+            let joined = safe_join(dir, &name);
+            assert!(joined.starts_with(dir), "{raw:?} escaped to {joined:?}");
+            assert!(
+                !joined.to_string_lossy().contains(".."),
+                "{raw:?} kept .. in {joined:?}"
+            );
+        }
+        assert_eq!(
+            safe_join(dir, "../../etc/passwd").file_name().unwrap(),
+            "____etc_passwd"
+        );
+        assert_eq!(safe_join(dir, "report.pdf"), dir.join("report.pdf"));
+        // a reserved name is prefixed, a very long name is truncated
+        assert_eq!(safe_join(dir, "CON.txt").file_name().unwrap(), "_CON.txt");
+        assert!(safe_join(dir, &"x".repeat(300)).file_name().unwrap().len() <= 180);
     }
 
     #[test]
     fn extensions() {
         assert_eq!(split_ext("a.tar.gz"), ("a.tar", "gz"));
         assert_eq!(split_ext(".hidden"), (".hidden", ""));
-        assert_eq!(ensure_extension("video".into(), Some("video/mp4; x=y")), "video.mp4");
+        assert_eq!(
+            ensure_extension("video".into(), Some("video/mp4; x=y")),
+            "video.mp4"
+        );
         assert_eq!(ensure_extension("a.bin".into(), Some("video/mp4")), "a.bin");
     }
 }

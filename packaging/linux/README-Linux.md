@@ -4,7 +4,7 @@
 
 **مدير تنزيلات مكتوب بلغة Rust** — يحلّل الملف على عدة اتصالات (حتى 32 اتصالًا)، ويستأنف التحميل بعد الانقطاع، وينزّل الفيديو والصوت عبر yt-dlp و FFmpeg، مع إضافات لكروم وفايرفوكس.
 
-**إصدار 1.0.7 — لينكس** · تطوير **Ahmed Ezzat** (المشروع الأصلي) · حزمة لينكس مع أيقونة Tray أصلية وشعار SVG احترافي
+**إصدار 1.1.0 — لينكس** · تطوير **Ahmed Ezzat** (المشروع الأصلي) · حزمة لينكس مع أيقونة Tray أصلية وشعار SVG احترافي
 
 ![Linux](https://img.shields.io/badge/Linux-KDE%20%7C%20GNOME%20%7C%20XFCE-2E7BF6?style=flat-square&logo=linux&logoColor=white)
 ![Rust](https://img.shields.io/badge/Made%20with-Rust-B7410E?style=flat-square&logo=rust&logoColor=white)
@@ -20,12 +20,12 @@
 
 | الملف | الوصف |
 |---|---|
-| `EzooDownload_1.0.7_amd64.deb` | حزمة Debian/Ubuntu/Mint ومشتقاتها |
-| `Ezoo-Download-1.0.7-x86_64.AppImage` | نسخة محمولة بملف واحد تعمل دون تثبيت |
-| `ezoo-download-1.0.7-1.x86_64.rpm` | حزمة Fedora/RHEL/openSUSE ومشتقاتها |
-| `ezoo-download-chrome-1.0.7.crx` | إضافة كروم (Chromium / Edge / Brave / Opera) |
-| `ezoo-download-chrome-1.0.7.zip` | الإضافة نفسها غير معبّأة (تُحمَّل يدويًا من `chrome://extensions`) |
-| `ezoo-download-firefox-1.0.7.xpi` | إضافة فايرفوكس |
+| `EzooDownload_1.1.0_amd64.deb` | حزمة Debian/Ubuntu/Mint ومشتقاتها |
+| `EzooDownload-1.1.0-x86_64.AppImage` | نسخة محمولة بملف واحد تعمل دون تثبيت |
+| `ezoo-download-1.1.0-1.x86_64.rpm` | حزمة Fedora/RHEL/openSUSE ومشتقاتها |
+| `ezoo-download-chrome-1.1.0.crx` | إضافة كروم (Chromium / Edge / Brave / Opera) |
+| `ezoo-download-chrome-1.1.0.zip` | الإضافة نفسها غير معبّأة (تُحمَّل يدويًا من `chrome://extensions`) |
+| `ezoo-download-firefox-1.1.0.xpi` | إضافة فايرفوكس |
 | `screenshots/` | لقطات شاشة للبرنامج بحلته الجديدة على لينكس |
 | `SHA256SUMS.txt` | بصمات التحقق من سلامة الملفات |
 
@@ -59,7 +59,7 @@
 ### ١) نسخة deb — التثبيت الكامل (مستحسن)
 
 ```bash
-sudo dpkg -i EzooDownload_1.0.7_amd64.deb
+sudo dpkg -i EzooDownload_1.1.0_amd64.deb
 # أو إذا ظهرت رسالة نواقص في التبعيات:
 sudo apt-get install -f
 ```
@@ -84,22 +84,22 @@ sudo apt-get install -f
 ### ٢) نسخة AppImage — محمولة دون تثبيت
 
 ```bash
-chmod +x Ezoo-Download-1.0.7-x86_64.AppImage
-./Ezoo-Download-1.0.7-x86_64.AppImage
+chmod +x EzooDownload-1.1.0-x86_64.AppImage
+./EzooDownload-1.1.0-x86_64.AppImage
 ```
 
 - إذا لم تعمل مباشرة فنظامك ينقصه مكوّن FUSE: ثبّته مرة واحدة `sudo apt install libfuse2`، أو شغّل النسخة بفكّها:
 
 ```bash
-./Ezoo-Download-1.0.7-x86_64.AppImage --appimage-extract
+./EzooDownload-1.1.0-x86_64.AppImage --appimage-extract
 ./squashfs-root/AppRun
 ```
 
 ### ٣) نسخة rpm — Fedora / RHEL / openSUSE
 
 ```bash
-sudo rpm -i ezoo-download-1.0.7-1.x86_64.rpm
-# أو: sudo dnf install ./ezoo-download-1.0.7-1.x86_64.rpm
+sudo rpm -i ezoo-download-1.1.0-1.x86_64.rpm
+# أو: sudo dnf install ./ezoo-download-1.1.0-1.x86_64.rpm
 ```
 
 نفس محتويات نسخة deb (البرنامج في `/usr/bin/EzooDownload` وffmpeg المدمج في `/usr/lib/ezoo-download/`).

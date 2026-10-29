@@ -1,9 +1,9 @@
 Package: ezoo-download
-Version: 1.0.7
+Version: 1.1.0
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: libc6 (>= 2.34), libssl3 (>= 3.0.0), libfontconfig1, libfreetype6, libxkbcommon0, libx11-6, libxcb1, libgcc-s1, zlib1g
+Depends: libc6 (>= 2.34), libssl3 (>= 3.0.0), libfontconfig1, libfreetype6, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libxcb1, libgcc-s1, zlib1g
 Recommends: xdg-desktop-portal, libayatana-appindicator3-1
 Installed-Size: 1
 Maintainer: Ahmed Ezzat <ezoo@ezoo-tech.com>

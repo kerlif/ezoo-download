@@ -28,6 +28,12 @@ pub struct YtOption {
     pub audio_url: Option<String>,
     pub ext: String,
     pub size: u64,
+    /// Where `size` came from, shown in the browser panel: "filesize"
+    /// (exact), "filesize_approx" (an estimate), "estimated" (computed
+    /// here, e.g. the MP3 conversion), or "" (unknown). Only ever set
+    /// from a yt-dlp run the user asked for; probing never runs yt-dlp.
+    #[serde(rename = "sizeSource")]
+    pub size_source: String,
     /// headers these links need (mostly the User-Agent and Referer)
     pub headers: Vec<(String, String)>,
     /// plain words for the resolution: "SD", "HD", "Full HD", "2K", "4K", "8K"
@@ -77,6 +83,8 @@ struct Fmt {
     height: u64,
     fps: u64,
     size: u64,
+    /// "filesize" or "filesize_approx": which field supplied `size`.
+    size_source: &'static str,
     abr: f64,
     tbr: f64,
     note: String,
@@ -130,7 +138,8 @@ impl Fmt {
 }
 
 fn as_u64(v: &Value) -> Option<u64> {
-    v.as_u64().or_else(|| v.as_f64().map(|f| f.max(0.0).round() as u64))
+    v.as_u64()
+        .or_else(|| v.as_f64().map(|f| f.max(0.0).round() as u64))
 }
 
 fn codec(v: &Value) -> String {
@@ -171,9 +180,24 @@ fn parse_one(f: &Value) -> Option<Fmt> {
         acodec: codec(&f["acodec"]),
         height: as_u64(&f["height"]).unwrap_or(0),
         fps: as_u64(&f["fps"]).unwrap_or(0),
-        size: as_u64(&f["filesize"]).or_else(|| as_u64(&f["filesize_approx"])).unwrap_or(0),
-        abr: f["abr"].as_f64().or_else(|| f["tbr"].as_f64()).unwrap_or(0.0),
-        tbr: f["tbr"].as_f64().or_else(|| f["vbr"].as_f64()).unwrap_or(0.0),
+        size: as_u64(&f["filesize"])
+            .or_else(|| as_u64(&f["filesize_approx"]))
+            .unwrap_or(0),
+        size_source: if f["filesize"].is_number() {
+            "filesize"
+        } else if f["filesize_approx"].is_number() {
+            "filesize_approx"
+        } else {
+            ""
+        },
+        abr: f["abr"]
+            .as_f64()
+            .or_else(|| f["tbr"].as_f64())
+            .unwrap_or(0.0),
+        tbr: f["tbr"]
+            .as_f64()
+            .or_else(|| f["vbr"].as_f64())
+            .unwrap_or(0.0),
         note: f["format_note"].as_str().unwrap_or("").to_string(),
         hls,
         headers: headers_of(f),
@@ -214,10 +238,10 @@ fn parse_formats(info: &Value) -> Vec<Fmt> {
 /// Posts with several videos (playlists, carousels): use the first video.
 fn main_entry(info: &Value) -> &Value {
     if info["_type"].as_str() == Some("playlist") {
-        if let Some(entry) = info["entries"]
-            .as_array()
-            .and_then(|e| e.iter().find(|x| x["formats"].is_array() || x["url"].is_string()))
-        {
+        if let Some(entry) = info["entries"].as_array().and_then(|e| {
+            e.iter()
+                .find(|x| x["formats"].is_array() || x["url"].is_string())
+        }) {
             return entry;
         }
     }
@@ -293,15 +317,20 @@ pub fn build_options(full: &Value) -> YtInfo {
         .collect();
     // the original language first, then the best quality
     audios.sort_by(|a, b| {
-        b.audio_rank
-            .cmp(&a.audio_rank)
-            .then(b.abr.partial_cmp(&a.abr).unwrap_or(std::cmp::Ordering::Equal))
+        b.audio_rank.cmp(&a.audio_rank).then(
+            b.abr
+                .partial_cmp(&a.abr)
+                .unwrap_or(std::cmp::Ordering::Equal),
+        )
     });
     let best_audio = |container: &str| -> Option<&Fmt> {
-        audios
-            .iter()
-            .copied()
-            .find(|a| if container == "webm" { a.ext == "webm" } else { a.ext == "m4a" || a.ext == "mp4" })
+        audios.iter().copied().find(|a| {
+            if container == "webm" {
+                a.ext == "webm"
+            } else {
+                a.ext == "m4a" || a.ext == "mp4"
+            }
+        })
     };
 
     let mut videos: Vec<&Fmt> = formats.iter().filter(|f| f.has_video()).collect();
@@ -335,6 +364,7 @@ pub fn build_options(full: &Value) -> YtInfo {
                 audio_url: None,
                 ext: ext.into(),
                 size: v.size,
+                size_source: v.size_source.into(),
                 headers: v.headers.clone(),
                 tag: quality_tag(v.height).into(),
                 codec: v.codec_name().into(),
@@ -349,7 +379,11 @@ pub fn build_options(full: &Value) -> YtInfo {
         // AV1 is its own choice next to H.264: the same picture in a much
         // smaller file (newer players and computers)
         let av1 = v.codec_name() == "AV1" && container == "mp4";
-        let key = format!("{q}|{}{}", container.to_uppercase(), if av1 { " AV1" } else { "" });
+        let key = format!(
+            "{q}|{}{}",
+            container.to_uppercase(),
+            if av1 { " AV1" } else { "" }
+        );
         if !seen.insert(key.clone()) {
             continue; // already have this resolution in this container (better codec)
         }
@@ -360,9 +394,27 @@ pub fn build_options(full: &Value) -> YtInfo {
                 None => continue,
             },
         };
-        let size = if v.size > 0 && audio.size > 0 { v.size + audio.size } else { 0 };
+        let size = if v.size > 0 && audio.size > 0 {
+            v.size + audio.size
+        } else {
+            0
+        };
+        let size_source = if size == 0 {
+            ""
+        } else if v.size_source == "filesize_approx" || audio.size_source == "filesize_approx" {
+            "filesize_approx"
+        } else if v.size_source == "filesize" && audio.size_source == "filesize" {
+            "filesize"
+        } else {
+            ""
+        };
         options.push(YtOption {
-            label: format!("{} · {}{}", with_tag(&q, v.height), ext.to_uppercase(), v.codec_tag()),
+            label: format!(
+                "{} · {}{}",
+                with_tag(&q, v.height),
+                ext.to_uppercase(),
+                v.codec_tag()
+            ),
             sub: fmt_size(size),
             key,
             quality: q,
@@ -370,6 +422,7 @@ pub fn build_options(full: &Value) -> YtInfo {
             audio_url: Some(audio.url.clone()),
             ext,
             size,
+            size_source: size_source.into(),
             headers: v.headers.clone(),
             tag: quality_tag(v.height).into(),
             codec: v.codec_name().into(),
@@ -378,7 +431,13 @@ pub fn build_options(full: &Value) -> YtInfo {
         });
     }
     if let Some(a) = best_audio("mp4").or_else(|| audios.first().copied()) {
-        let ext = if a.ext == "webm" { "webm" } else if a.ext == "mp3" { "mp3" } else { "m4a" };
+        let ext = if a.ext == "webm" {
+            "webm"
+        } else if a.ext == "mp3" {
+            "mp3"
+        } else {
+            "m4a"
+        };
         let kbps = a.abr.round() as u64;
         options.push(YtOption {
             key: format!("audio|{}", ext.to_uppercase()),
@@ -393,6 +452,7 @@ pub fn build_options(full: &Value) -> YtInfo {
             audio_url: None,
             ext: ext.into(),
             size: a.size,
+            size_source: a.size_source.into(),
             headers: a.headers.clone(),
             tag: String::new(),
             codec: String::new(),
@@ -402,7 +462,11 @@ pub fn build_options(full: &Value) -> YtInfo {
         if ext != "mp3" {
             // the same sound, turned into an MP3 file after the download
             // (plays on every phone, car radio and old player)
-            let mp3_size = if duration > 0 { duration * MP3_KBPS * 1000 / 8 } else { 0 };
+            let mp3_size = if duration > 0 {
+                duration * MP3_KBPS * 1000 / 8
+            } else {
+                0
+            };
             options.push(YtOption {
                 key: MP3_KEY.into(),
                 label: format!("Audio · MP3 {MP3_KBPS}k"),
@@ -412,6 +476,7 @@ pub fn build_options(full: &Value) -> YtInfo {
                 audio_url: None,
                 ext: "mp3".into(),
                 size: mp3_size,
+                size_source: "estimated".into(),
                 headers: a.headers.clone(),
                 tag: String::new(),
                 codec: String::new(),
@@ -420,7 +485,11 @@ pub fn build_options(full: &Value) -> YtInfo {
             });
         }
     }
-    YtInfo { title, site, options }
+    YtInfo {
+        title,
+        site,
+        options,
+    }
 }
 
 /// Use the headers yt-dlp asked for when downloading the links.
@@ -431,7 +500,11 @@ pub fn apply_headers(target: &mut RequestHeaders, headers: &[(String, String)]) 
             target.user_agent = Some(v.clone());
         } else if lower == "referer" {
             target.referer = Some(v.clone());
-        } else if lower == "accept" || lower == "accept-encoding" || lower == "cookie" || lower == "range" {
+        } else if lower == "accept"
+            || lower == "accept-encoding"
+            || lower == "cookie"
+            || lower == "range"
+        {
             // we set these ourselves
         } else {
             target.extra.retain(|(ek, _)| !ek.eq_ignore_ascii_case(k));
@@ -444,11 +517,22 @@ pub fn apply_headers(target: &mut RequestHeaders, headers: &[(String, String)]) 
 pub fn netscape_cookies(cookies: &[BrowserCookie]) -> String {
     let mut out = String::from("# Netscape HTTP Cookie File\n");
     for c in cookies {
-        if c.name.is_empty() || c.domain.is_empty() || c.name.contains(['\t', '\n']) || c.value.contains(['\t', '\n']) {
+        if c.name.is_empty()
+            || c.domain.is_empty()
+            || c.name.contains(['\t', '\n'])
+            || c.value.contains(['\t', '\n'])
+        {
             continue;
         }
-        let sub = if c.domain.starts_with('.') { "TRUE" } else { "FALSE" };
-        let expires = c.expiration_date.map(|e| e.max(0.0) as u64).unwrap_or(2_147_483_647);
+        let sub = if c.domain.starts_with('.') {
+            "TRUE"
+        } else {
+            "FALSE"
+        };
+        let expires = c
+            .expiration_date
+            .map(|e| e.max(0.0) as u64)
+            .unwrap_or(2_147_483_647);
         out.push_str(&format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             c.domain,
@@ -466,11 +550,24 @@ pub fn netscape_cookies(cookies: &[BrowserCookie]) -> String {
 /// The arguments for looking at one page. `--ignore-config`: settings files
 /// of yt-dlp on the computer (which could add `--exec` and the like) are not
 /// read; `--`: the address can never be taken for an option.
-fn resolve_args(page_url: &str, cookie_file: Option<&Path>, referer: Option<&str>) -> Vec<std::ffi::OsString> {
-    let mut a: Vec<std::ffi::OsString> = ["--ignore-config", "-J", "--no-playlist", "--no-warnings", "--no-progress", "--no-cache-dir", "--socket-timeout", "20"]
-        .iter()
-        .map(Into::into)
-        .collect();
+fn resolve_args(
+    page_url: &str,
+    cookie_file: Option<&Path>,
+    referer: Option<&str>,
+) -> Vec<std::ffi::OsString> {
+    let mut a: Vec<std::ffi::OsString> = [
+        "--ignore-config",
+        "-J",
+        "--no-playlist",
+        "--no-warnings",
+        "--no-progress",
+        "--no-cache-dir",
+        "--socket-timeout",
+        "20",
+    ]
+    .iter()
+    .map(Into::into)
+    .collect();
     if let Some(c) = cookie_file {
         a.push("--cookies".into());
         a.push(c.into());
@@ -486,10 +583,19 @@ fn resolve_args(page_url: &str, cookie_file: Option<&Path>, referer: Option<&str
 }
 
 fn playlist_args(url: &str, cookie_file: Option<&Path>) -> Vec<std::ffi::OsString> {
-    let mut a: Vec<std::ffi::OsString> = ["--ignore-config", "-J", "--flat-playlist", "--yes-playlist", "--no-warnings", "--no-cache-dir", "--socket-timeout", "20"]
-        .iter()
-        .map(Into::into)
-        .collect();
+    let mut a: Vec<std::ffi::OsString> = [
+        "--ignore-config",
+        "-J",
+        "--flat-playlist",
+        "--yes-playlist",
+        "--no-warnings",
+        "--no-cache-dir",
+        "--socket-timeout",
+        "20",
+    ]
+    .iter()
+    .map(Into::into)
+    .collect();
     if let Some(c) = cookie_file {
         a.push("--cookies".into());
         a.push(c.into());
@@ -503,12 +609,22 @@ fn playlist_args(url: &str, cookie_file: Option<&Path>) -> Vec<std::ffi::OsStrin
 fn cookie_file(cookies: &[BrowserCookie]) -> anyhow::Result<std::path::PathBuf> {
     use std::io::Write;
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     for _ in 0..5 {
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let base = crate::tools::work_dir().unwrap_or_else(std::env::temp_dir);
-        let path = base.join(format!("ezoo-cookies-{}-{nanos:x}-{n}.txt", std::process::id()));
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        let path = base.join(format!(
+            "ezoo-cookies-{}-{nanos:x}-{n}.txt",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(mut f) => {
                 f.write_all(netscape_cookies(cookies).as_bytes())?;
                 return Ok(path);
@@ -532,7 +648,12 @@ fn ytdlp_command(tool: &Path) -> Command {
     cmd
 }
 
-fn run_ytdlp(tool: &Path, page_url: &str, cookie_file: Option<&Path>, referer: Option<&str>) -> anyhow::Result<Value> {
+fn run_ytdlp(
+    tool: &Path,
+    page_url: &str,
+    cookie_file: Option<&Path>,
+    referer: Option<&str>,
+) -> anyhow::Result<Value> {
     let mut cmd = ytdlp_command(tool);
     cmd.args(resolve_args(page_url, cookie_file, referer));
     let out = cmd.output().context("could not start yt-dlp")?;
@@ -555,21 +676,42 @@ fn run_ytdlp(tool: &Path, page_url: &str, cookie_file: Option<&Path>, referer: O
 
 fn needs_login(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
-    ["sign in", "log in", "login", "cookies", "age", "bot", "private", "registered users", "rate-limit", "empty media"]
-        .iter()
-        .any(|k| m.contains(k))
+    [
+        "sign in",
+        "log in",
+        "login",
+        "cookies",
+        "age",
+        "bot",
+        "private",
+        "registered users",
+        "rate-limit",
+        "empty media",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
 }
 
 /// The site part of an address that cookies belong to ("www.youtube.com",
 /// "m.youtube.com" and "youtu.be" are all "youtube.com").
 fn site_of(url: &str) -> String {
-    let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).unwrap_or_default();
+    let host = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        .unwrap_or_default();
     if host == "youtu.be" || host.ends_with(".youtu.be") {
         return "youtube.com".into();
     }
     let parts: Vec<&str> = host.trim_end_matches('.').split('.').collect();
     // co.uk, com.eg, ...: keep three labels
-    let keep = if parts.len() >= 3 && parts[parts.len() - 2].len() <= 3 && parts[parts.len() - 1].len() == 2 { 3 } else { 2 };
+    let keep = if parts.len() >= 3
+        && parts[parts.len() - 2].len() <= 3
+        && parts[parts.len() - 1].len() == 2
+    {
+        3
+    } else {
+        2
+    };
     parts[parts.len().saturating_sub(keep)..].join(".")
 }
 
@@ -606,9 +748,20 @@ pub fn remembered_cookies(page_url: &str) -> Option<Vec<BrowserCookie>> {
 /// Clearly a login or age wall (not just any error with "age" in it).
 fn login_wall(msg: &str) -> bool {
     let m = msg.to_ascii_lowercase();
-    ["sign in", "log in", "login", "age-restricted", "age restricted", "confirm your age", "inappropriate for some users", "registered users", "private video", "cookies"]
-        .iter()
-        .any(|k| m.contains(k))
+    [
+        "sign in",
+        "log in",
+        "login",
+        "age-restricted",
+        "age restricted",
+        "confirm your age",
+        "inappropriate for some users",
+        "registered users",
+        "private video",
+        "cookies",
+    ]
+    .iter()
+    .any(|k| m.contains(k))
 }
 
 /// The error shown when a video needs a login or an age check and no
@@ -626,14 +779,26 @@ fn with_cookies<T>(
     match run(None) {
         Ok(v) => Ok(v),
         Err(e) if needs_login(&e.to_string()) => {
-            let list = cookies.map(<[BrowserCookie]>::to_vec).or_else(|| remembered_cookies(page_url));
+            let list = cookies
+                .map(<[BrowserCookie]>::to_vec)
+                .or_else(|| remembered_cookies(page_url));
             let Some(list) = list.filter(|c| !c.is_empty()) else {
-                return Err(if login_wall(&e.to_string()) { e.context(LOGIN_NEEDED) } else { e });
+                return Err(if login_wall(&e.to_string()) {
+                    e.context(LOGIN_NEEDED)
+                } else {
+                    e
+                });
             };
             let file = cookie_file(&list)?;
             let r = run(Some(&file));
             let _ = std::fs::remove_file(&file);
-            r.map_err(|e2| if login_wall(&e2.to_string()) { e2.context(LOGIN_NEEDED) } else { e2 })
+            r.map_err(|e2| {
+                if login_wall(&e2.to_string()) {
+                    e2.context(LOGIN_NEEDED)
+                } else {
+                    e2
+                }
+            })
         }
         Err(e) => Err(e),
     }
@@ -649,7 +814,11 @@ pub fn resolve(page_url: &str, cookies: Option<&[BrowserCookie]>) -> anyhow::Res
 }
 
 /// The same, for a stream found on a page (`referer`: that page).
-pub fn resolve_for(page_url: &str, cookies: Option<&[BrowserCookie]>, referer: Option<&str>) -> anyhow::Result<YtInfo> {
+pub fn resolve_for(
+    page_url: &str,
+    cookies: Option<&[BrowserCookie]>,
+    referer: Option<&str>,
+) -> anyhow::Result<YtInfo> {
     // the same page again within a few minutes (the add-in asks again when
     // the tab comes back, a playlist video is picked): no new yt-dlp run,
     // which takes seconds and much memory
@@ -662,19 +831,26 @@ pub fn resolve_for(page_url: &str, cookies: Option<&[BrowserCookie]>, referer: O
 }
 
 /// Results of the last minutes (the links in them stay good for hours).
-static RESULTS: std::sync::Mutex<Vec<(String, std::time::Instant, YtInfo)>> = std::sync::Mutex::new(Vec::new());
+static RESULTS: std::sync::Mutex<Vec<(String, std::time::Instant, YtInfo)>> =
+    std::sync::Mutex::new(Vec::new());
 const KEEP_RESULTS: Duration = Duration::from_secs(10 * 60);
 
 fn cached(page_url: &str) -> Option<YtInfo> {
     let mut list = RESULTS.lock().unwrap_or_else(|p| p.into_inner());
     list.retain(|(_, at, _)| at.elapsed() < KEEP_RESULTS);
-    list.iter().find(|(u, _, _)| u == page_url).map(|(_, _, i)| i.clone())
+    list.iter()
+        .find(|(u, _, _)| u == page_url)
+        .map(|(_, _, i)| i.clone())
 }
 
 fn remember(page_url: &str, info: &YtInfo) {
     let mut list = RESULTS.lock().unwrap_or_else(|p| p.into_inner());
     list.retain(|(u, _, _)| u != page_url);
-    list.push((page_url.to_string(), std::time::Instant::now(), info.clone()));
+    list.push((
+        page_url.to_string(),
+        std::time::Instant::now(),
+        info.clone(),
+    ));
     if list.len() > 30 {
         list.remove(0);
     }
@@ -682,14 +858,23 @@ fn remember(page_url: &str, info: &YtInfo) {
 
 /// Forget a page's result: its links stopped working (fresh ones wanted).
 pub fn forget(page_url: &str) {
-    RESULTS.lock().unwrap_or_else(|p| p.into_inner()).retain(|(u, _, _)| u != page_url);
+    RESULTS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .retain(|(u, _, _)| u != page_url);
 }
 
-fn resolve_now(page_url: &str, cookies: Option<&[BrowserCookie]>, referer: Option<&str>) -> anyhow::Result<YtInfo> {
+fn resolve_now(
+    page_url: &str,
+    cookies: Option<&[BrowserCookie]>,
+    referer: Option<&str>,
+) -> anyhow::Result<YtInfo> {
     let tool = find_tool("yt-dlp")
         .ok_or_else(|| anyhow!("yt-dlp.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again"))?;
     let cookies = cookies.filter(|c| !c.is_empty());
-    let json = with_cookies(page_url, cookies, |file| run_ytdlp(&tool, page_url, file, referer))?;
+    let json = with_cookies(page_url, cookies, |file| {
+        run_ytdlp(&tool, page_url, file, referer)
+    })?;
     let info = build_options(&json);
     if info.options.is_empty() {
         bail!("no downloadable video was found on this page");
@@ -702,7 +887,10 @@ pub fn resolve_key(page_url: &str, key: &str) -> anyhow::Result<YtOption> {
     forget(page_url);
     let options = resolve(page_url, None)?.options;
     // a choice saved by an older version: "2160p|MP4" may now be "2160p|MP4 AV1"
-    let alt = key.strip_suffix(" AV1").map(String::from).unwrap_or_else(|| format!("{key} AV1"));
+    let alt = key
+        .strip_suffix(" AV1")
+        .map(String::from)
+        .unwrap_or_else(|| format!("{key} AV1"));
     options
         .iter()
         .find(|o| o.key == key)
@@ -729,14 +917,19 @@ pub struct PlaylistInfo {
 /// The videos of a playlist (or channel page), without looking at each
 /// video yet (`--flat-playlist`, fast). Blocking.
 pub fn playlist(url: &str) -> anyhow::Result<PlaylistInfo> {
-    let tool = find_tool("yt-dlp").ok_or_else(|| anyhow!("yt-dlp.exe was not found next to EzooDownload.exe"))?;
+    let tool = find_tool("yt-dlp")
+        .ok_or_else(|| anyhow!("yt-dlp.exe was not found next to EzooDownload.exe"))?;
     let json = with_cookies(url, None, |file| {
         let mut cmd = ytdlp_command(&tool);
         cmd.args(playlist_args(url, file));
         let out = cmd.output().context("could not start yt-dlp")?;
         if !out.status.success() {
             let err = String::from_utf8_lossy(&out.stderr);
-            let line = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("unknown error");
+            let line = err
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("unknown error");
             bail!("{}", line.trim().trim_start_matches("ERROR:").trim());
         }
         serde_json::from_slice::<Value>(&out.stdout).context("yt-dlp returned something unexpected")
@@ -750,7 +943,10 @@ pub fn parse_playlist(json: &Value) -> PlaylistInfo {
     let list = json["entries"].as_array().cloned().unwrap_or_default();
     if list.is_empty() && json["_type"].as_str() != Some("playlist") {
         // a single video
-        if let Some(u) = json["webpage_url"].as_str().or_else(|| json["original_url"].as_str()) {
+        if let Some(u) = json["webpage_url"]
+            .as_str()
+            .or_else(|| json["original_url"].as_str())
+        {
             entries.push(PlaylistEntry {
                 title: title.clone(),
                 url: u.to_string(),
@@ -764,21 +960,33 @@ pub fn parse_playlist(json: &Value) -> PlaylistInfo {
             .filter(|u| u.starts_with("http"))
             .map(String::from)
             .or_else(|| e["webpage_url"].as_str().map(String::from))
-            .or_else(|| e["id"].as_str().map(|id| format!("https://www.youtube.com/watch?v={id}")));
+            .or_else(|| {
+                e["id"]
+                    .as_str()
+                    .map(|id| format!("https://www.youtube.com/watch?v={id}"))
+            });
         let Some(url) = url else { continue };
         let t = e["title"].as_str().unwrap_or("video");
         // deleted / private videos
         if t == "[Deleted video]" || t == "[Private video]" {
             continue;
         }
-        entries.push(PlaylistEntry { title: t.to_string(), url, duration: as_u64(&e["duration"]).unwrap_or(0) });
+        entries.push(PlaylistEntry {
+            title: t.to_string(),
+            url,
+            duration: as_u64(&e["duration"]).unwrap_or(0),
+        });
     }
     PlaylistInfo { title, entries }
 }
 
 /// Height of a choice ("1080p60" -> 1080; audio / unknown -> 0).
 fn height_of(o: &YtOption) -> u64 {
-    o.quality.split('p').next().and_then(|n| n.parse().ok()).unwrap_or(0)
+    o.quality
+        .split('p')
+        .next()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(0)
 }
 
 /// Pick a choice by a wanted quality: "best", "audio" or a height like
@@ -788,32 +996,60 @@ pub fn pick_option(options: &[YtOption], wanted: &str) -> Option<YtOption> {
         return options.iter().find(|o| o.key == MP3_KEY).cloned();
     }
     if wanted == "audio" {
-        return options.iter().find(|o| o.key.starts_with("audio|") && o.key != MP3_KEY).cloned();
+        return options
+            .iter()
+            .find(|o| o.key.starts_with("audio|") && o.key != MP3_KEY)
+            .cloned();
     }
-    let videos: Vec<&YtOption> = options.iter().filter(|o| !o.key.starts_with("audio|")).collect();
+    let videos: Vec<&YtOption> = options
+        .iter()
+        .filter(|o| !o.key.starts_with("audio|"))
+        .collect();
     if videos.is_empty() {
         return options.first().cloned();
     }
     let limit: u64 = wanted.parse().unwrap_or(u64::MAX);
-    let fits: Vec<&YtOption> = videos.iter().copied().filter(|o| height_of(o) <= limit).collect();
+    let fits: Vec<&YtOption> = videos
+        .iter()
+        .copied()
+        .filter(|o| height_of(o) <= limit)
+        .collect();
     let pool = if fits.is_empty() {
         let low = videos.iter().map(|o| height_of(o)).min().unwrap_or(0);
-        videos.iter().copied().filter(|o| height_of(o) == low).collect::<Vec<_>>()
+        videos
+            .iter()
+            .copied()
+            .filter(|o| height_of(o) == low)
+            .collect::<Vec<_>>()
     } else {
         let top = fits.iter().map(|o| height_of(o)).max().unwrap_or(0);
         fits.into_iter().filter(|o| height_of(o) == top).collect()
     };
-    pool.iter().find(|o| o.ext == "mp4").or(pool.first()).map(|o| (*o).clone())
+    pool.iter()
+        .find(|o| o.ext == "mp4")
+        .or(pool.first())
+        .map(|o| (*o).clone())
 }
 
 /// Update yt-dlp right now ("Help > Update video downloader"). Blocking.
 pub fn update_now() -> anyhow::Result<String> {
-    let tool = find_tool("yt-dlp").ok_or_else(|| anyhow!("yt-dlp.exe was not found next to EzooDownload.exe"))?;
+    let tool = find_tool("yt-dlp")
+        .ok_or_else(|| anyhow!("yt-dlp.exe was not found next to EzooDownload.exe"))?;
     let mut cmd = ytdlp_command(&tool);
     cmd.args(["--ignore-config", "-U"]);
     let out = cmd.output().context("could not start yt-dlp")?;
-    let text = format!("{}\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-    let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("done").trim().to_string();
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let last = text
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("done")
+        .trim()
+        .to_string();
     if out.status.success() {
         Ok(last)
     } else {
@@ -835,7 +1071,9 @@ pub fn update_if_due(data_dir: &Path) {
     if !due {
         return;
     }
-    let Some(tool) = find_tool("yt-dlp") else { return };
+    let Some(tool) = find_tool("yt-dlp") else {
+        return;
+    };
     if !tool.is_absolute() {
         return; // installed elsewhere (e.g. winget): leave updates to that
     }
@@ -885,9 +1123,17 @@ mod tests {
             ]
         });
         let r = build_options(&info);
-        let best = r.options.iter().find(|o| o.key.starts_with("1080p")).unwrap();
+        let best = r
+            .options
+            .iter()
+            .find(|o| o.key.starts_with("1080p"))
+            .unwrap();
         assert_eq!(best.audio_url.as_deref(), Some("https://gv/ar"));
-        let audio = r.options.iter().find(|o| o.key.starts_with("audio|")).unwrap();
+        let audio = r
+            .options
+            .iter()
+            .find(|o| o.key.starts_with("audio|"))
+            .unwrap();
         assert_eq!(audio.video_url, "https://gv/ar");
     }
 
@@ -897,7 +1143,19 @@ mod tests {
         assert_eq!(info.title, "Cool video");
         assert_eq!(info.site, "Youtube");
         let keys: Vec<&str> = info.options.iter().map(|o| o.key.as_str()).collect();
-        assert_eq!(keys, ["1080p60|WEBM", "1080p|MP4", "1080p|WEBM", "1080p|MP4 AV1", "720p|MP4", "360p|MP4+A", "audio|M4A", "audio|MP3"]);
+        assert_eq!(
+            keys,
+            [
+                "1080p60|WEBM",
+                "1080p|MP4",
+                "1080p|WEBM",
+                "1080p|MP4 AV1",
+                "720p|MP4",
+                "360p|MP4+A",
+                "audio|M4A",
+                "audio|MP3"
+            ]
+        );
         let mp4 = &info.options[1];
         assert_eq!(mp4.video_url, "https://gv/137");
         assert_eq!(mp4.audio_url.as_deref(), Some("https://gv/140"));
@@ -919,7 +1177,10 @@ mod tests {
         // a playlist asking for 1080: the H.264 one (plays everywhere)
         assert_eq!(pick_option(&info.options, "1080").unwrap().key, "1080p|MP4");
         assert_eq!(pick_option(&info.options, "mp3").unwrap().key, MP3_KEY);
-        assert_eq!(pick_option(&info.options, "audio").unwrap().key, "audio|M4A");
+        assert_eq!(
+            pick_option(&info.options, "audio").unwrap().key,
+            "audio|M4A"
+        );
     }
 
     #[test]
@@ -957,7 +1218,8 @@ mod tests {
 
     #[test]
     fn single_file_and_playlist() {
-        let single = json!({"title": "Clip", "url": "https://x/v.mp4", "ext": "mp4", "protocol": "https"});
+        let single =
+            json!({"title": "Clip", "url": "https://x/v.mp4", "ext": "mp4", "protocol": "https"});
         assert_eq!(build_options(&single).options.len(), 1);
         let post = json!({"_type": "playlist", "title": "Post", "entries": [
             {"title": "Video 1", "formats": [{"url": "https://x/1.mp4", "ext": "mp4", "protocol": "https", "height": 640}]}
@@ -1000,14 +1262,28 @@ mod tests {
 
     #[test]
     fn yt_dlp_settings_files_and_options_are_never_used() {
-        let a: Vec<String> = resolve_args("-x --exec calc", Some(Path::new("c.txt")), Some("-o x")).iter().map(|x| x.to_string_lossy().into_owned()).collect();
+        let a: Vec<String> = resolve_args("-x --exec calc", Some(Path::new("c.txt")), Some("-o x"))
+            .iter()
+            .map(|x| x.to_string_lossy().into_owned())
+            .collect();
         assert_eq!(a[0], "--ignore-config");
         // the address comes after "--": yt-dlp can't read it as an option
         assert_eq!(&a[a.len() - 2..], ["--", "-x --exec calc"]);
-        assert!(!a.iter().any(|x| x == "--referer"), "only a web address is a referer");
-        let r: Vec<String> = resolve_args("https://cdn/x.mpd", None, Some("https://site/page")).iter().map(|x| x.to_string_lossy().into_owned()).collect();
-        assert!(r.windows(2).any(|w| w[0] == "--referer" && w[1] == "https://site/page"));
-        let p: Vec<String> = playlist_args("-o x", None).iter().map(|x| x.to_string_lossy().into_owned()).collect();
+        assert!(
+            !a.iter().any(|x| x == "--referer"),
+            "only a web address is a referer"
+        );
+        let r: Vec<String> = resolve_args("https://cdn/x.mpd", None, Some("https://site/page"))
+            .iter()
+            .map(|x| x.to_string_lossy().into_owned())
+            .collect();
+        assert!(r
+            .windows(2)
+            .any(|w| w[0] == "--referer" && w[1] == "https://site/page"));
+        let p: Vec<String> = playlist_args("-o x", None)
+            .iter()
+            .map(|x| x.to_string_lossy().into_owned())
+            .collect();
         assert_eq!(p[0], "--ignore-config");
         assert_eq!(&p[p.len() - 2..], ["--", "-o x"]);
     }
@@ -1027,9 +1303,14 @@ mod tests {
             expiration_date: None,
         };
         remember_cookies("https://www.youtube.com/watch?v=a", &[c]);
-        assert_eq!(remembered_cookies("https://youtu.be/b").unwrap()[0].name, "SID");
+        assert_eq!(
+            remembered_cookies("https://youtu.be/b").unwrap()[0].name,
+            "SID"
+        );
         assert!(remembered_cookies("https://vimeo.com/1").is_none());
-        assert!(login_wall("Sign in to confirm your age. This video may be inappropriate for some users."));
+        assert!(login_wall(
+            "Sign in to confirm your age. This video may be inappropriate for some users."
+        ));
         assert!(!login_wall("Unsupported URL: https://example.com/page"));
     }
 
@@ -1053,8 +1334,22 @@ mod tests {
     #[test]
     fn cookie_file_format() {
         let list = vec![
-            BrowserCookie { domain: ".instagram.com".into(), name: "sessionid".into(), value: "abc".into(), path: "/".into(), secure: true, expiration_date: Some(1900000000.5) },
-            BrowserCookie { domain: "www.x.com".into(), name: "a".into(), value: "b=c".into(), path: "".into(), secure: false, expiration_date: None },
+            BrowserCookie {
+                domain: ".instagram.com".into(),
+                name: "sessionid".into(),
+                value: "abc".into(),
+                path: "/".into(),
+                secure: true,
+                expiration_date: Some(1900000000.5),
+            },
+            BrowserCookie {
+                domain: "www.x.com".into(),
+                name: "a".into(),
+                value: "b=c".into(),
+                path: "".into(),
+                secure: false,
+                expiration_date: None,
+            },
         ];
         let s = netscape_cookies(&list);
         assert!(s.starts_with("# Netscape HTTP Cookie File\n"));

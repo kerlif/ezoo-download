@@ -1,9 +1,9 @@
 //! The Options window (all its tabs).
 
+use crate::i18n::{t, tf};
 use crate::open_window;
 use crate::*;
 use swiftget_engine::config::{ServerLimit, SiteLogin, DEFAULT_CAPTURE_EXTS};
-use crate::i18n::{t, tf};
 
 /// Lists edited inside the Options window before OK is pressed.
 #[derive(Default)]
@@ -19,7 +19,9 @@ fn key_index(k: &str) -> i32 {
 }
 
 pub(crate) fn open(ui: &Ui, tab: i32) {
-    let Some(d) = ui.settings_dlg.upgrade() else { return };
+    let Some(d) = ensure_settings(ui) else {
+        return;
+    };
     let s = ui.ctx.mgr.settings();
     {
         let mut l = ui.options_lists.borrow_mut();
@@ -37,13 +39,21 @@ fn show_lists(ui: &Ui, d: &SettingsDialog) {
     let servers: Vec<PairRow> = l
         .servers
         .iter()
-        .map(|x| PairRow { a: x.host.clone().into(), b: x.connections.to_string().into(), c: SharedString::new() })
+        .map(|x| PairRow {
+            a: x.host.clone().into(),
+            b: x.connections.to_string().into(),
+            c: SharedString::new(),
+        })
         .collect();
     d.set_server_rows(ModelRc::new(VecModel::from(servers)));
     let logins: Vec<PairRow> = l
         .logins
         .iter()
-        .map(|x| PairRow { a: x.site.clone().into(), b: x.user.clone().into(), c: SharedString::new() })
+        .map(|x| PairRow {
+            a: x.site.clone().into(),
+            b: x.user.clone().into(),
+            c: SharedString::new(),
+        })
         .collect();
     d.set_login_rows(ModelRc::new(VecModel::from(logins)));
 }
@@ -54,7 +64,12 @@ fn fill(ui: &Ui, d: &SettingsDialog, s: &Settings) {
     d.set_theme(s.theme as i32);
     d.set_window_opacity(s.opacity.clamp(50, 100) as f32);
     d.set_text_size(s.font_scale.clamp(80, 150) as f32);
-    d.set_font_index(crate::FONTS.iter().position(|f| *f == s.font_family).unwrap_or(0) as i32);
+    d.set_font_index(
+        crate::FONTS
+            .iter()
+            .position(|f| *f == s.font_family)
+            .unwrap_or(0) as i32,
+    );
     d.set_bg_image(s.background_image.clone().into());
     d.set_bg_strength(s.background_strength.clamp(10, 80) as f32);
     d.set_start_with_windows(autostart::is_enabled());
@@ -63,6 +78,7 @@ fn fill(ui: &Ui, d: &SettingsDialog, s: &Settings) {
     d.set_auto_clipboard(s.auto_start_clipboard);
     d.set_double_click(s.double_click.min(1) as i32);
     d.set_show_tips(s.show_tips);
+    d.set_update_check(s.update_check);
     d.set_port(s.browser_port as i32);
     d.set_skip_key(key_index(&s.skip_key));
     d.set_force_key(key_index(&s.force_key));
@@ -77,7 +93,13 @@ fn fill(ui: &Ui, d: &SettingsDialog, s: &Settings) {
     // Save to
     d.set_download_dir(s.download_dir.display().to_string().into());
     d.set_category_folders(s.category_folders);
-    d.set_temp_dir(s.temp_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_default().into());
+    d.set_temp_dir(
+        s.temp_dir
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+            .into(),
+    );
     // Downloads
     d.set_show_start_dialog(s.show_start_dialog);
     d.set_start_while_info(s.start_while_info);
@@ -101,7 +123,10 @@ fn fill(ui: &Ui, d: &SettingsDialog, s: &Settings) {
     d.set_quota_hours(s.quota_hours.clamp(1, 720) as i32);
     d.set_quota_used(
         if s.quota_on {
-            tf("Downloaded in the current period: {}", &[&fmt_size(ui.ctx.mgr.quota_used())])
+            tf(
+                "Downloaded in the current period: {}",
+                &[&fmt_size(ui.ctx.mgr.quota_used())],
+            )
         } else {
             t("When the limit is reached the downloads stop, and go on by themselves later.")
         }
@@ -143,11 +168,18 @@ fn read(ui: &Ui, d: &SettingsDialog, mut s: Settings) -> Result<Settings, String
         return Err(t("Type the proxy address (Proxy / Server)"));
     }
     // General
-    s.language = crate::i18n::LANGS[(d.get_language().max(0) as usize).min(crate::i18n::LANGS.len() - 1)].0.into();
+    s.language = crate::i18n::LANGS
+        [(d.get_language().max(0) as usize).min(crate::i18n::LANGS.len() - 1)]
+    .0
+    .into();
     s.theme = d.get_theme().clamp(0, 8) as u32;
     s.opacity = (d.get_window_opacity().round() as u32).clamp(50, 100);
     s.font_scale = (d.get_text_size().round() as u32).clamp(80, 150);
-    s.font_family = crate::FONTS.get(d.get_font_index().max(0) as usize).copied().unwrap_or("").to_string();
+    s.font_family = crate::FONTS
+        .get(d.get_font_index().max(0) as usize)
+        .copied()
+        .unwrap_or("")
+        .to_string();
     s.background_image = d.get_bg_image().to_string();
     s.background_strength = (d.get_bg_strength().round() as u32).clamp(10, 80);
     s.close_to_tray = d.get_close_to_tray();
@@ -155,6 +187,7 @@ fn read(ui: &Ui, d: &SettingsDialog, mut s: Settings) -> Result<Settings, String
     s.auto_start_clipboard = d.get_auto_clipboard();
     s.double_click = d.get_double_click().clamp(0, 1) as u32;
     s.show_tips = d.get_show_tips();
+    s.update_check = d.get_update_check();
     s.browser_port = d.get_port().clamp(1024, 65535) as u16;
     s.skip_key = KEYS[d.get_skip_key().clamp(0, 3) as usize].into();
     s.force_key = KEYS[d.get_force_key().clamp(0, 3) as usize].into();
@@ -162,7 +195,11 @@ fn read(ui: &Ui, d: &SettingsDialog, mut s: Settings) -> Result<Settings, String
         autostart::set(d.get_start_with_windows());
     }
     // File types
-    s.capture_exts = d.get_capture_exts().split_whitespace().collect::<Vec<_>>().join(" ");
+    s.capture_exts = d
+        .get_capture_exts()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     s.skip_sites = d.get_skip_sites().trim().to_string();
     s.skip_addresses = d
         .get_skip_addresses()
@@ -235,14 +272,38 @@ fn look_of(d: &SettingsDialog) -> crate::Look {
     crate::Look {
         mode: d.get_theme().clamp(0, 8),
         scale: (d.get_text_size().round() as u32).clamp(80, 150) as f32 / 100.0,
-        family: crate::FONTS.get(d.get_font_index().max(0) as usize).copied().unwrap_or("").to_string(),
+        family: crate::fonts::resolve_font_family(
+            crate::FONTS
+                .get(d.get_font_index().max(0) as usize)
+                .copied()
+                .unwrap_or(""),
+            crate::i18n::LANGS
+                [(d.get_language().max(0) as usize).min(crate::i18n::LANGS.len() - 1)]
+            .0,
+        ),
         background: d.get_bg_image().to_string(),
         strength: (d.get_bg_strength().round() as u32).clamp(10, 80) as f32 / 100.0,
     }
 }
 
-pub(crate) fn wire(ui: &Ui) {
-    let Some(d) = ui.settings_dlg.upgrade() else { return };
+/// The Options dialog, created (and wired exactly once) on first use.
+pub(crate) fn ensure_settings(ui: &Ui) -> Option<SettingsDialog> {
+    if let Some(d) = ui.settings_dlg.upgrade() {
+        return Some(d);
+    }
+    let Ok(d) = SettingsDialog::new() else {
+        return None;
+    };
+    crate::set_theme_of(
+        d.global::<Theme>(),
+        &crate::Look::of(&ui.ctx.mgr.settings()),
+    );
+    wire(ui, &d);
+    ui.settings_dlg.store(d);
+    ui.settings_dlg.upgrade()
+}
+
+pub(crate) fn wire(ui: &Ui, d: &SettingsDialog) {
     {
         let ui = ui.clone();
         d.on_preview_look(move || {
@@ -254,8 +315,12 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui = ui.clone();
         d.on_browse_bg(move || {
-            let Some(d) = ui.settings_dlg.upgrade() else { return };
-            let pick = crate::winfx::file_box().add_filter(t("Pictures"), &["png", "jpg", "jpeg"]).pick_file();
+            let Some(d) = ui.settings_dlg.upgrade() else {
+                return;
+            };
+            let pick = crate::winfx::file_box()
+                .add_filter(t("Pictures"), &["png", "jpg", "jpeg"])
+                .pick_file();
             if let Some(f) = pick {
                 d.set_bg_image(f.display().to_string().into());
                 crate::apply_look(&ui, &look_of(&d));
@@ -287,7 +352,10 @@ pub(crate) fn wire(ui: &Ui) {
                     }
                 }
                 "virus" => {
-                    if let Some(f) = crate::winfx::file_box().add_filter("Program", &["exe", "com", "bat", "cmd"]).pick_file() {
+                    if let Some(f) = crate::winfx::file_box()
+                        .add_filter("Program", &["exe", "com", "bat", "cmd"])
+                        .pick_file()
+                    {
                         d.set_virus_program(f.display().to_string().into());
                     }
                 }
@@ -343,8 +411,15 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui2 = ui.clone();
         d.on_server_add(move || {
-            let Some(d) = ui2.settings_dlg.upgrade() else { return };
-            let host = d.get_server_host().trim().trim_start_matches("https://").trim_start_matches("http://").to_string();
+            let Some(d) = ui2.settings_dlg.upgrade() else {
+                return;
+            };
+            let host = d
+                .get_server_host()
+                .trim()
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .to_string();
             let host = host.split('/').next().unwrap_or("").to_string();
             if host.is_empty() {
                 d.set_message(t("Type the server, e.g. example.com").into());
@@ -353,9 +428,16 @@ pub(crate) fn wire(ui: &Ui) {
             {
                 let mut l = ui2.options_lists.borrow_mut();
                 let conns = d.get_server_conns().clamp(1, 32) as u32;
-                match l.servers.iter_mut().find(|s| s.host.eq_ignore_ascii_case(&host)) {
+                match l
+                    .servers
+                    .iter_mut()
+                    .find(|s| s.host.eq_ignore_ascii_case(&host))
+                {
                     Some(s) => s.connections = conns,
-                    None => l.servers.push(ServerLimit { host, connections: conns }),
+                    None => l.servers.push(ServerLimit {
+                        host,
+                        connections: conns,
+                    }),
                 }
             }
             d.set_server_host(SharedString::new());
@@ -366,7 +448,9 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui2 = ui.clone();
         d.on_server_remove(move || {
-            let Some(d) = ui2.settings_dlg.upgrade() else { return };
+            let Some(d) = ui2.settings_dlg.upgrade() else {
+                return;
+            };
             let i = d.get_server_current();
             {
                 let mut l = ui2.options_lists.borrow_mut();
@@ -381,7 +465,9 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui2 = ui.clone();
         d.on_login_pick(move |i| {
-            let Some(d) = ui2.settings_dlg.upgrade() else { return };
+            let Some(d) = ui2.settings_dlg.upgrade() else {
+                return;
+            };
             if let Some(l) = ui2.options_lists.borrow().logins.get(i.max(0) as usize) {
                 d.set_login_site(l.site.clone().into());
                 d.set_login_user(l.user.clone().into());
@@ -392,7 +478,9 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui2 = ui.clone();
         d.on_login_add(move || {
-            let Some(d) = ui2.settings_dlg.upgrade() else { return };
+            let Some(d) = ui2.settings_dlg.upgrade() else {
+                return;
+            };
             let site = d.get_login_site().trim().to_string();
             let user = d.get_login_user().trim().to_string();
             if site.is_empty() || user.is_empty() {
@@ -402,12 +490,20 @@ pub(crate) fn wire(ui: &Ui) {
             let password = d.get_login_password().to_string();
             {
                 let mut l = ui2.options_lists.borrow_mut();
-                match l.logins.iter_mut().find(|x| x.site.eq_ignore_ascii_case(&site)) {
+                match l
+                    .logins
+                    .iter_mut()
+                    .find(|x| x.site.eq_ignore_ascii_case(&site))
+                {
                     Some(x) => {
                         x.user = user;
                         x.password = password;
                     }
-                    None => l.logins.push(SiteLogin { site, user, password }),
+                    None => l.logins.push(SiteLogin {
+                        site,
+                        user,
+                        password,
+                    }),
                 }
             }
             d.set_login_site(SharedString::new());
@@ -421,7 +517,9 @@ pub(crate) fn wire(ui: &Ui) {
     {
         let ui2 = ui.clone();
         d.on_login_remove(move || {
-            let Some(d) = ui2.settings_dlg.upgrade() else { return };
+            let Some(d) = ui2.settings_dlg.upgrade() else {
+                return;
+            };
             let i = d.get_login_current();
             {
                 let mut l = ui2.options_lists.borrow_mut();

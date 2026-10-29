@@ -1,11 +1,39 @@
-InstaArabi-Regular.ttf — provided with the project by the user.
+Fonts bundled with Ezoo Download (embedded in the program binary and
+registered in memory at startup; the program does not depend on system
+fonts). Every font below is shipped unmodified and is licensed under
+the SIL Open Font License, Version 1.1. The full licence text of each
+font ships with the program: OFL-Carlito.txt, OFL-NotoSansArabic.txt
+and OFL-LiberationSerif.txt in this folder (and in the Linux packages'
+documentation directory / the Windows install folder). The copyright
+and licence notices are also kept inside the font files themselves.
 
-TimesNewRoman-Regular.ttf / TimesNewRoman-Bold.ttf — metric-compatible
-renditions of Times New Roman built from Liberation Serif
-Copyright (c) 2012 Red Hat, Inc.
-Licensed under the SIL Open Font License 1.1
-https://github.com/liberationfonts/liberation-fonts
-The family name is set to “Times New Roman” so applications can
-resolve that family on systems where Microsoft's own font file is
-absent. The original copyright and license notices are kept inside
-the font files.
+Carlito-Regular.ttf / Carlito-Bold.ttf — Latin UI text.
+  Copyright 2013 The Carlito Project Authors
+  (https://github.com/googlefonts/carlito), with Reserved Font Name
+  "Carlito". Metric-compatible with Calibri.
+  Source: https://github.com/googlefonts/carlito (fonts/ttf/, main
+  branch at commit 3a810cab78ebd6e2e4eed42af9e8453c4f9b850a).
+
+NotoSansArabic-Regular.ttf / NotoSansArabic-Bold.ttf — Arabic UI text.
+  Copyright 2022 The Noto Project Authors
+  (https://github.com/notofonts/arabic). Static hinted instances.
+  Source: https://github.com/notofonts/arabic release
+  NotoSansArabic-v2.013 (hinted/ttf/ in the release archive).
+
+LiberationSerif-Regular.ttf / LiberationSerif-Bold.ttf — document-style
+text only (a user font choice; never the UI default).
+  Digitized data copyright (c) 2010 Google Corporation.
+  Copyright (c) 2012 Red Hat, Inc., with Reserved Font Name Liberation.
+  Metric-compatible with Times New Roman.
+  Source: Debian fonts-liberation 2.1.5-3 package
+  (http://deb.debian.org/debian/pool/main/f/fonts-liberation/fonts-liberation_2.1.5-3_all.deb),
+  built from upstream https://github.com/liberationfonts/liberation-fonts
+  tag 2.1.5. The files keep their upstream family name "Liberation
+  Serif"; earlier versions of this program shipped the same Liberation
+  Serif 2.1.5 files renamed to "Times New Roman" — that rename is gone.
+
+No other font ships with the program. In particular, the
+InstaArabi font shipped in v1.0.7 was removed in v1.1.0: no licence
+for it could be found, so it must not be redistributed (see
+docs/OPEN-QUESTIONS.md, resolved item 1). Copies installed on a user's
+machine by older versions are deleted by the program at startup.

@@ -23,6 +23,13 @@ FFmpeg - https://github.com/FFmpeg/FFmpeg
   ffmpeg-version.txt next to the binary. A later version may switch the
   Linux packages to the user's system ffmpeg install instead.
 
+  Flatpak: the Flatpak build bundles NO ffmpeg binary. It uses the
+  Freedesktop runtime's FFmpeg/codec libraries (the codecs-extra
+  extension, installed automatically with runtime 25.08 and later;
+  see docs/FLATPAK.md §5). Whether the runtime puts an ffmpeg
+  executable on the sandbox PATH for the muxer is unverified as of
+  v1.1.0 — see Open Question 13 in docs/OPEN-QUESTIONS.md.
+
 LAME - https://lame.sourceforge.io
   Built into that ffmpeg program to make MP3 files. GNU Lesser General Public
   License (see lame-COPYING.txt in the "tools" folder).
@@ -36,3 +43,26 @@ aria2 - https://github.com/aria2/aria2
 Rust crates (tokio, reqwest, serde, chrono, tiny_http, arboard, rfd, tray-icon,
 regex, sha2, aes, cbc, url, directories, filetime and their dependencies)
   MIT and/or Apache-2.0 licenses.
+
+Fonts (bundled with the program: embedded in the program binary and
+registered in memory at startup, so no system font is needed; the full
+SIL Open Font License 1.1 text of each font ships as OFL-Carlito.txt,
+OFL-NotoSansArabic.txt and OFL-LiberationSerif.txt next to the program
+documentation, and the copyright and licence notices are also kept
+inside the font files themselves)
+
+Carlito (Latin UI text) - https://github.com/googlefonts/carlito
+  Copyright 2013 The Carlito Project Authors
+  (https://github.com/googlefonts/carlito), with Reserved Font Name
+  "Carlito". Licensed under the SIL Open Font License, Version 1.1.
+
+Noto Sans Arabic (Arabic UI text) - https://github.com/notofonts/arabic
+  Copyright 2022 The Noto Project Authors
+  (https://github.com/notofonts/arabic). Licensed under the SIL Open
+  Font License, Version 1.1.
+
+Liberation Serif (document-style text only) -
+https://github.com/liberationfonts/liberation-fonts
+  Digitized data copyright (c) 2010 Google Corporation. Copyright (c)
+  2012 Red Hat, Inc., with Reserved Font Name Liberation. Licensed
+  under the SIL Open Font License, Version 1.1.

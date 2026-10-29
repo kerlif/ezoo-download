@@ -5,8 +5,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Identifier of a download in the queue.
 pub type DownloadId = u64;
 
+/// The state of a download in the queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Status {
     Queued,
@@ -19,9 +21,14 @@ pub enum Status {
 }
 
 impl Status {
+    /// Whether the download is actively working (connecting, downloading, assembling).
     pub fn is_running(self) -> bool {
-        matches!(self, Status::Connecting | Status::Downloading | Status::Assembling)
+        matches!(
+            self,
+            Status::Connecting | Status::Downloading | Status::Assembling
+        )
     }
+    /// The English status word shown in the UI.
     pub fn label(self) -> &'static str {
         match self {
             Status::Queued => "Queued",
@@ -35,6 +42,7 @@ impl Status {
     }
 }
 
+/// How a download's bytes are fetched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DownloadKind {
     /// Normal file over HTTP/HTTPS (segmented when the server allows ranges)
@@ -71,6 +79,11 @@ pub struct ProbeResult {
     pub final_url: String,
     pub file_name: String,
     pub total_size: Option<u64>,
+    /// The size came from a plain Content-Length with no byte-range
+    /// confirmation, so it is untrusted: the server may be lying (a
+    /// wrong length is shown with "~" and never trusted for planning).
+    /// Sizes confirmed by a 206 Content-Range total are verified.
+    pub total_size_unverified: bool,
     pub resumable: bool,
     pub content_type: Option<String>,
     pub kind: DownloadKind,
@@ -84,7 +97,11 @@ pub struct ProbeResult {
 impl ProbeResult {
     /// The address opens a web page, not a file.
     pub fn is_web_page(&self) -> bool {
-        let ct = self.content_type.as_deref().unwrap_or("").to_ascii_lowercase();
+        let ct = self
+            .content_type
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase();
         let ext = crate::filename::extension(&self.file_name);
         ct.starts_with("text/html") && !matches!(ext.as_str(), "htm" | "html" | "mht" | "mhtml")
     }
@@ -217,7 +234,9 @@ impl DownloadRecord {
     }
     pub fn part_path(&self) -> PathBuf {
         if let Some(stem) = &self.work_stem {
-            return self.work_dir().join(format!("{stem}.{}", crate::filename::PART_EXT));
+            return self
+                .work_dir()
+                .join(format!("{stem}.{}", crate::filename::PART_EXT));
         }
         match &self.temp_dir {
             // ids keep same-named files from different folders apart
@@ -239,21 +258,31 @@ impl DownloadRecord {
         }
     }
     pub fn hls_temp_dir(&self) -> PathBuf {
-        self.work_dir().join(format!(".{}.sgparts", self.temp_stem()))
+        self.work_dir()
+            .join(format!(".{}.sgparts", self.temp_stem()))
     }
     pub fn video_part_path(&self) -> PathBuf {
-        self.work_dir().join(format!(".{}.video.sgpart", self.temp_stem()))
+        self.work_dir()
+            .join(format!(".{}.video.sgpart", self.temp_stem()))
     }
     pub fn audio_part_path(&self) -> PathBuf {
-        self.work_dir().join(format!(".{}.audio.sgpart", self.temp_stem()))
+        self.work_dir()
+            .join(format!(".{}.audio.sgpart", self.temp_stem()))
     }
     /// Torrents: every file it writes (only those: the torrent's folder may
     /// have the name of a folder that was there before).
     pub fn torrent_data_paths(&self) -> Vec<PathBuf> {
         if !self.torrent_files.is_empty() {
-            return self.torrent_files.iter().map(|f| self.save_dir.join(f)).collect();
+            return self
+                .torrent_files
+                .iter()
+                .map(|f| self.save_dir.join(f))
+                .collect();
         }
-        let Some(info) = std::fs::read(&self.url).ok().and_then(|d| crate::torrent::parse_torrent(&d).ok()) else {
+        let Some(info) = std::fs::read(&self.url)
+            .ok()
+            .and_then(|d| crate::torrent::parse_torrent(&d).ok())
+        else {
             return Vec::new();
         };
         let single = info.files.len() == 1 && info.files[0].path == info.name;
@@ -276,7 +305,12 @@ impl DownloadRecord {
             // aria2's notes of what it has
             return vec![self.save_dir.join(format!("{}.aria2", self.file_name))];
         }
-        vec![self.part_path(), self.hls_temp_dir(), self.video_part_path(), self.audio_part_path()]
+        vec![
+            self.part_path(),
+            self.hls_temp_dir(),
+            self.video_part_path(),
+            self.audio_part_path(),
+        ]
     }
     pub fn request_url(&self) -> &str {
         self.final_url.as_deref().unwrap_or(&self.url)
@@ -303,8 +337,11 @@ pub struct DownloadView {
     pub resumable: bool,
     pub parts_total: u32,
     pub parts_done: u32,
-    /// (start, pos, end, active) of every segment, for the connections view
-    pub segments: Vec<(u64, u64, u64, bool)>,
+    /// (start, pos, end, active, takeover) of every segment, for the
+    /// connections view. `takeover` is the stall monitor's flag: the
+    /// segment's connection is being closed and the segment re-requested
+    /// from `pos`. Read-only exposure of the engine's segment table.
+    pub segments: Vec<(u64, u64, u64, bool, bool)>,
     pub queue: Option<u64>,
     pub finished_at: Option<DateTime<Utc>>,
     pub description: Option<String>,
@@ -336,6 +373,22 @@ impl DownloadView {
     }
 }
 
+/// Per-segment state for the connections view, from the segment table
+/// alone (no new engine data): 0 idle, 1 downloading, 2 done, 3 stalled.
+/// A flagged segment stays stalled until a worker claims it again, which
+/// clears the flag; a finished segment is done even if it was flagged.
+pub fn segment_state(finished: bool, takeover: bool, active: bool, running: bool) -> i32 {
+    if finished {
+        2
+    } else if takeover {
+        3
+    } else if active && running {
+        1
+    } else {
+        0
+    }
+}
+
 /// Human readable size: 1.5 MB
 pub fn fmt_size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
@@ -360,5 +413,24 @@ pub fn fmt_duration(secs: u64) -> String {
         format!("{m}m {s:02}s")
     } else {
         format!("{s}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::segment_state;
+
+    #[test]
+    fn segment_state_covers_every_table_combination() {
+        // done wins over a stale flag; a flag wins over active/running
+        assert_eq!(segment_state(true, true, true, true), 2);
+        assert_eq!(segment_state(true, false, false, false), 2);
+        assert_eq!(segment_state(false, true, true, true), 3);
+        assert_eq!(segment_state(false, true, false, false), 3);
+        assert_eq!(segment_state(false, false, true, true), 1);
+        // active but paused/queued: idle, not downloading
+        assert_eq!(segment_state(false, false, true, false), 0);
+        assert_eq!(segment_state(false, false, false, true), 0);
+        assert_eq!(segment_state(false, false, false, false), 0);
     }
 }

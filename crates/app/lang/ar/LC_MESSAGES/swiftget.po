@@ -466,6 +466,12 @@ msgstr "تذكّر هذا المسار لتصنيف \"{}\""
 msgid "optional note"
 msgstr "ملاحظة اختيارية"
 
+msgid "Duration"
+msgstr "المدة"
+
+msgid "Quality"
+msgstr "الجودة"
+
 msgid "Use authorization"
 msgstr "استخدام تسجيل الدخول"
 
@@ -606,6 +612,15 @@ msgstr "إغلاق"
 
 msgid "Start positions and download progress by connections"
 msgstr "مواضع البدء وتقدّم التحميل لكل اتصال"
+
+msgid "Receiving data…"
+msgstr "جارٍ استقبال البيانات…"
+
+msgid "Stalled"
+msgstr "متوقف"
+
+msgid "Waiting"
+msgstr "في الانتظار"
 
 msgid "N."
 msgstr "رقم"
@@ -1009,8 +1024,8 @@ msgstr "حجم الخط"
 msgid "Font"
 msgstr "الخط"
 
-msgid "Default (Segoe UI)"
-msgstr "الافتراضي (Segoe UI)"
+msgid "Default"
+msgstr "الافتراضي"
 
 msgid "Background picture"
 msgstr "صورة الخلفية"
@@ -1038,6 +1053,9 @@ msgstr "بدء تحميل الروابط المنسوخة للحافظة تلق�
 
 msgid "Show \"Tip of the day\" at startup"
 msgstr "إظهار \"نصيحة اليوم\" عند البدء"
+
+msgid "Check for updates automatically"
+msgstr "البحث عن التحديثات تلقائياً"
 
 msgid "On double click on a download"
 msgstr "عند النقر المزدوج على تحميل"
@@ -1077,9 +1095,6 @@ msgstr "منفذ إضافة المتصفح"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "بدء تحميل أنواع الملفات هذه تلقائياً (من المتصفح):"
-
-msgid "Default"
-msgstr "الافتراضي"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "عدم بدء التحميل تلقائياً من هذه المواقع:"
@@ -1345,9 +1360,6 @@ msgstr "جارٍ جلب فيديوهات القائمة…"
 msgid "The videos of the playlist show up here."
 msgstr "ستظهر فيديوهات القائمة هنا."
 
-msgid "Quality"
-msgstr "الجودة"
-
 msgid "Best quality (MP4)"
 msgstr "أفضل جودة (MP4)"
 
@@ -1402,23 +1414,8 @@ msgstr "الإصدار {}"
 msgid "Coded by Ahmed Ezzat"
 msgstr "Coded by Ahmed Ezzat"
 
-msgid "Like Ezoo Download? You can support its development:"
-msgstr "أعجبك Ezoo Download؟ يمكنك دعم تطويره:"
-
-msgid "Support with PayPal"
-msgstr "ادعم عبر PayPal"
-
-msgid "Support with InstaPay"
-msgstr "ادعم عبر InstaPay"
-
-msgid "InstaPay: a7medek@instapay (scan the code with your bank's app)"
-msgstr "امسح الكود بتطبيق البنك أو InstaPay — a7medek@instapay"
-
 msgid "What's new in Ezoo Download"
 msgstr "الجديد في Ezoo Download"
-
-msgid "Ezoo Download is free and has no ads. If it helps you and you would like to support its development, you can send a gift with PayPal or InstaPay. Thank you!"
-msgstr "برنامج Ezoo Download مجاني تمامًا وبدون إعلانات. لو البرنامج بيفيدك وحابب تدعم تطويره، تقدر تبعت دعمك عن طريق PayPal أو InstaPay. شكرًا لك!"
 
 msgid "Hide"
 msgstr "إخفاء"

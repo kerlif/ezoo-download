@@ -14,13 +14,16 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-# ~1.18: the winit accessor (unstable-winit-030) belongs to this Slint line
+# ~1.18: the winit accessor (unstable-winit-030) belongs to this Slint line;
+# unstable-fontique-011 exposes slint::fontique_011::shared_collection(),
+# the runtime registration path for the bundled fonts (see src/fonts.rs)
 slint = { version = "~1.18", default-features = false, features = [
     "std",
     "accessibility",
     "compat-1-2",
     "raw-window-handle-06",
     "unstable-winit-030",
+    "unstable-fontique-011",
 ] }
 tiny_http = "0.12"
 arboard = { version = "3", default-features = false }
@@ -29,6 +32,10 @@ open = "5"
 url = "2"
 chrono = "0.4"
 sha2 = "0.10"
+# Only to name the shared HTTP client type (update.rs); the client itself
+# is built by the engine, with the same version and features as there, so
+# this adds no new crate to the tree.
+reqwest = { version = "0.12", default-features = false, features = ["charset", "http2"] }
 tokio-util = "0.7"
 sys-locale = "0.3"
 

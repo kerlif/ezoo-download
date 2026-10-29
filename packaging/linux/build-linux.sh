@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Ezoo Download — Linux build (deb + AppImage + rpm)
 # Usage:  ./packaging/linux/build-linux.sh [deb|appimage|rpm|all]
-# Result: dist/EzooDownload_1.0.7_amd64.deb
-#         dist/EzooDownload-1.0.7-x86_64.AppImage
-#         dist/ezoo-download-1.0.7-1.x86_64.rpm
+# Result: dist/EzooDownload_1.1.0_amd64.deb
+#         dist/EzooDownload-1.1.0-x86_64.AppImage
+#         dist/ezoo-download-1.1.0-1.x86_64.rpm
 #
 # Environment:
 #   SKIP_CARGO_BUILD=1  reuse target/release/EzooDownload, do not rebuild
@@ -62,6 +62,10 @@ cp -r "$HERE/hicolor" "$STAGE/root/usr/share/icons/hicolor" 2>/dev/null || {
     mkdir -p "$STAGE/root/usr/share/icons"; cp -r "$HERE/hicolor" "$STAGE/root/usr/share/icons/hicolor"; }
 cp "$ROOT/README.md" "$STAGE/root/usr/share/doc/ezoo-download/"
 cp "$ROOT/THIRD-PARTY-NOTICES.txt" "$STAGE/root/usr/share/doc/ezoo-download/" 2>/dev/null || true
+# the bundled fonts' OFL-1.1 texts (verbatim, one per family)
+for ofl in OFL-Carlito.txt OFL-NotoSansArabic.txt OFL-LiberationSerif.txt; do
+    cp "$ROOT/crates/app/ui/fonts/$ofl" "$STAGE/root/usr/share/doc/ezoo-download/" 2>/dev/null || true
+done
 mkdir -p "$STAGE/root/usr/share/metainfo"
 cp "$HERE/io.github.ahmedezo686.ezoo-download.metainfo.xml" "$STAGE/root/usr/share/metainfo/"
 

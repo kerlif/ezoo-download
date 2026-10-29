@@ -23,7 +23,10 @@ fn from_hex(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) {
         return None;
     }
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 #[cfg(windows)]
@@ -34,8 +37,14 @@ mod os {
     };
 
     fn run(data: &[u8], protect: bool) -> Option<Vec<u8>> {
-        let input = CRYPT_INTEGER_BLOB { cbData: u32::try_from(data.len()).ok()?, pbData: data.as_ptr() as *mut u8 };
-        let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+        let input = CRYPT_INTEGER_BLOB {
+            cbData: u32::try_from(data.len()).ok()?,
+            pbData: data.as_ptr() as *mut u8,
+        };
+        let mut out = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: std::ptr::null_mut(),
+        };
         // SAFETY: `input` points at `data`, which outlives the call and is only
         // read; on success Windows allocates `out` (LocalAlloc), which is
         // copied and then freed with LocalFree exactly once.
@@ -93,7 +102,8 @@ mod os {
 /// few seconds and each protection is a Windows call, so the same cookie
 /// text is protected once, not again and again. (Only in memory, where the
 /// plain text is anyway.)
-static SEALED: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> = std::sync::Mutex::new(None);
+static SEALED: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
+    std::sync::Mutex::new(None);
 
 /// The text as it is kept on the disk.
 pub fn seal(plain: &str) -> String {
@@ -145,16 +155,22 @@ pub mod opt {
         v.as_deref().map(super::seal).serialize(s)
     }
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
-        Ok(Option::<String>::deserialize(d)?.map(|x| super::open(&x)).filter(|x| !x.is_empty()))
+        Ok(Option::<String>::deserialize(d)?
+            .map(|x| super::open(&x))
+            .filter(|x| !x.is_empty()))
     }
 }
 
 pub mod pair {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     pub fn serialize<S: Serializer>(v: &Option<(String, String)>, s: S) -> Result<S::Ok, S::Error> {
-        v.as_ref().map(|(u, p)| (u.clone(), super::seal(p))).serialize(s)
+        v.as_ref()
+            .map(|(u, p)| (u.clone(), super::seal(p)))
+            .serialize(s)
     }
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<(String, String)>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<(String, String)>, D::Error> {
         Ok(Option::<(String, String)>::deserialize(d)?.map(|(u, p)| (u, super::open(&p))))
     }
 }
@@ -176,7 +192,14 @@ mod tests {
     #[test]
     fn plain_text_of_old_files_still_reads() {
         let t: T = serde_json::from_str(r#"{"p":"pw","c":"k=v","a":["u","x"]}"#).unwrap();
-        assert_eq!(t, T { p: "pw".into(), c: Some("k=v".into()), a: Some(("u".into(), "x".into())) });
+        assert_eq!(
+            t,
+            T {
+                p: "pw".into(),
+                c: Some("k=v".into()),
+                a: Some(("u".into(), "x".into()))
+            }
+        );
         let back: T = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
         assert_eq!(back, t);
     }

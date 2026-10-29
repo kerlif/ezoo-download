@@ -114,7 +114,10 @@ pub fn mark_from_internet(file: &Path, host_url: &str, referrer: Option<&str>) {
     {
         let mut stream = file.as_os_str().to_owned();
         stream.push(":Zone.Identifier");
-        let _ = std::fs::write(std::path::PathBuf::from(stream), zone_identifier(host_url, referrer));
+        let _ = std::fs::write(
+            std::path::PathBuf::from(stream),
+            zone_identifier(host_url, referrer),
+        );
     }
     #[cfg(not(windows))]
     {
@@ -180,16 +183,28 @@ mod imp {
     use super::AfterDone;
     use std::os::windows::ffi::OsStrExt;
     use std::path::Path;
-    use windows_sys::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetVolumeInformationW, GetVolumePathNameW};
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetDiskFreeSpaceExW, GetVolumeInformationW, GetVolumePathNameW,
+    };
 
     fn wide(p: &Path) -> Vec<u16> {
-        p.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
+        p.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
     pub fn free_space(dir: &Path) -> Option<u64> {
         let w = wide(dir);
         let mut free: u64 = 0;
-        let ok = unsafe { GetDiskFreeSpaceExW(w.as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut()) };
+        let ok = unsafe {
+            GetDiskFreeSpaceExW(
+                w.as_ptr(),
+                &mut free,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
         (ok != 0).then_some(free)
     }
 
@@ -319,13 +334,19 @@ mod tests {
     use super::*;
     #[test]
     fn args() {
-        assert_eq!(split_args(r#"/scan "C:\a b\x.zip" -q"#), vec!["/scan", r"C:\a b\x.zip", "-q"]);
+        assert_eq!(
+            split_args(r#"/scan "C:\a b\x.zip" -q"#),
+            vec!["/scan", r"C:\a b\x.zip", "-q"]
+        );
         assert_eq!(split_args(""), Vec::<String>::new());
     }
 
     #[test]
     fn mark_of_the_web() {
-        let z = zone_identifier("https://user:pw@cdn.example.com/a.exe?x=1#frag", Some("https://example.com/page"));
+        let z = zone_identifier(
+            "https://user:pw@cdn.example.com/a.exe?x=1#frag",
+            Some("https://example.com/page"),
+        );
         assert!(z.starts_with("[ZoneTransfer]\r\nZoneId=3\r\n"));
         assert!(z.contains("HostUrl=https://cdn.example.com/a.exe?x=1\r\n"));
         assert!(z.contains("ReferrerUrl=https://example.com/page\r\n"));

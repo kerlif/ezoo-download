@@ -15,11 +15,13 @@ name: Windows release (Setup.exe + updater files)
 #     files are uploaded to it (this is how v1.0.7 gets its Setup.exe
 #     after the fact).
 #
-# Secrets (all optional; the build never fails for a missing one):
+# Secrets:
 #   - UPDATE_SIGNING_KEY: Ed25519 key signing version.json; installed
-#     copies accept only signed updates. Without it, version.json ships
-#     with an empty signature (manual download works fully, in-app
-#     auto-update refuses the build) and the run warns instead of failing.
+#     copies accept only signed updates. REQUIRED on releases: a
+#     release build FAILS without it (docs/UPDATE-CHECKER.md §10)
+#     instead of shipping version.json with an empty signature.
+#     On non-release runs the key is still optional (unsigned
+#     version.json, warning only).
 #   - AMO_JWT_ISSUER / AMO_JWT_SECRET: <redacted>
 #     per version; otherwise the unsigned path is skipped with a warning
 #     (the Linux workflow already ships the .xpi).
@@ -141,6 +143,17 @@ jobs:
             Write-Host "::warning::engine tests failed (exit $code)"
           }
           exit 0
+      # Phase 8: the Linux clippy gate cannot see Windows-only code
+      # (winfx.rs, the Windows-only paths in update.rs/fonts.rs), and
+      # only the engine crate was tested on Windows. Both steps below
+      # fail the job, unlike the warn-only engine step above, which
+      # is kept exactly as it was.
+      - name: Clippy, all targets (Windows)
+        shell: pwsh
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Run all tests (app + engine, Windows)
+        shell: pwsh
+        run: cargo test --locked --no-fail-fast
       - name: Check dependencies for known vulnerabilities
         shell: pwsh
         run: |
@@ -158,7 +171,8 @@ jobs:
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
           # Ed25519 key that signs version.json; the program installs only
           # updates signed with it (selfupdate.rs has the public half).
-          # Optional here: without it version.json ships unsigned (see below).
+          # Required on releases (a missing key fails the build there);
+          # optional on non-release runs (unsigned version.json, warning).
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
           IS_RELEASE: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
         run: |
@@ -173,6 +187,11 @@ jobs:
           New-Item -ItemType Directory -Force "$p/tools", "dist" | Out-Null
           Copy-Item target/release/EzooDownload.exe $p
           Copy-Item THIRD-PARTY-NOTICES.txt $p
+          # the bundled fonts' OFL-1.1 texts (Phase 3; installer/ezoo.iss
+          # lists them with skipifsourcedoesntexist)
+          Copy-Item crates/app/ui/fonts/OFL-Carlito.txt $p
+          Copy-Item crates/app/ui/fonts/OFL-NotoSansArabic.txt $p
+          Copy-Item crates/app/ui/fonts/OFL-LiberationSerif.txt $p
           Copy-Item -Recurse extension "$p/extension"
           Copy-Item -Recurse extension "$p/extension-firefox"
           Remove-Item -Recurse -Force "$p/extension/test", "$p/extension-firefox/test"
@@ -226,14 +245,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
           $hash = (Get-FileHash dist/EzooDownload-Setup.exe -Algorithm SHA256).Hash.ToLower()
           # the signature the program checks before it installs an update;
-          # best-effort: without the key the setup still ships, but installed
-          # copies will refuse it as an auto-update (manual install works)
+          # a release must never ship version.json with an empty sig
+          # (docs/UPDATE-CHECKER.md §10): a missing key is a hard error
+          # on releases, a warning only on non-release runs.
           $sig = ""
           if ($env:UPDATE_SIGNING_KEY) {
             $sig = (cargo run --quiet --release -p swiftget-engine --example sign_update -- $version $hash).Trim()
             if ($LASTEXITCODE -ne 0 -or $sig.Length -ne 128) { throw "could not sign the release" }
           } elseif ($env:IS_RELEASE -eq "true") {
-            Write-Host "::warning::UPDATE_SIGNING_KEY is not set: version.json ships with an empty signature, so installed copies will not auto-update to this build (manual download works fully)"
+            throw "UPDATE_SIGNING_KEY is not set: refusing to ship an unsigned version.json for a release"
           }
           $json = "{`n  ""version"": ""$version"",`n  ""url"": ""https://github.com/${{ github.repository }}/releases/download/v$version/EzooDownload-Setup.exe"",`n  ""sha256"": ""$hash"",`n  ""sig"": ""$sig""`n}`n"
           [IO.File]::WriteAllText("$PWD/dist/version.json", $json)

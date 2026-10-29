@@ -27,8 +27,14 @@ pub fn effective(setting: &str) -> &'static str {
     if let Some((code, _)) = LANGS.iter().find(|(c, _)| *c == setting) {
         return code;
     }
-    let sys = sys_locale::get_locale().unwrap_or_default().to_ascii_lowercase();
-    LANGS.iter().map(|(c, _)| *c).find(|c| sys.starts_with(c)).unwrap_or("en")
+    let sys = sys_locale::get_locale()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    LANGS
+        .iter()
+        .map(|(c, _)| *c)
+        .find(|c| sys.starts_with(c))
+        .unwrap_or("en")
 }
 
 /// Place of a language in LANGS (0 = English for anything unknown).
@@ -51,7 +57,6 @@ pub fn is_rtl() -> bool {
     current() == "ar"
 }
 
-#[allow(dead_code)]
 pub fn is_arabic() -> bool {
     current() == "ar"
 }
@@ -135,6 +140,7 @@ const AR: &[(&str, &str)] = &[
     ("No", "لا"),
     ("Finished", "انتهى"),
     ("Waiting", "في الانتظار"),
+    ("Stalled", "متوقف"),
     ("{} downloading  ·  {}/s", "{} قيد التحميل  ·  {}/ث"),
     ("Ready  ·  {} files in the list", "جاهز  ·  {} ملف في القائمة"),
     ("Speed limiter: on ({} KB/s)", "محدد السرعة: يعمل ({} كيلو/ث)"),
@@ -150,6 +156,14 @@ const AR: &[(&str, &str)] = &[
     // download file info
     ("Paste a link and press Check", "الصق رابطاً واضغط فحص"),
     ("Unknown size", "حجم غير معروف"),
+    ("This stream is DRM protected and cannot be downloaded.", "هذا البث محمي بنظام DRM ولا يمكن تحميله."),
+    ("≈ {} (estimated from bitrate)", "≈ {} (تقدير من معدّل البت)"),
+    ("≈ {} (estimated from sampled segments)", "≈ {} (تقدير من عيّنات المقاطع)"),
+    ("≈ {} (from server headers, unverified)", "≈ {} (من ترويسات الخادم، غير موثّق)"),
+    ("The server did not answer in time.", "لم يجب الخادم في الوقت المناسب."),
+    ("Direct file", "ملف مباشر"),
+    ("Audio only", "صوت فقط"),
+    ("audio", "صوت"),
     ("+ audio", "+ صوت"),
     ("Video + audio, joined after download", "فيديو + صوت، يُدمجان بعد التحميل"),
     ("Video stream (HLS)", "بث فيديو (HLS)"),
@@ -393,7 +407,6 @@ const AR: &[(&str, &str)] = &[
         "A new playlist icon, and a smaller icon on the window title.",
         "أيقونة جديدة لقوائم التشغيل، وأيقونة أصغر في شريط عنوان النافذة.",
     ),
-    ("Support Ezoo Download with PayPal from Help > About.", "ادعم Ezoo Download عبر PayPal من مساعدة > حول."),
     // 1.0.5
     (
         "The main window can be maximized to the full screen.",
@@ -446,6 +459,22 @@ const AR: &[(&str, &str)] = &[
     (
         "Installing version {}…",
         "جارٍ تثبيت الإصدار {}…",
+    ),
+    (
+        "Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.",
+        "تم تنزيل الإصدار {} والتحقق منه. هل تريد تثبيته الآن؟ سيُغلق Ezoo Download ويفتح من جديد بعد التثبيت.",
+    ),
+    (
+        "Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.",
+        "تم تنزيل الإصدار {} والتحقق منه. هل تريد استبدال ملف AppImage الآن؟ سيبدأ الإصدار الجديد في المرة القادمة التي تفتح فيها Ezoo Download.",
+    ),
+    (
+        "The AppImage file was replaced. Open Ezoo Download again to use version {}.",
+        "تم استبدال ملف AppImage. افتح Ezoo Download من جديد لاستخدام الإصدار {}.",
+    ),
+    (
+        "Open the release page in the browser?",
+        "فتح صفحة الإصدار في المتصفح؟",
     ),
     (
         "Ezoo Download closes now and opens again when it is installed.",
@@ -594,7 +623,17 @@ mod tests {
             let m = table(code).expect("table");
             assert!(m.len() > 150, "{code}: only {} texts", m.len());
             for (en, tr) in m {
-                assert_eq!(en.matches("{}").count(), tr.matches("{}").count(), "{code}: {en}");
+                // "needs-review" is metadata, not a UI text: its value
+                // lists the English source strings awaiting review, which
+                // legitimately contain "{}" placeholders of their own
+                if en == "needs-review" {
+                    continue;
+                }
+                assert_eq!(
+                    en.matches("{}").count(),
+                    tr.matches("{}").count(),
+                    "{code}: {en}"
+                );
             }
         }
         assert_eq!(index_of("xx"), 0);

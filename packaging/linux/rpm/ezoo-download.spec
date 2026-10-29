@@ -9,7 +9,7 @@
 # hicolor icons, AppStream metadata and the browser extension sources.
 
 Name:           ezoo-download
-Version:        1.0.7
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Download manager with multi-connection segmented downloads
 License:        MIT
@@ -17,7 +17,7 @@ URL:            https://github.com/AhmedEzo686/ezoo-download
 Source0:        root.tar.gz
 BuildArch:      x86_64
 # Runtime libraries: the same closure as the .deb's Depends, Fedora names.
-Requires:       fontconfig, freetype, libxkbcommon, libX11, libxcb, openssl-libs, zlib
+Requires:       fontconfig, freetype, libxkbcommon, libxkbcommon-x11, libX11, libxcb, openssl-libs, zlib
 Recommends:     xdg-desktop-portal
 
 %description

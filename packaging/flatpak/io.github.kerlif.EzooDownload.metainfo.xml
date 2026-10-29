@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.kerlif.EzooDownload</id>
+  <launchable type="desktop-id">io.github.kerlif.EzooDownload.desktop</launchable>
+  <name>Ezoo Download</name>
+  <summary>Download manager for HTTP, HLS, DASH, video and torrents</summary>
+  <summary xml:lang="ar">مدير تحميلات يدعم HTTP و HLS و DASH والفيديو والتورنت</summary>
+  <developer id="io.github.ahmedezo686">
+    <name>Ahmed Ezzat</name>
+  </developer>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>MIT</project_license>
+  <url type="homepage">https://github.com/kerlif/ezoo-download</url>
+  <url type="bugtracker">https://github.com/kerlif/ezoo-download/issues</url>
+  <description>
+    <p>
+      Ezoo Download is a desktop download manager written in Rust. It splits
+      files over up to 32 connections, resumes after interruptions, and keeps
+      running next to the clock when its window is closed.
+    </p>
+    <p xml:lang="ar">
+      Ezoo Download مدير تحميلات مكتوب بلغة Rust: يقسّم الملف على عدة اتصالات،
+      يستأنف بعد الانقطاع، ويبقى بجوار الساعة عند إغلاق النافذة.
+    </p>
+    <p>
+      Ezoo Download was created by Ahmed Ezzat (Ezoo Tech). This Flatpak is
+      built from the fork at https://github.com/kerlif/ezoo-download, based
+      on the upstream project at
+      https://github.com/AhmedEzo686/ezoo-download; all author credits are
+      kept. The Flatpak uses the runtime's codec libraries, fetches yt-dlp
+      itself on first use, and keeps the browser-extension bridge on the
+      local loopback exactly as the other Linux packages do.
+    </p>
+    <ul>
+      <li>Multi-connection downloads with resume (HTTP/HTTPS, FTP via aria2)</li>
+      <li>HLS (.m3u8) and DASH (.mpd) video streams with AES-128 support</li>
+      <li>Video and audio from the browser via its extension</li>
+      <li>Torrents and magnets (aria2), YouTube via yt-dlp</li>
+      <li>System tray icon, queue, scheduler, speed limits, grabber</li>
+      <li>Eight languages with an Arabic-first interface</li>
+    </ul>
+  </description>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main window (Arabic interface)</caption>
+      <image type="source" width="962" height="502">https://kerlif.github.io/ezoo-download/screenshots/01-main-ar.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Download progress</caption>
+      <image type="source" width="962" height="502">https://kerlif.github.io/ezoo-download/screenshots/02-progress-ar.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Add download dialog</caption>
+      <image type="source" width="640" height="488">https://kerlif.github.io/ezoo-download/screenshots/03-add-dialog-ar.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="1.1.0" date="2026-10-29" type="stable">
+      <description>
+        <p>Fork release: adaptive multi-connection download engine, bundled
+        Carlito, Noto Sans Arabic and Liberation Serif fonts, update checker
+        against the fork's releases, Flatpak packaging, and the fix for
+        dialogs rendering side by side on Wayland.</p>
+      </description>
+    </release>
+    <release version="1.0.7" date="2026-10-26" type="stable">
+      <description>
+        <p>First Linux release: .deb and AppImage packaging, system tray for
+        KDE/GNOME/XFCE, embedded Arabic and Latin fonts, and
+        DASH (.mpd) stream downloads.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>EzooDownload</binary>
+  </provides>
+</component>

@@ -188,6 +188,7 @@ function buildOptions(streams) {
         audioUrl: null,
         ext: v.ext,
         size: v.size,
+        sizeSource: "filesize",
       });
       continue;
     }
@@ -211,6 +212,7 @@ function buildOptions(streams) {
       audioUrl: audio.url,
       ext,
       size: v.size + audio.size,
+      sizeSource: "filesize",
     });
   }
   const audioOnly = bestAudio("m4a") || audios[0];

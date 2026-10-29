@@ -61,7 +61,10 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn peek(&self) -> anyhow::Result<u8> {
-        self.data.get(self.pos).copied().ok_or_else(|| anyhow!("the torrent file is cut short"))
+        self.data
+            .get(self.pos)
+            .copied()
+            .ok_or_else(|| anyhow!("the torrent file is cut short"))
     }
     fn number_until(&mut self, end: u8) -> anyhow::Result<i64> {
         let start = self.pos;
@@ -71,7 +74,8 @@ impl Reader<'_> {
                 bail!("not a torrent file");
             }
         }
-        let s = std::str::from_utf8(&self.data[start..self.pos]).map_err(|_| anyhow!("not a torrent file"))?;
+        let s = std::str::from_utf8(&self.data[start..self.pos])
+            .map_err(|_| anyhow!("not a torrent file"))?;
         self.pos += 1;
         s.parse().map_err(|_| anyhow!("not a torrent file"))
     }
@@ -98,7 +102,9 @@ impl Reader<'_> {
                 self.pos += 1;
                 let mut dict = Vec::new();
                 while self.peek()? != b'e' {
-                    let Ben::Bytes(k) = self.value()? else { bail!("not a torrent file") };
+                    let Ben::Bytes(k) = self.value()? else {
+                        bail!("not a torrent file")
+                    };
                     let v = self.value()?;
                     dict.push((k, v));
                 }
@@ -106,8 +112,13 @@ impl Reader<'_> {
                 Ben::Dict(dict)
             }
             b'0'..=b'9' => {
-                let len = usize::try_from(self.number_until(b':')?).map_err(|_| anyhow!("not a torrent file"))?;
-                let end = self.pos.checked_add(len).filter(|e| *e <= self.data.len()).ok_or_else(|| anyhow!("the torrent file is cut short"))?;
+                let len = usize::try_from(self.number_until(b':')?)
+                    .map_err(|_| anyhow!("not a torrent file"))?;
+                let end = self
+                    .pos
+                    .checked_add(len)
+                    .filter(|e| *e <= self.data.len())
+                    .ok_or_else(|| anyhow!("the torrent file is cut short"))?;
                 let b = self.data[self.pos..end].to_vec();
                 self.pos = end;
                 Ben::Bytes(b)
@@ -141,8 +152,15 @@ pub struct TorrentInfo {
 
 /// Read a .torrent file.
 pub fn parse_torrent(data: &[u8]) -> anyhow::Result<TorrentInfo> {
-    let root = Reader { data, pos: 0, depth: 0 }.value()?;
-    let info = root.get("info").ok_or_else(|| anyhow!("not a torrent file"))?;
+    let root = Reader {
+        data,
+        pos: 0,
+        depth: 0,
+    }
+    .value()?;
+    let info = root
+        .get("info")
+        .ok_or_else(|| anyhow!("not a torrent file"))?;
     let name = info
         .get("name.utf-8")
         .or_else(|| info.get("name"))
@@ -151,10 +169,18 @@ pub fn parse_torrent(data: &[u8]) -> anyhow::Result<TorrentInfo> {
     let mut files = Vec::new();
     if let Some(list) = info.get("files") {
         for (n, f) in list.list().iter().enumerate() {
-            let parts = f.get("path.utf-8").or_else(|| f.get("path")).map(Ben::list).unwrap_or(&[]);
+            let parts = f
+                .get("path.utf-8")
+                .or_else(|| f.get("path"))
+                .map(Ben::list)
+                .unwrap_or(&[]);
             let path: Vec<String> = parts.iter().filter_map(Ben::text).collect();
             // padding files (BEP 47) are not real files
-            let pad = f.get("attr").and_then(Ben::text).map(|a| a.contains('p')).unwrap_or(false)
+            let pad = f
+                .get("attr")
+                .and_then(Ben::text)
+                .map(|a| a.contains('p'))
+                .unwrap_or(false)
                 || path.first().map(|p| p.starts_with(".pad")).unwrap_or(false);
             if pad {
                 continue;
@@ -166,7 +192,11 @@ pub fn parse_torrent(data: &[u8]) -> anyhow::Result<TorrentInfo> {
             });
         }
     } else {
-        files.push(TorrentFile { path: name.clone(), size: info.get("length").and_then(Ben::int).unwrap_or(0).max(0) as u64, index: 1 });
+        files.push(TorrentFile {
+            path: name.clone(),
+            size: info.get("length").and_then(Ben::int).unwrap_or(0).max(0) as u64,
+            index: 1,
+        });
     }
     if files.is_empty() {
         bail!("this torrent has no files");
@@ -179,7 +209,10 @@ pub fn parse_torrent(data: &[u8]) -> anyhow::Result<TorrentInfo> {
 pub fn is_magnet(s: &str) -> bool {
     let s = s.trim().to_ascii_lowercase();
     // a real one is a few hundred characters
-    s.len() <= 8192 && !s.contains(char::is_whitespace) && s.starts_with("magnet:?") && (s.contains("xt=urn:btih:") || s.contains("xt=urn:btmh:"))
+    s.len() <= 8192
+        && !s.contains(char::is_whitespace)
+        && s.starts_with("magnet:?")
+        && (s.contains("xt=urn:btih:") || s.contains("xt=urn:btmh:"))
 }
 
 /// Is this download a torrent: a magnet link or a .torrent file on the disk.
@@ -190,21 +223,39 @@ pub fn is_torrent_source(s: &str) -> bool {
 /// The name a magnet link gives ("dn="), if any.
 pub fn magnet_name(uri: &str) -> Option<String> {
     let query = uri.trim().split_once('?')?.1;
-    query.split('&').find_map(|kv| {
-        let (k, v) = kv.split_once('=')?;
-        (k == "dn").then(|| percent_encoding::percent_decode_str(&v.replace('+', " ")).decode_utf8_lossy().trim().to_string())
-    }).filter(|n| !n.is_empty())
+    query
+        .split('&')
+        .find_map(|kv| {
+            let (k, v) = kv.split_once('=')?;
+            (k == "dn").then(|| {
+                percent_encoding::percent_decode_str(&v.replace('+', " "))
+                    .decode_utf8_lossy()
+                    .trim()
+                    .to_string()
+            })
+        })
+        .filter(|n| !n.is_empty())
 }
 
 fn base64(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for c in data.chunks(3) {
-        let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
+        let n = (u32::from(c[0]) << 16)
+            | (u32::from(*c.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*c.get(2).unwrap_or(&0));
         out.push(T[(n >> 18) as usize & 63] as char);
         out.push(T[(n >> 12) as usize & 63] as char);
-        out.push(if c.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if c.len() > 2 { T[n as usize & 63] as char } else { '=' });
+        out.push(if c.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if c.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -246,7 +297,10 @@ pub struct TorrentStatus {
 }
 
 fn num(v: &Value) -> u64 {
-    v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_u64()).unwrap_or(0)
+    v.as_str()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| v.as_u64())
+        .unwrap_or(0)
 }
 
 /// Options for one torrent.
@@ -267,8 +321,16 @@ pub struct AddOptions {
 impl Aria2 {
     pub fn new(data_dir: &Path) -> Aria2 {
         // straight to 127.0.0.1, never through a proxy
-        let client = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(20)).build().unwrap_or_default();
-        Aria2 { client, daemon: tokio::sync::Mutex::new(None), data_dir: data_dir.to_path_buf() }
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(20))
+            .build()
+            .unwrap_or_default();
+        Aria2 {
+            client,
+            daemon: tokio::sync::Mutex::new(None),
+            data_dir: data_dir.to_path_buf(),
+        }
     }
 
     async fn ensure(&self) -> anyhow::Result<(u16, String)> {
@@ -281,7 +343,9 @@ impl Aria2 {
         let tool = crate::mux::find_tool("aria2c").ok_or_else(|| {
             anyhow!("aria2c.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again")
         })?;
-        let port = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
+        let port = std::net::TcpListener::bind("127.0.0.1:0")?
+            .local_addr()?
+            .port();
         let secret = random_secret();
         let _ = std::fs::create_dir_all(&self.data_dir);
         let dht = self.data_dir.join("dht.dat");
@@ -319,11 +383,19 @@ impl Aria2 {
         .stderr(std::process::Stdio::null());
         crate::mux::hide_window(&mut cmd);
         let child = cmd.spawn().context("could not start aria2c")?;
-        *guard = Some(Daemon { port, secret: secret.clone(), child });
+        *guard = Some(Daemon {
+            port,
+            secret: secret.clone(),
+            child,
+        });
         drop(guard);
         // ready when it answers
         for _ in 0..50 {
-            if self.raw_call(port, &secret, "aria2.getVersion", vec![]).await.is_ok() {
+            if self
+                .raw_call(port, &secret, "aria2.getVersion", vec![])
+                .await
+                .is_ok()
+            {
                 return Ok((port, secret));
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -331,7 +403,13 @@ impl Aria2 {
         bail!("aria2c did not start")
     }
 
-    async fn raw_call(&self, port: u16, secret: &str, method: &str, mut params: Vec<Value>) -> anyhow::Result<Value> {
+    async fn raw_call(
+        &self,
+        port: u16,
+        secret: &str,
+        method: &str,
+        mut params: Vec<Value>,
+    ) -> anyhow::Result<Value> {
         params.insert(0, json!(format!("token:{secret}")));
         let body = json!({ "jsonrpc": "2.0", "id": "ezoo", "method": method, "params": params });
         let bytes = self
@@ -343,7 +421,8 @@ impl Aria2 {
             .await?
             .bytes()
             .await?;
-        let r: Value = serde_json::from_slice(&bytes).context("aria2 answered something unexpected")?;
+        let r: Value =
+            serde_json::from_slice(&bytes).context("aria2 answered something unexpected")?;
         if let Some(e) = r.get("error") {
             bail!("{}", e["message"].as_str().unwrap_or("aria2 error"));
         }
@@ -372,22 +451,44 @@ impl Aria2 {
             opts["select-file"] = json!(sel);
         }
         let gid = if is_magnet(source) {
-            self.call("aria2.addUri", vec![json!([source.trim()]), opts]).await?
+            self.call("aria2.addUri", vec![json!([source.trim()]), opts])
+                .await?
         } else {
             let data = std::fs::read(source).context("the .torrent file can't be read")?;
             parse_torrent(&data)?;
-            self.call("aria2.addTorrent", vec![json!(base64(&data)), json!([]), opts]).await?
+            self.call(
+                "aria2.addTorrent",
+                vec![json!(base64(&data)), json!([]), opts],
+            )
+            .await?
         };
-        gid.as_str().map(String::from).ok_or_else(|| anyhow!("aria2 did not take the torrent"))
+        gid.as_str()
+            .map(String::from)
+            .ok_or_else(|| anyhow!("aria2 did not take the torrent"))
     }
 
     pub async fn status(&self, gid: &str) -> anyhow::Result<TorrentStatus> {
         let keys = json!([
-            "status", "totalLength", "completedLength", "downloadSpeed", "uploadSpeed", "connections",
-            "numSeeders", "seeder", "bittorrent", "followedBy", "errorMessage", "errorCode"
+            "status",
+            "totalLength",
+            "completedLength",
+            "downloadSpeed",
+            "uploadSpeed",
+            "connections",
+            "numSeeders",
+            "seeder",
+            "bittorrent",
+            "followedBy",
+            "errorMessage",
+            "errorCode"
         ]);
-        let r = self.call("aria2.tellStatus", vec![json!(gid), keys]).await?;
-        let name = r["bittorrent"]["info"]["name"].as_str().map(String::from).filter(|n| !n.is_empty());
+        let r = self
+            .call("aria2.tellStatus", vec![json!(gid), keys])
+            .await?;
+        let name = r["bittorrent"]["info"]["name"]
+            .as_str()
+            .map(String::from)
+            .filter(|n| !n.is_empty());
         Ok(TorrentStatus {
             status: r["status"].as_str().unwrap_or("").to_string(),
             total: num(&r["totalLength"]),
@@ -398,8 +499,15 @@ impl Aria2 {
             seeders: num(&r["numSeeders"]) as u32,
             seeding: r["seeder"].as_str() == Some("true"),
             name,
-            followed_by: r["followedBy"].as_array().and_then(|a| a.first()).and_then(|g| g.as_str()).map(String::from),
-            error: r["errorMessage"].as_str().filter(|m| !m.is_empty()).map(String::from),
+            followed_by: r["followedBy"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|g| g.as_str())
+                .map(String::from),
+            error: r["errorMessage"]
+                .as_str()
+                .filter(|m| !m.is_empty())
+                .map(String::from),
         })
     }
 
@@ -411,7 +519,11 @@ impl Aria2 {
         let _ = self.call("aria2.forceRemove", vec![json!(gid)]).await;
         // forget it, so the same torrent can be added again
         for _ in 0..20 {
-            if self.call("aria2.removeDownloadResult", vec![json!(gid)]).await.is_ok() {
+            if self
+                .call("aria2.removeDownloadResult", vec![json!(gid)])
+                .await
+                .is_ok()
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -460,7 +572,10 @@ fn random_secret() -> String {
     use ring::rand::SecureRandom;
     let mut b = [0u8; 16];
     if ring::rand::SystemRandom::new().fill(&mut b).is_err() {
-        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         b = (t ^ u128::from(std::process::id())).to_le_bytes();
     }
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -487,10 +602,21 @@ mod tests {
         );
         let i = parse_torrent(t.as_bytes()).unwrap();
         assert_eq!(i.name, "My Show");
-        assert_eq!(i.files, vec![
-            TorrentFile { path: "Season 1/ep1.mkv".into(), size: 100, index: 1 },
-            TorrentFile { path: "readme.txt".into(), size: 5, index: 2 },
-        ]);
+        assert_eq!(
+            i.files,
+            vec![
+                TorrentFile {
+                    path: "Season 1/ep1.mkv".into(),
+                    size: 100,
+                    index: 1
+                },
+                TorrentFile {
+                    path: "readme.txt".into(),
+                    size: 5,
+                    index: 2
+                },
+            ]
+        );
         assert_eq!(i.total, 105);
     }
 
@@ -498,7 +624,14 @@ mod tests {
     fn reads_a_single_file_torrent_and_refuses_junk() {
         let t = format!("d4:infod6:lengthi42e4:name{}ee", ben_str("film.mp4"));
         let i = parse_torrent(t.as_bytes()).unwrap();
-        assert_eq!(i.files, vec![TorrentFile { path: "film.mp4".into(), size: 42, index: 1 }]);
+        assert_eq!(
+            i.files,
+            vec![TorrentFile {
+                path: "film.mp4".into(),
+                size: 42,
+                index: 1
+            }]
+        );
         assert!(parse_torrent(b"<html>").is_err());
         assert!(parse_torrent(b"d4:infod6:lengthi42e4:name99:x").is_err());
         assert!(parse_torrent(&b"l".repeat(200)).is_err());

@@ -8,6 +8,7 @@
 //!
 //! The UI only needs [`Manager`].
 
+pub mod adaptive;
 pub mod category;
 pub mod config;
 pub mod ef2;
@@ -27,6 +28,7 @@ pub mod secret;
 pub mod segments;
 pub mod selfupdate;
 pub mod store;
+pub mod stream_meta;
 pub mod system;
 pub mod tools;
 pub mod torrent;

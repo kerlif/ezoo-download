@@ -5,8 +5,8 @@ use crate::limiter::SpeedLimiter;
 use crate::model::{DownloadKind, ProbeResult, RequestHeaders};
 use anyhow::{bail, Context};
 use reqwest::header::{
-    ACCEPT, ACCEPT_ENCODING, ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE,
-    COOKIE, RANGE, REFERER, USER_AGENT,
+    ACCEPT, ACCEPT_ENCODING, ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE,
+    CONTENT_TYPE, COOKIE, RANGE, REFERER, USER_AGENT,
 };
 use reqwest::{Client, RequestBuilder, StatusCode};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -56,6 +56,44 @@ impl std::fmt::Display for HttpStatus {
 }
 impl std::error::Error for HttpStatus {}
 
+/// The server is rate-limiting us (429 Too Many Requests or 503
+/// Service Unavailable). Carries the wait the server asked for, if it
+/// sent a `Retry-After` header, so the download loop can honour it
+/// instead of guessing.
+#[derive(Debug)]
+pub struct RateLimited {
+    pub status: u16,
+    pub retry_after: Option<Duration>,
+}
+
+impl RateLimited {
+    pub fn from_headers(status: u16, headers: &reqwest::header::HeaderMap) -> Self {
+        let retry_after = headers
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| crate::adaptive::parse_retry_after(v, Duration::from_secs(300)));
+        RateLimited {
+            status,
+            retry_after,
+        }
+    }
+}
+
+impl std::fmt::Display for RateLimited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.retry_after {
+            Some(d) => write!(
+                f,
+                "server answered HTTP {} (rate limited, retry after {}s)",
+                self.status,
+                d.as_secs()
+            ),
+            None => write!(f, "server answered HTTP {} (rate limited)", self.status),
+        }
+    }
+}
+impl std::error::Error for RateLimited {}
+
 /// A problem of the connection (no internet, DNS, reset, timeout), not of
 /// the file or the link: worth waiting for and trying again without limit.
 pub fn is_network_error(e: &anyhow::Error) -> bool {
@@ -65,15 +103,28 @@ pub fn is_network_error(e: &anyhow::Error) -> bool {
             return true;
         }
         if let Some(r) = c.downcast_ref::<reqwest::Error>() {
-            return r.status().is_none() && !r.is_builder() && !r.is_redirect()
-                && (r.is_connect() || r.is_timeout() || r.is_request() || r.is_body() || r.is_decode());
+            return r.status().is_none()
+                && !r.is_builder()
+                && !r.is_redirect()
+                && (r.is_connect()
+                    || r.is_timeout()
+                    || r.is_request()
+                    || r.is_body()
+                    || r.is_decode());
         }
         if let Some(io) = c.downcast_ref::<std::io::Error>() {
             return matches!(
                 io.kind(),
-                K::ConnectionReset | K::ConnectionAborted | K::ConnectionRefused | K::NotConnected
-                    | K::TimedOut | K::BrokenPipe | K::UnexpectedEof | K::HostUnreachable
-                    | K::NetworkUnreachable | K::NetworkDown
+                K::ConnectionReset
+                    | K::ConnectionAborted
+                    | K::ConnectionRefused
+                    | K::NotConnected
+                    | K::TimedOut
+                    | K::BrokenPipe
+                    | K::UnexpectedEof
+                    | K::HostUnreachable
+                    | K::NetworkUnreachable
+                    | K::NetworkDown
             );
         }
         false
@@ -82,7 +133,8 @@ pub fn is_network_error(e: &anyhow::Error) -> bool {
 
 /// The server's status code, if the error is one.
 pub fn http_status_of(e: &anyhow::Error) -> Option<u16> {
-    e.chain().find_map(|c| c.downcast_ref::<HttpStatus>().map(|s| s.0))
+    e.chain()
+        .find_map(|c| c.downcast_ref::<HttpStatus>().map(|s| s.0))
 }
 
 /// How long to wait before trying again after `n` failures in a row while
@@ -120,7 +172,10 @@ pub struct Shared {
 
 impl Shared {
     pub fn new(client: Client, limiter: SpeedLimiter) -> Shared {
-        Shared { client: RwLock::new(client), limiter }
+        Shared {
+            client: RwLock::new(client),
+            limiter,
+        }
     }
     /// The HTTP client (cheap to clone: it is shared inside).
     pub fn client(&self) -> Client {
@@ -157,39 +212,76 @@ impl ProxyConfig {
 }
 
 pub fn build_client() -> anyhow::Result<Client> {
-    build_client_with(&ProxyConfig { mode: 1, ..Default::default() })
+    build_client_with(&ProxyConfig {
+        mode: 1,
+        ..Default::default()
+    })
 }
 
 pub fn build_client_with(proxy: &ProxyConfig) -> anyhow::Result<Client> {
+    Ok(base_builder(proxy)?
+        .redirect(reqwest::redirect::Policy::limited(15))
+        .build()?)
+}
+
+/// Client for the update checker: the same proxy handling as
+/// `build_client_with`, but redirects are NOT followed automatically —
+/// the checker follows them itself in `selfupdate::open_guarded` and
+/// refuses cross-host hops. No total timeout: artifact downloads stream
+/// through this client too, and a slow one must not be cut off.
+pub fn checker_client(proxy: &ProxyConfig) -> anyhow::Result<Client> {
+    Ok(base_builder(proxy)?
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
+}
+
+fn base_builder(proxy: &ProxyConfig) -> anyhow::Result<reqwest::ClientBuilder> {
     let mut b = Client::builder()
         // Real separate TCP connections. With HTTP/2 all our
         // "connections" would share one TCP connection and be as slow as one.
         .http1_only()
         .tcp_nodelay(true)
         .connect_timeout(Duration::from_secs(20))
-        .pool_max_idle_per_host(64)
-        .redirect(reqwest::redirect::Policy::limited(15));
+        .pool_max_idle_per_host(64);
     match proxy.mode {
         // 1 = system settings: reqwest reads them by itself
         0 => b = b.no_proxy(),
         2 if !proxy.host.is_empty() => {
-            let host = proxy.host.trim_start_matches("http://").trim_start_matches("https://");
+            let host = proxy
+                .host
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
             let url = format!("http://{host}:{}", proxy.port);
             let mut p = reqwest::Proxy::all(&url).context("the proxy address is not valid")?;
             if !proxy.user.is_empty() {
                 p = p.basic_auth(&proxy.user, &proxy.password);
             }
-            let bypass = proxy.bypass.split_whitespace().collect::<Vec<_>>().join(",");
+            let bypass = proxy
+                .bypass
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(",");
             p = p.no_proxy(reqwest::NoProxy::from_string(&bypass));
             b = b.proxy(p);
         }
         _ => {}
     }
-    Ok(b.build()?)
+    Ok(b)
 }
 
 /// GET request carrying the browser's headers.
 pub fn request(client: &Client, url: &str, h: &RequestHeaders, default_ua: &str) -> RequestBuilder {
+    request_method(client, url, h, default_ua, reqwest::Method::GET)
+}
+
+/// The same request with another method (HEAD for probing).
+pub(crate) fn request_method(
+    client: &Client,
+    url: &str,
+    h: &RequestHeaders,
+    default_ua: &str,
+    method: reqwest::Method,
+) -> RequestBuilder {
     let ua = h
         .user_agent
         .as_deref()
@@ -197,7 +289,7 @@ pub fn request(client: &Client, url: &str, h: &RequestHeaders, default_ua: &str)
         .unwrap_or(default_ua);
     // identity: ranges must refer to the raw bytes, never a compressed body
     let mut rb = client
-        .get(url)
+        .request(method, url)
         .header(USER_AGENT, ua)
         .header(ACCEPT, "*/*")
         .header(ACCEPT_ENCODING, "identity");
@@ -260,76 +352,74 @@ fn fallbacks(h: &RequestHeaders) -> Vec<(bool, RequestHeaders)> {
     out
 }
 
-/// Ask the server about a file: real size, final URL after redirects,
-/// file name and whether it supports ranges (= resume + many connections).
-pub async fn probe(
-    client: &Client,
-    url: &str,
-    headers: &RequestHeaders,
-    default_ua: &str,
-) -> anyhow::Result<ProbeResult> {
-    let mut first_refusal: Option<u16> = None;
-    let mut found = None;
-    for (with_range, h) in fallbacks(headers) {
-        let mut rb = request(client, url, &h, default_ua);
-        if with_range {
-            rb = rb.header(RANGE, "bytes=0-0");
+/// Headers of a probe answer, shared by the HEAD and ranged paths.
+struct AnswerHeaders {
+    content_type: Option<String>,
+    last_modified: Option<chrono::DateTime<chrono::Utc>>,
+    disposition: Option<String>,
+    accepts_ranges: bool,
+}
+
+impl AnswerHeaders {
+    /// Combine two answers for the same file: `other` (the ranged
+    /// answer) fills what this one lacks, but never erases a value
+    /// this one already has (e.g. a Content-Disposition only the
+    /// HEAD answer carried).
+    fn merged(self, other: AnswerHeaders) -> Self {
+        AnswerHeaders {
+            content_type: self.content_type.or(other.content_type),
+            last_modified: self.last_modified.or(other.last_modified),
+            disposition: self.disposition.or(other.disposition),
+            accepts_ranges: self.accepts_ranges || other.accepts_ranges,
         }
-        let resp = rb.send().await.context("could not connect to server")?;
-        let status = resp.status();
-        if status == StatusCode::UNAUTHORIZED {
-            bail!("the server asks for a user name and password (HTTP 401) - use \"Use authorization\" or Options > Site Logins");
-        }
-        // refused (forbidden, range not allowed, too many requests...): try
-        // the next way; anything else is the server's real answer
-        if matches!(status.as_u16(), 403 | 406 | 416 | 429) {
-            first_refusal.get_or_insert(status.as_u16());
-            continue;
-        }
-        if !status.is_success() {
-            bail!("server answered HTTP {}", status.as_u16());
-        }
-        let changed = h != *headers;
-        found = Some((resp, with_range, changed.then_some(h)));
-        break;
     }
-    let Some((resp, with_range, headers_used)) = found else {
-        bail!("server answered HTTP {}", first_refusal.unwrap_or(403));
-    };
-    let status = resp.status();
-    let final_url = resp.url().to_string();
-    let h = resp.headers();
-    let content_type = h
-        .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let last_modified = h
-        .get(reqwest::header::LAST_MODIFIED)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| chrono::DateTime::parse_from_rfc2822(s.trim()).ok())
-        .map(|d| d.with_timezone(&chrono::Utc));
 
-    let (total_size, resumable) = if status == StatusCode::PARTIAL_CONTENT {
-        // "bytes 0-0/123456"
-        let total = h
-            .get(CONTENT_RANGE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.rsplit('/').next())
-            .and_then(|s| s.trim().parse::<u64>().ok());
-        (total, total.is_some())
-    } else {
-        let accepts = h
-            .get(ACCEPT_RANGES)
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.eq_ignore_ascii_case("bytes"))
-            .unwrap_or(false);
-        let len = resp.content_length();
-        (len, accepts && len.is_some())
-    };
+    fn of(resp: &reqwest::Response) -> Self {
+        let h = resp.headers();
+        AnswerHeaders {
+            content_type: h
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+            last_modified: h
+                .get(reqwest::header::LAST_MODIFIED)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| chrono::DateTime::parse_from_rfc2822(s.trim()).ok())
+                .map(|d| d.with_timezone(&chrono::Utc)),
+            disposition: h
+                .get(CONTENT_DISPOSITION)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+            accepts_ranges: h
+                .get(ACCEPT_RANGES)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.eq_ignore_ascii_case("bytes"))
+                .unwrap_or(false),
+        }
+    }
+}
 
-    let name = h
-        .get(CONTENT_DISPOSITION)
+/// The total from a "Content-Range: bytes 0-0/<total>" answer, if any.
+fn range_total(h: &reqwest::header::HeaderMap) -> Option<u64> {
+    h.get(CONTENT_RANGE)
         .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.rsplit('/').next())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+}
+
+fn finish_probe(
+    final_url: String,
+    url: &str,
+    info: AnswerHeaders,
+    total_size: Option<u64>,
+    unverified: bool,
+    resumable: bool,
+    headers_used: Option<RequestHeaders>,
+) -> ProbeResult {
+    let content_type = info.content_type;
+    let name = info
+        .disposition
+        .as_deref()
         .and_then(filename::from_content_disposition)
         .or_else(|| filename::from_url(&final_url))
         .or_else(|| filename::from_url(url))
@@ -356,11 +446,7 @@ pub async fn probe(
             file_name = format!("{stem}.mp4");
         }
     }
-    drop(resp);
-
-    // a server that refused a byte range gets one plain connection
-    let resumable = resumable && with_range;
-    Ok(ProbeResult {
+    ProbeResult {
         headers_used,
         final_url,
         file_name,
@@ -369,11 +455,149 @@ pub async fn probe(
         } else {
             total_size
         },
+        total_size_unverified: unverified
+            && !matches!(kind, DownloadKind::Hls | DownloadKind::Dash),
         resumable: kind == DownloadKind::Http && resumable,
         content_type,
         kind,
-        last_modified,
-    })
+        last_modified: info.last_modified,
+    }
+}
+
+/// Ask the server about a file: real size, final URL after redirects,
+/// file name and whether it supports ranges (= resume + many connections).
+///
+/// The size is treated as UNTRUSTED until a byte-range request confirms
+/// it: HEAD is asked first for Content-Length, then a ranged GET
+/// (bytes=0-0) must agree via its Content-Range total. A server that
+/// reports a false Content-Length is corrected by the ranged total; a
+/// server that ignores ranges keeps the HEAD length, flagged
+/// `total_size_unverified`, so the UI shows it as an estimate.
+/// HEAD answers 403/405 (or no Content-Length) fall back to the ranged
+/// GET, exactly as before.
+pub async fn probe(
+    client: &Client,
+    url: &str,
+    headers: &RequestHeaders,
+    default_ua: &str,
+) -> anyhow::Result<ProbeResult> {
+    let mut first_refusal: Option<u16> = None;
+    for (with_range, h) in fallbacks(headers) {
+        let headers_used = if h != *headers { Some(h.clone()) } else { None };
+        // 1. HEAD: cheap, and the only request some servers answer at all.
+        let head = request_method(client, url, &h, default_ua, reqwest::Method::HEAD)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await;
+        if let Ok(resp) = head {
+            let status = resp.status();
+            if status == StatusCode::UNAUTHORIZED {
+                bail!("the server asks for a user name and password (HTTP 401) - use \"Use authorization\" or Options > Site Logins");
+            }
+            if status.is_success() {
+                let info = AnswerHeaders::of(&resp);
+                let final_url = resp.url().to_string();
+                // reqwest reports a HEAD body as length 0, so read the
+                // header itself: it is the size the server claims.
+                let claimed = resp
+                    .headers()
+                    .get(CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.trim().parse::<u64>().ok());
+                drop(resp);
+                if let Some(claimed) = claimed {
+                    // Verify the claim with one ranged byte: a 206 total
+                    // wins over the HEAD length; anything else leaves the
+                    // HEAD length standing, flagged untrusted.
+                    let rb = request(client, url, &h, default_ua)
+                        .header(RANGE, "bytes=0-0")
+                        .timeout(Duration::from_secs(5));
+                    // The ranged answer's headers win over the HEAD
+                    // ones: some servers only send Content-Disposition
+                    // (or a real Content-Type) with a ranged answer.
+                    let (verified, ranged_info) = match rb.send().await {
+                        Ok(r) => {
+                            let total = if r.status() == StatusCode::PARTIAL_CONTENT {
+                                range_total(r.headers())
+                            } else {
+                                None
+                            };
+                            let info = if r.status().is_success() {
+                                Some(AnswerHeaders::of(&r))
+                            } else {
+                                None
+                            };
+                            drop(r);
+                            (total, info)
+                        }
+                        Err(_) => (None, None),
+                    };
+                    let info = match ranged_info {
+                        Some(ranged) => info.merged(ranged),
+                        None => info,
+                    };
+                    let (total, unverified, resumable) = match verified {
+                        Some(total) => (Some(total), false, true),
+                        None => (Some(claimed), true, info.accepts_ranges),
+                    };
+                    return Ok(finish_probe(
+                        final_url,
+                        url,
+                        info,
+                        total,
+                        unverified,
+                        resumable,
+                        headers_used,
+                    ));
+                }
+                // HEAD with no length: the ranged request below decides.
+            } else if matches!(status.as_u16(), 403 | 405 | 406 | 416 | 429) {
+                first_refusal.get_or_insert(status.as_u16());
+            }
+        }
+        // 2. Ranged GET (the old path): one byte, Content-Range total.
+        let mut rb = request(client, url, &h, default_ua).timeout(Duration::from_secs(5));
+        if with_range {
+            rb = rb.header(RANGE, "bytes=0-0");
+        }
+        let resp = rb.send().await.context("could not connect to server")?;
+        let status = resp.status();
+        if status == StatusCode::UNAUTHORIZED {
+            bail!("the server asks for a user name and password (HTTP 401) - use \"Use authorization\" or Options > Site Logins");
+        }
+        // refused (forbidden, range not allowed, too many requests...): try
+        // the next way; anything else is the server's real answer
+        if matches!(status.as_u16(), 403 | 406 | 416 | 429) {
+            first_refusal.get_or_insert(status.as_u16());
+            continue;
+        }
+        if !status.is_success() {
+            bail!("server answered HTTP {}", status.as_u16());
+        }
+        let final_url = resp.url().to_string();
+        let info = AnswerHeaders::of(&resp);
+        let (total_size, resumable, unverified) = if status == StatusCode::PARTIAL_CONTENT {
+            // "bytes 0-0/123456": the total is confirmed by the range itself
+            let total = range_total(resp.headers());
+            (total, total.is_some(), false)
+        } else {
+            let len = resp.content_length();
+            (len, info.accepts_ranges && len.is_some(), len.is_some())
+        };
+        drop(resp);
+        // a server that refused a byte range gets one plain connection
+        let resumable = resumable && with_range;
+        return Ok(finish_probe(
+            final_url,
+            url,
+            info,
+            total_size,
+            unverified,
+            resumable,
+            headers_used,
+        ));
+    }
+    bail!("server answered HTTP {}", first_refusal.unwrap_or(403))
 }
 
 #[cfg(test)]
@@ -387,14 +611,17 @@ mod refused_tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             loop {
-                let Ok((mut s, _)) = listener.accept().await else { return };
+                let Ok((mut s, _)) = listener.accept().await else {
+                    return;
+                };
                 tokio::spawn(async move {
                     let mut buf = vec![0u8; 8192];
                     let n = s.read(&mut buf).await.unwrap_or(0);
                     let req = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
                     let refused = req.contains("\r\ncookie:") || req.contains("\r\nrange:");
                     let resp = if refused {
-                        "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+                        "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
                     } else {
                         "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\nhello".to_string()
                     };
@@ -409,10 +636,16 @@ mod refused_tests {
     async fn probe_falls_back_when_refused() {
         let url = picky_server().await;
         let client = Client::builder().no_proxy().build().unwrap();
-        let headers = RequestHeaders { cookies: Some("cf=1".into()), ..Default::default() };
+        let headers = RequestHeaders {
+            cookies: Some("cf=1".into()),
+            ..Default::default()
+        };
         let p = probe(&client, &url, &headers, "UA").await.unwrap();
         assert_eq!(p.total_size, Some(5));
-        assert!(!p.resumable, "the server refuses ranges: one plain connection");
+        assert!(
+            !p.resumable,
+            "the server refuses ranges: one plain connection"
+        );
         let used = p.headers_used.expect("it worked only without the cookie");
         assert!(used.cookies.is_none());
     }

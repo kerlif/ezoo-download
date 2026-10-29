@@ -59,6 +59,11 @@ Name: "autostart"; Description: "Start Ezoo Download when Windows starts (recomm
 [Files]
 Source: "{#Stage}\{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Stage}\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; the bundled fonts' OFL-1.1 texts (copied into the stage by the build
+; workflow; skipped when absent so older staging still installs)
+Source: "{#Stage}\OFL-Carlito.txt"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#Stage}\OFL-NotoSansArabic.txt"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#Stage}\OFL-LiberationSerif.txt"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; the helpers go into {app}\tools; the app updates them there by itself
 Source: "{#Stage}\tools\*"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#Stage}\extension\*"; DestDir: "{app}\extension"; Flags: ignoreversion recursesubdirs createallsubdirs

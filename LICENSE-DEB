@@ -25,10 +25,17 @@ License: MIT
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  DEALINGS IN THE SOFTWARE.
 
-Files: crates/app/ui/fonts/TimesNewRoman-*.ttf
-Copyright: 2012 Red Hat, Inc.
+Files: crates/app/ui/fonts/Carlito-*.ttf
+Copyright: 2013 The Carlito Project Authors
 License: OFL-1.1
- The family name is set to "Times New Roman" so applications can resolve
- that family on systems where Microsoft's own font file is absent; the
- font design itself is Liberation Serif under the SIL Open Font License
- 1.1. Full text: crates/app/ui/fonts/FONTS-LICENSE.txt
+ Full text: crates/app/ui/fonts/OFL-Carlito.txt
+
+Files: crates/app/ui/fonts/NotoSansArabic-*.ttf
+Copyright: 2022 The Noto Project Authors
+License: OFL-1.1
+ Full text: crates/app/ui/fonts/OFL-NotoSansArabic.txt
+
+Files: crates/app/ui/fonts/LiberationSerif-*.ttf
+Copyright: 2010 Google Corporation, 2012 Red Hat, Inc.
+License: OFL-1.1
+ Full text: crates/app/ui/fonts/OFL-LiberationSerif.txt

@@ -466,6 +466,12 @@ msgstr "Bu yolu \"{}\" kategorisi için hatırla"
 msgid "optional note"
 msgstr "isteğe bağlı not"
 
+msgid "Duration"
+msgstr "Süre"
+
+msgid "Quality"
+msgstr "Kalite"
+
 msgid "Use authorization"
 msgstr "Kimlik doğrulama kullan"
 
@@ -606,6 +612,15 @@ msgstr "Kapat"
 
 msgid "Start positions and download progress by connections"
 msgstr "Bağlantılara göre başlangıç konumları ve ilerleme"
+
+msgid "Receiving data…"
+msgstr "Veri alınıyor…"
+
+msgid "Stalled"
+msgstr "Takıldı"
+
+msgid "Waiting"
+msgstr "Bekliyor"
 
 msgid "N."
 msgstr "No."
@@ -1009,8 +1024,8 @@ msgstr "Metin boyutu"
 msgid "Font"
 msgstr "Yazı tipi"
 
-msgid "Default (Segoe UI)"
-msgstr "Varsayılan (Segoe UI)"
+msgid "Default"
+msgstr "Varsayılan"
 
 msgid "Background picture"
 msgstr "Arka plan resmi"
@@ -1038,6 +1053,9 @@ msgstr "Panoya konan bağlantıları otomatik indirmeye başla"
 
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Başlangıçta \"Günün ipucu\"nu göster"
+
+msgid "Check for updates automatically"
+msgstr "Güncellemeleri otomatik olarak denetle"
 
 msgid "On double click on a download"
 msgstr "Bir indirmeye çift tıklayınca"
@@ -1077,9 +1095,6 @@ msgstr "Tarayıcı eklentisi bağlantı noktası"
 
 msgid "Automatically start downloading these file types (from the browser):"
 msgstr "Bu dosya türlerini otomatik indirmeye başla (tarayıcıdan):"
-
-msgid "Default"
-msgstr "Varsayılan"
 
 msgid "Don't start downloading automatically from these sites:"
 msgstr "Bu sitelerden otomatik indirme başlatma:"
@@ -1345,9 +1360,6 @@ msgstr "Oynatma listesinin videoları alınıyor…"
 msgid "The videos of the playlist show up here."
 msgstr "Oynatma listesinin videoları burada görünür."
 
-msgid "Quality"
-msgstr "Kalite"
-
 msgid "Best quality (MP4)"
 msgstr "En iyi kalite (MP4)"
 
@@ -1402,23 +1414,8 @@ msgstr "Sürüm {}"
 msgid "Coded by Ahmed Ezzat"
 msgstr "Kodlayan: Ahmed Ezzat"
 
-msgid "Like Ezoo Download? You can support its development:"
-msgstr "Ezoo Download'u beğendiniz mi? Geliştirilmesine destek olabilirsiniz:"
-
-msgid "Support with PayPal"
-msgstr "PayPal ile destek ol"
-
-msgid "Support with InstaPay"
-msgstr "InstaPay ile destekle"
-
-msgid "InstaPay: a7medek@instapay (scan the code with your bank's app)"
-msgstr "InstaPay: a7medek@instapay (kodu bankanızın uygulamasıyla tarayın)"
-
 msgid "What's new in Ezoo Download"
 msgstr "Ezoo Download’da yenilikler"
-
-msgid "Ezoo Download is free and has no ads. If it helps you and you would like to support its development, you can send a gift with PayPal or InstaPay. Thank you!"
-msgstr "Ezoo Download ücretsiz ve reklamsızdır. İşinize yarıyorsa ve gelişimini desteklemek isterseniz PayPal veya InstaPay ile bağış gönderebilirsiniz. Teşekkürler!"
 
 msgid "Hide"
 msgstr "Gizle"

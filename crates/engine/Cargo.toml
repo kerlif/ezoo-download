@@ -44,3 +44,5 @@ libc = "0.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+# integration tests compare SHA-256 of downloaded files with served bytes
+sha2 = "0.10"

@@ -1200,7 +1200,7 @@ export component MainWindow inherits ThemedWindow {
         }
 
         VerticalLayout {
-            // ---- toolbar (buttons that don't fit a narrow window are cut off)
+            // ---- toolbar: sized to fit a 960 px window with nothing cut off
             Rectangle {
                 height: root.toolbar-small ? 42px : 64px;
                 min-width: 0px;
@@ -1302,7 +1302,7 @@ export component MainWindow inherits ThemedWindow {
                         icon: "startqueue";
                         text: @tr("Start Queue");
                         small: root.toolbar-small;
-                        width: root.toolbar-small ? 34px : 62px;
+                        width: root.toolbar-small ? 34px : 56px;
                         clicked => {
                             root.qmenu-start = true;
                             root.qmenu-x = self.x;
@@ -1313,7 +1313,7 @@ export component MainWindow inherits ThemedWindow {
                         icon: "stopqueue";
                         text: @tr("Stop Queue");
                         small: root.toolbar-small;
-                        width: root.toolbar-small ? 34px : 62px;
+                        width: root.toolbar-small ? 34px : 56px;
                         clicked => {
                             root.qmenu-start = false;
                             root.qmenu-x = self.x;
@@ -1351,7 +1351,7 @@ export component MainWindow inherits ThemedWindow {
                     VerticalLayout {
                         alignment: center;
                         LineEdit {
-                            width: 96px;
+                            width: 88px;
                             placeholder-text: @tr("Filter the list…");
                             text <=> root.search;
                             edited(t) => {
@@ -1567,8 +1567,8 @@ export component MainWindow inherits ThemedWindow {
                             clip: true;
                             // scrolls sideways together with the list (wide columns)
                             hdr := HRow {
-                                x: lv.viewport-x;
-                                width: max(parent.width, lv.viewport-width);
+                                x: lv.content-x;
+                                width: max(parent.width, lv.content-width);
                                 padding-left: Theme.rtl ? (0px) : (6px);
                                 padding-right: Theme.rtl ? (6px) : (0px);
                                 HeaderCell {
@@ -1613,12 +1613,12 @@ export component MainWindow inherits ThemedWindow {
                             vertical-stretch: 1;
                             // Arabic: wide columns start at the right edge, so
                             // the list first shows its right side
-                            property <length> rtl-start: Theme.rtl ? min(0px, self.visible-width - self.viewport-width) : 0px;
+                            property <length> rtl-start: Theme.rtl ? min(0px, self.visible-width - self.content-width) : 0px;
                             changed rtl-start => {
-                                self.viewport-x = self.rtl-start;
+                                self.content-x = self.rtl-start;
                             }
                             init => {
-                                self.viewport-x = self.rtl-start;
+                                self.content-x = self.rtl-start;
                             }
                             for r in root.rows: DownloadItem {
                                 // every row as wide as its columns: the mouse and
@@ -1763,6 +1763,17 @@ export component AddDialog inherits ThemedWindow {
     in property <string> info;
     in property <bool> probing;
     in property <bool> info-error;
+    // Stream metadata (Phase 4): duration, quality selector and the
+    // estimated size of the selected quality. Hidden until the probe
+    // has stream details (a direct file shows one "Direct file" entry).
+    in property <[string]> stream-variants: [];
+    in-out property <int> stream-index: 0;
+    in property <string> stream-duration-text;
+    in property <string> stream-size-text;
+    in property <bool> stream-available;
+    // DRM-signaled stream: the Start / Later buttons stay disabled.
+    in property <bool> drm-blocked;
+    callback quality-changed(int);
     in property <[string]> queue-names: ["Main queue"];
     in-out property <int> queue-index: 0;
     in property <[string]> category-names: ["General", "Compressed", "Documents", "Music", "Programs", "Video", "Images"];
@@ -1907,6 +1918,61 @@ export component AddDialog inherits ThemedWindow {
                 }
             }
         }
+        if root.stream-available: GridLayout {
+            spacing: 8px;
+            Text {
+                col: Theme.rtl ? 1 : 0;
+                row: 0;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: @tr("Duration");
+                vertical-alignment: center;
+                color: Theme.text;
+            }
+            Text {
+                col: Theme.rtl ? 0 : 1;
+                row: 0;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: root.stream-duration-text;
+                vertical-alignment: center;
+                color: Theme.text;
+                font-weight: 600;
+            }
+            Text {
+                col: Theme.rtl ? 1 : 0;
+                row: 1;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: @tr("Quality");
+                vertical-alignment: center;
+                color: Theme.text;
+            }
+            ComboBox {
+                col: Theme.rtl ? 0 : 1;
+                row: 1;
+                model: root.stream-variants;
+                current-index <=> root.stream-index;
+                selected(v) => {
+                    root.quality-changed(root.stream-index);
+                }
+            }
+            Text {
+                col: Theme.rtl ? 1 : 0;
+                row: 2;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: @tr("Size");
+                vertical-alignment: center;
+                color: Theme.text;
+            }
+            Text {
+                col: Theme.rtl ? 0 : 1;
+                row: 2;
+                horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+                text: root.stream-size-text;
+                vertical-alignment: center;
+                color: Theme.text;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+        }
         HRow {
             spacing: 8px;
             CheckBox {
@@ -2019,7 +2085,7 @@ export component AddDialog inherits ThemedWindow {
             }
             Button {
                 text: @tr("Download Later");
-                enabled: root.url != "";
+                enabled: root.url != "" && !root.drm-blocked;
                 clicked => {
                     root.later();
                 }
@@ -2027,7 +2093,7 @@ export component AddDialog inherits ThemedWindow {
             Button {
                 text: @tr("Start Download");
                 primary: true;
-                enabled: root.url != "";
+                enabled: root.url != "" && !root.drm-blocked;
                 clicked => {
                     root.start-now();
                 }
@@ -2840,6 +2906,8 @@ export component DetailsDialog inherits ThemedWindow {
                 font-size: 11px * Theme.font-scale;
                 color: Theme.muted;
             }
+            // every segment as its span, colored by its state (see the
+            // legend below): downloading, done, stalled, or idle
             Rectangle {
                 height: 20px;
                 border-width: 1px;
@@ -2847,22 +2915,97 @@ export component DetailsDialog inherits ThemedWindow {
                 background: Theme.panel;
                 clip: true;
                 for s in root.segs: Rectangle {
+                    // the segment's whole span, so idle segments show too
+                    x: Theme.rtl ? parent.width - 1px - (parent.width - 2px) * s.end : 1px + (parent.width - 2px) * s.start;
+                    y: 1px;
+                    width: (parent.width - 2px) * (s.end - s.start);
+                    height: parent.height - 2px;
+                    background: Theme.bar-bg;
+                }
+                for s in root.segs: Rectangle {
                     x: Theme.rtl ? parent.width - 1px - (parent.width - 2px) * s.start - self.width : 1px + (parent.width - 2px) * s.start;
                     y: 1px;
                     width: (parent.width - 2px) * (s.done - s.start);
                     height: parent.height - 2px;
-                    background: Theme.accent;
+                    background: s.state == 2 ? Theme.ok : s.state == 3 ? Theme.warn : s.state == 1 ? Theme.accent : Theme.muted;
                     animate width {
                         duration: 100ms;
                         easing: linear;
                     }
                 }
-                for s in root.segs: Rectangle {
-                    x: Theme.rtl ? parent.width - 2px - (parent.width - 2px) * s.start : 1px + (parent.width - 2px) * s.start;
-                    y: 0;
-                    width: 1px;
-                    height: parent.height;
-                    background: Theme.err;
+            }
+            // what each color of the bar means (mirrored in Arabic: HRow
+            // runs right to left, the swatches stay with their labels)
+            HRow {
+                spacing: 12px;
+                padding-top: 4px;
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.accent;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Receiving data…");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                }
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.ok;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Finished");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                }
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.warn;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Stalled");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                }
+                HRow {
+                    spacing: 4px;
+                    alignment: center;
+                    Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        background: Theme.muted;
+                        border-width: 1px;
+                        border-color: Theme.line;
+                    }
+                    Text {
+                        text: @tr("Waiting");
+                        font-size: 11px * Theme.font-scale;
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
                 }
             }
             Rectangle {
