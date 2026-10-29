@@ -71,6 +71,7 @@ jobs:
       - name: Build the Flatpak bundle
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           mkdir -p dist
           flatpak-builder --force-clean --install-deps-from=flathub \
             --repo=flatpak-repo flatpak-build \
