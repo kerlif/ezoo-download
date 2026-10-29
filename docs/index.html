@@ -67,7 +67,7 @@
     <div class="wrap strip-inner">
       <div><strong data-i18n="strip.1t">مجاني 100%</strong><span data-i18n="strip.1s">دون إعلانات أو اشتراكات</span></div>
       <div><strong data-i18n="strip.2t">مفتوح المصدر</strong><span data-i18n="strip.2s">مكتوب بلغة Rust</span></div>
-      <div><strong data-i18n="strip.3t">ويندوز + لينكس</strong><span data-i18n="strip.3s">Setup.exe وdeb وAppImage وrpm وFlatpak</span></div>
+      <div><strong data-i18n="strip.3t">ويندوز + لينكس</strong><span data-i18n="strip.3s">Setup.exe وdeb وAppImage وrpm</span></div>
       <div><strong data-i18n="strip.4t">8 لغات</strong><span data-i18n="strip.4s">منها العربية</span></div>
     </div>
   </section>
@@ -207,9 +207,7 @@
         </article>
         <article class="dl-card" data-os="flatpak">
           <h3 data-i18n="dl.flat.t">📦 لينكس — Flatpak</h3>
-          <p><code>EzooDownload-x86_64.flatpak</code> <span data-i18n="dl.flat.d">— حزمة Flatpak واحدة (معرّف التطبيق io.github.kerlif.EzooDownload).</span></p>
-          <span class="detected-badge" hidden data-i18n="dl.detected">✓ نظامك</span>
-          <a class="btn btn-primary" href="https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak" data-i18n="dl.flat.b">تنزيل حزمة Flatpak</a>
+          <p><span data-i18n="dl.flat.d">قادم لاحقًا — حزمة Flatpak ما زالت قيد المراجعة، وستُضاف في إصدار لاحق.</span></p>
         </article>
         <article class="dl-card" data-os="chrome">
           <h3 data-i18n="dl.crx.t">🌐 إضافة كروم</h3>
@@ -272,15 +270,6 @@
           <div class="cmd-row"><code dir="ltr">./EzooDownload-1.1.0-x86_64.AppImage --appimage-extract &amp;&amp; ./squashfs-root/AppRun</code><button type="button" class="copy-btn" data-copy="./EzooDownload-1.1.0-x86_64.AppImage --appimage-extract &amp;&amp; ./squashfs-root/AppRun" data-i18n="copy.btn">نسخ</button></div>
         </article>
         <article class="guide">
-          <h3 data-i18n="g.flat.t">لينكس — Flatpak</h3>
-          <ol>
-            <li data-i18n-html="g.flat.1">نزّل ملف الحزمة <code>EzooDownload-x86_64.flatpak</code> — هذه الحزمة غير منشورة على Flathub، والتثبيت يكون من ملف الحزمة مباشرة.</li>
-            <li data-i18n="g.flat.2">ثبّت الحزمة بالأمر أدناه، ثم شغّل البرنامج بالأمر الثاني.</li>
-          </ol>
-          <div class="cmd-row"><code dir="ltr">flatpak install --user EzooDownload-x86_64.flatpak</code><button type="button" class="copy-btn" data-copy="flatpak install --user EzooDownload-x86_64.flatpak" data-i18n="copy.btn">نسخ</button></div>
-          <div class="cmd-row"><code dir="ltr">flatpak run io.github.kerlif.EzooDownload</code><button type="button" class="copy-btn" data-copy="flatpak run io.github.kerlif.EzooDownload" data-i18n="copy.btn">نسخ</button></div>
-        </article>
-        <article class="guide">
           <h3 data-i18n="g.ext.t">إضافة المتصفح (كروم / فايرفوكس)</h3>
           <ol>
             <li data-i18n-html="g.ext.1">كروم (وEdge وBrave وOpera): فعّل <strong>Developer mode</strong> في صفحة <code>chrome://extensions</code>، ثم اسحب ملف <code>.crx</code> وأفلته في الصفحة. إذا عرض كروم تحذيرًا لإضافة غير منشورة في المتجر، اختر <strong>Keep / إبقاء</strong>.</li>
@@ -322,7 +311,7 @@
       </details>
       <details>
         <summary data-i18n="faq.3q">على أي أنظمة يعمل؟</summary>
-        <p data-i18n="faq.3a">ويندوز 10 / 11 (64-bit) ولينكس x86_64: حزم .deb و.rpm وAppImage وFlatpak. لا توجد نسخة macOS.</p>
+        <p data-i18n="faq.3a">ويندوز 10 / 11 (64-bit) ولينكس x86_64: حزم .deb و.rpm وAppImage. لا توجد نسخة macOS.</p>
       </details>
       <details>
         <summary data-i18n="faq.4q">ماذا لو انقطع الاتصال أثناء التنزيل؟</summary>
@@ -334,7 +323,7 @@
       </details>
       <details>
         <summary data-i18n="faq.6q">كيف تتم التحديثات؟</summary>
-        <p data-i18n="faq.6a">يفحص البرنامج إصدارات هذا المستودع عند التشغيل وكل 24 ساعة (يمكن إيقاف الفحص من الإعدادات)، ويعرض التحديث فقط بعد التحقق من توقيع ملف version.json وبصمة الملف. نسخ .deb و.rpm وFlatpak تُعلِم فقط ولا تُحدِّث نفسها.</p>
+        <p data-i18n="faq.6a">يفحص البرنامج إصدارات هذا المستودع عند التشغيل وكل 24 ساعة (يمكن إيقاف الفحص من الإعدادات)، ويعرض التحديث فقط بعد التحقق من توقيع ملف version.json وبصمة الملف. نسخ .deb و.rpm تُعلِم فقط ولا تُحدِّث نفسها.</p>
       </details>
       <details>
         <summary data-i18n="faq.7q">هل اختيار جودة في نافذة الالتقاط ينزّل تلك الجودة؟</summary>
