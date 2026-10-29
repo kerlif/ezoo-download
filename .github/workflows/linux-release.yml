@@ -1,4 +1,4 @@
-name: Linux release (deb / AppImage / rpm + extensions)
+name: Linux release (deb / AppImage / rpm / Flatpak + extensions)
 
 # Linux packages and browser extensions, built directly after every source
 # update — no manual packaging step. The Windows setup keeps its own
@@ -9,6 +9,14 @@ name: Linux release (deb / AppImage / rpm + extensions)
 #   - push of a tag v*: build, then create a GitHub Release with every
 #     asset + SHA256SUMS.txt (the tag MUST match Cargo.toml's version)
 #   - workflow_dispatch: manual run, artifacts only
+#
+# The Flatpak bundle (EzooDownload-x86_64.flatpak) is built on every
+# run, lands in dist/ with the other Linux artifacts, is covered by
+# the same SHA256SUMS.txt, and reaches the release through the same
+# dist/* upload below. See packaging/flatpak/ + docs/FLATPAK.md
+# (Phase 8): runtime/SDK 26.08, offline vendored Cargo sources,
+# no ffmpeg binary bundled (runtime codecs-extra), yt-dlp fetched
+# by the app itself.
 #
 # Secrets (all optional; the build never fails for a missing one, it just
 # skips the signed artifact and says so):
@@ -39,13 +47,6 @@ jobs:
       # actions pinned to exact commits (a moved tag can't change the build),
       # same pins as the Windows workflow (build.yml)
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
 
       - name: Install build dependencies
         run: |
@@ -54,9 +55,37 @@ jobs:
           # Depends (debian/control) + dpkg/rpm packaging tools. Slint's
           # Linux backends need fontconfig, freetype, xkbcommon, X11 and
           # xcb headers; the first CI run confirms the exact set.
+          # flatpak-builder is installed here too: the Flatpak step below
+          # must run before any cargo step restores/creates target/ or
+          # dist/, because the manifest's `type: dir, path: ../..`
+          # source copies the tree as-is.
           sudo apt-get install -y -q build-essential pkg-config libssl-dev \
             libfontconfig-dev libfreetype-dev libxkbcommon-dev libx11-dev \
-            libxcb1-dev zlib1g-dev dpkg-dev rpm curl xz-utils zip file
+            libxcb1-dev zlib1g-dev dpkg-dev rpm curl xz-utils zip file \
+            flatpak flatpak-builder
+
+      # Flatpak (Phase 8): offline build from the vendored Cargo
+      # sources (packaging/flatpak/cargo-sources.json), then a
+      # single-file bundle into dist/. Runs before the Rust
+      # toolchain/cache steps on purpose (see above).
+      - name: Build the Flatpak bundle
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          mkdir -p dist
+          flatpak-builder --force-clean --install-deps-from=flathub \
+            --repo=flatpak-repo flatpak-build \
+            packaging/flatpak/io.github.kerlif.EzooDownload.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            flatpak-repo dist/EzooDownload-x86_64.flatpak io.github.kerlif.EzooDownload
+          ls -la dist/EzooDownload-x86_64.flatpak
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
 
       - name: Check the version (tag must match Cargo.toml)
         run: |
@@ -145,4 +174,4 @@ jobs:
             && { echo "v$VERSION is already released"; exit 0; }
           gh release create "v$VERSION" dist/* --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" --title "Ezoo Download $VERSION (Linux)" \
-            --notes "Ezoo Download $VERSION for Linux: .deb, AppImage and .rpm (ffmpeg bundled inside), plus the Chrome (.crx/.zip) and Firefox (.xpi) extensions."
+            --notes "Ezoo Download $VERSION for Linux: .deb, AppImage, .rpm (ffmpeg bundled inside) and Flatpak bundle, plus the Chrome (.crx/.zip) and Firefox (.xpi) extensions."
