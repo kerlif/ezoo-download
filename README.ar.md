@@ -209,6 +209,6 @@ cargo build --release
 
 <br>
 
-<sub>مبني بلغة Rust.</sub>
+<sub><picture><source media="(prefers-color-scheme: dark)" srcset="assets/rust-logo-white-outline.svg"><img src="assets/rust-logo.svg" width="15" height="15" alt="شعار Rust"></picture> مبني بلغة Rust.</sub>
 
 </div>

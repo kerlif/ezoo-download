@@ -197,6 +197,6 @@ Open an issue to report a bug or suggest a feature. Translation fixes are welcom
 
 <br>
 
-<sub>Built with Rust.</sub>
+<sub><picture><source media="(prefers-color-scheme: dark)" srcset="assets/rust-logo-white-outline.svg"><img src="assets/rust-logo.svg" width="15" height="15" alt="Rust logo"></picture> Built with Rust.</sub>
 
 </div>
