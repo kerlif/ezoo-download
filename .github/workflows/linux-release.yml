@@ -69,6 +69,8 @@ jobs:
       # single-file bundle into dist/. Runs before the Rust
       # toolchain/cache steps on purpose (see above).
       - name: Build the Flatpak bundle
+        # Non-blocking: a Flatpak failure must not block the packages + release (system-install permission issue, Phase 8 follow-up).
+        continue-on-error: true
         run: |
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           sudo flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -175,4 +177,4 @@ jobs:
             && { echo "v$VERSION is already released"; exit 0; }
           gh release create "v$VERSION" dist/* --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" --title "Ezoo Download $VERSION (Linux)" \
-            --notes "Ezoo Download $VERSION for Linux: .deb, AppImage, .rpm (ffmpeg bundled inside) and Flatpak bundle, plus the Chrome (.crx/.zip) and Firefox (.xpi) extensions."
+            --notes "Ezoo Download $VERSION for Linux: .deb, AppImage, .rpm (ffmpeg bundled inside) plus the Chrome (.crx/.zip) and Firefox (.xpi) extensions."
