@@ -173,6 +173,7 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Sign SHA256SUMS.txt (release only)
+        if: github.ref_type == 'tag'
         shell: bash
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
@@ -182,14 +183,12 @@ jobs:
           # tampered sums file cannot bless a tampered artifact (Q12/Q33).
           # Same key and example as version.json; a missing key is a
           # hard error on releases, exactly like the version.json rule.
-          if [ "${{ steps.meta.outputs.is_release }}" = "true" ]; then
-            if [ -z "$UPDATE_SIGNING_KEY" ]; then echo "UPDATE_SIGNING_KEY is not set: refusing to ship an unsigned SHA256SUMS.txt for a release" >&2; exit 1; fi
-            SUMS_HASH=$(sha256sum dist/SHA256SUMS.txt | awk '{print $1}')
-            SUMS_SIG=$(cargo run --quiet --release -p swiftget-engine --example sign_update -- "$VERSION" "$SUMS_HASH")
-            if [ ${#SUMS_SIG} -ne 128 ]; then echo "could not sign SHA256SUMS.txt" >&2; exit 1; fi
-            printf '%s\n' "$SUMS_SIG" > dist/SHA256SUMS.txt.sig
-            cat dist/SHA256SUMS.txt.sig
-          fi
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then echo "UPDATE_SIGNING_KEY is not set: refusing to ship an unsigned SHA256SUMS.txt for a release" >&2; exit 1; fi
+          SUMS_HASH=$(sha256sum dist/SHA256SUMS.txt | awk '{print $1}')
+          SUMS_SIG=$(cargo run --quiet --release -p swiftget-engine --example sign_update -- "$VERSION" "$SUMS_HASH")
+          if [ ${#SUMS_SIG} -ne 128 ]; then echo "could not sign SHA256SUMS.txt" >&2; exit 1; fi
+          printf '%s\n' "$SUMS_SIG" > dist/SHA256SUMS.txt.sig
+          cat dist/SHA256SUMS.txt.sig
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
