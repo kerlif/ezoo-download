@@ -55,6 +55,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
 Name: "autostart"; Description: "Start Ezoo Download when Windows starts (recommended)"; GroupDescription: "Startup:"
+Name: "torrents"; Description: "Open .torrent files and magnet links with Ezoo Download"; GroupDescription: "Torrents:"
 
 [Files]
 Source: "{#Stage}\{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
@@ -79,6 +80,14 @@ Source: "..\build-cache\redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dont
 ; older versions kept the helpers next to the program
 Type: files; Name: "{app}\yt-dlp.exe"
 Type: files; Name: "{app}\ffmpeg.exe"
+; files of older versions of the browser extension that are not part of it
+; any more (the folder itself stays: the browser keeps it loaded)
+Type: filesandordirs; Name: "{app}\extension\test"
+Type: files; Name: "{app}\extension\manifest.firefox.json"
+Type: filesandordirs; Name: "{app}\extension-firefox\test"
+Type: files; Name: "{app}\extension-firefox\manifest.firefox.json"
+Type: files; Name: "{app}\extension\*.ezoo-new"
+Type: files; Name: "{app}\extension-firefox\*.ezoo-new"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
@@ -97,6 +106,18 @@ Root: HKCU; Subkey: "Software\Classes\ezoo-download"; ValueType: string; ValueNa
 Root: HKCU; Subkey: "Software\Classes\ezoo-download"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\ezoo-download\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExe},0"
 Root: HKCU; Subkey: "Software\Classes\ezoo-download\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" --from-browser"
+
+; .torrent files and magnet: links (only when chosen while installing).
+; Windows may still ask once which program to use.
+Root: HKCU; Subkey: "Software\Classes\.torrent\OpenWithProgids"; ValueType: string; ValueName: "EzooDownload.torrent"; ValueData: ""; Flags: uninsdeletevalue; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\.torrent"; ValueType: string; ValueName: ""; ValueData: "EzooDownload.torrent"; Flags: uninsdeletevalue; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\EzooDownload.torrent"; ValueType: string; ValueName: ""; ValueData: "Torrent file"; Flags: uninsdeletekey; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\EzooDownload.torrent\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExe},0"; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\EzooDownload.torrent\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\magnet"; ValueType: string; ValueName: ""; ValueData: "URL:Magnet link"; Flags: uninsdeletekey; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\magnet"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\magnet\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExe},0"; Tasks: torrents
+Root: HKCU; Subkey: "Software\Classes\magnet\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: torrents
 
 [Run]
 Filename: "{app}\{#MyAppExe}"; Description: "Open Ezoo Download now"; Flags: nowait postinstall skipifsilent
@@ -157,16 +178,69 @@ begin
     InstallRuntime;
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+{ true while EzooDownload.exe still runs }
+function AppRunning: Boolean;
 var
   Code: Integer;
 begin
-  { the running program locks its files: close it (it saves everything and
-    the downloads go on after the update) }
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM {#MyAppExe} >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Sleep(2000);
-  Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM {#MyAppExe} >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, Code);
-  Sleep(500);
-  Result := '';
+  Result := Exec(ExpandConstant('{cmd}'), '/C tasklist /NH /FI "IMAGENAME eq {#MyAppExe}" | find /I "{#MyAppExe}" >nul', '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
 end;
 
+{ ask the open program to close by itself: it saves the list and the
+  downloads (they go on after the update). Versions before 1.0.8 don't
+  know this; they are closed below. Since 1.1.1 /quit needs the
+  per-install token (local-api-token, data_dir) — without it the
+  request is refused and the installer falls back to taskkill below. }
+function ReadLocalToken: String;
+var
+  S: AnsiString;
+begin
+  Result := '';
+  if LoadStringFromFile(ExpandConstant('{userappdata}\com\Ezoo\EzooDownload\local-api-token'), S) then
+    Result := Trim(String(S));
+end;
+
+procedure AskAppToQuit;
+var
+  Http: Variant;
+  Token: String;
+begin
+  try
+    Http := CreateOleObject('WinHttp.WinHttpRequest.5.1');
+    Http.SetTimeouts(1000, 1000, 2000, 2000);
+    Http.Open('POST', 'http://127.0.0.1:9614/quit', False);
+    Http.SetRequestHeader('X-SwiftGet', '1');
+    Token := ReadLocalToken;
+    if Token <> '' then
+      Http.SetRequestHeader('X-SwiftGet-Token', Token);
+    Http.Send('');
+  except
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code, I: Integer;
+begin
+  { the running program locks its files: close it before copying }
+  if AppRunning then
+  begin
+    AskAppToQuit;
+    for I := 1 to 20 do
+    begin
+      if not AppRunning then break;
+      Sleep(500);
+    end;
+  end;
+  if AppRunning then
+  begin
+    Exec(ExpandConstant('{cmd}'), '/C taskkill /IM {#MyAppExe} >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Sleep(2000);
+  end;
+  if AppRunning then
+  begin
+    Exec(ExpandConstant('{cmd}'), '/C taskkill /F /IM {#MyAppExe} >nul 2>&1', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Sleep(800);
+  end;
+  Result := '';
+end;

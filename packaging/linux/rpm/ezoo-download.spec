@@ -13,7 +13,7 @@ Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Download manager with multi-connection segmented downloads
 License:        MIT
-URL:            https://github.com/AhmedEzo686/ezoo-download
+URL:            https://github.com/kerlif/ezoo-download
 Source0:        root.tar.gz
 BuildArch:      x86_64
 # Runtime libraries: the same closure as the .deb's Depends, Fedora names.
@@ -34,16 +34,20 @@ ffmpeg is needed.
 
 %install
 mkdir -p %{buildroot}
-tar -xzf %{SOURCE0} -C %{buildroot}
+# --no-same-owner: the tarball stores the staging user's uid/gid, and
+# extracting with ownership fails on filesystems that forbid chown
+# (the packaged files' ownership comes from %files, not the tarball)
+tar --no-same-owner -xzf %{SOURCE0} -C %{buildroot}
 
 %files
 /usr/bin/EzooDownload
 /usr/lib/ezoo-download/
-/usr/share/applications/ezoo-download.desktop
+/usr/share/applications/io.github.kerlif.EzooDownload.desktop
 /usr/share/doc/ezoo-download/
 /usr/share/ezoo-download/
+/usr/share/fonts/truetype/ezoo-download/
 /usr/share/icons/hicolor/
-/usr/share/metainfo/io.github.ahmedezo686.ezoo-download.metainfo.xml
+/usr/share/metainfo/io.github.kerlif.EzooDownload.metainfo.xml
 
 %post
 # best-effort refresh of the desktop and icon caches after install/upgrade
@@ -52,4 +56,9 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -q /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fi
+# refresh the font cache so fontconfig sees the bundled fonts right away
+# (best effort: fontconfig also rebuilds its cache lazily)
+if command -v fc-cache >/dev/null 2>&1; then
+    fc-cache -f /usr/share/fonts >/dev/null 2>&1 || true
 fi
