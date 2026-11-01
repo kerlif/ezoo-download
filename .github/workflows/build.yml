@@ -101,6 +101,18 @@ jobs:
           $n = (Get-Item "$t/v.mp4").Length / 2
           Run @("-protocol_whitelist", "file,subfile", "-i", "subfile,,start,0,end,$n,,:$((Resolve-Path "$t/v.mp4").Path)", "-c", "copy", "-f", "matroska") "$t/o5.mkv"
           Write-Host "our ffmpeg: $((Get-Item $ff).Length / 1MB) MB, all checks passed"
+      # restore_ffmpeg() fetches ffmpeg.exe from our own release when the
+      # bundled copy is missing, and only accepts it when its SHA-256
+      # matches the hash baked into the binary at build time
+      # (tools.rs: FFMPEG_SHA256, option_env!("EZOO_FFMPEG_SHA256")).
+      # The hash comes from the ffmpeg this run built, so it can never
+      # go stale; without it restore_ffmpeg() stays inert.
+      - name: Bake the ffmpeg.exe SHA-256 into the build
+        shell: pwsh
+        run: |
+          $ffHash = (Get-FileHash ffmpeg-out/ffmpeg.exe -Algorithm SHA256).Hash.ToLower()
+          "EZOO_FFMPEG_SHA256=$ffHash" | Out-File -Append $env:GITHUB_ENV
+          Write-Host "ffmpeg.exe SHA-256 baked in: $ffHash"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
@@ -166,8 +178,8 @@ jobs:
             $xpi = Get-ChildItem xpi-out -Filter *.xpi | Select-Object -First 1
             if ($xpi) {
               Copy-Item $xpi.FullName "$p/ezoo-download-firefox.xpi"
-              Copy-Item $xpi.FullName "dist/ezoo-download-firefox.xpi"
-              $fx = "{`n  ""addons"": {`n    ""ezoo-download@ezoo-tech.com"": {`n      ""updates"": [`n        { ""version"": ""$extVersion"", ""update_link"": ""https://github.com/${{ github.repository }}/releases/download/v$version/ezoo-download-firefox.xpi"" }`n      ]`n    }`n  }`n}`n"
+              Copy-Item $xpi.FullName "dist/ezoo-download-firefox-$extVersion.xpi"
+              $fx = "{`n  ""addons"": {`n    ""ezoo-download@ezoo-tech.com"": {`n      ""updates"": [`n        { ""version"": ""$extVersion"", ""update_link"": ""https://github.com/${{ github.repository }}/releases/download/v$version/ezoo-download-firefox-$extVersion.xpi"" }`n      ]`n    }`n  }`n}`n"
               [IO.File]::WriteAllText("$PWD/dist/firefox-updates.json", $fx)
             } else { Write-Host "::warning::the Firefox add-on was not signed" }
           } elseif ($env:IS_RELEASE -eq "true") { Write-Host "::warning::AMO_JWT_ISSUER / AMO_JWT_SECRET are not set: the Firefox add-on is not signed" }
@@ -175,12 +187,16 @@ jobs:
           $signed = "extension-signed/ezoo-download-firefox-$extVersion.xpi"
           if (-not (Test-Path "$p/ezoo-download-firefox.xpi") -and (Test-Path $signed)) {
             Copy-Item $signed "$p/ezoo-download-firefox.xpi"
-            Copy-Item $signed "dist/ezoo-download-firefox.xpi"
-            $fx = "{`n  ""addons"": {`n    ""ezoo-download@ezoo-tech.com"": {`n      ""updates"": [`n        { ""version"": ""$extVersion"", ""update_link"": ""https://github.com/${{ github.repository }}/releases/download/v$version/ezoo-download-firefox.xpi"" }`n      ]`n    }`n  }`n}`n"
+            Copy-Item $signed "dist/ezoo-download-firefox-$extVersion.xpi"
+            $fx = "{`n  ""addons"": {`n    ""ezoo-download@ezoo-tech.com"": {`n      ""updates"": [`n        { ""version"": ""$extVersion"", ""update_link"": ""https://github.com/${{ github.repository }}/releases/download/v$version/ezoo-download-firefox-$extVersion.xpi"" }`n      ]`n    }`n  }`n}`n"
             [IO.File]::WriteAllText("$PWD/dist/firefox-updates.json", $fx)
           }
           # our own small ffmpeg (job "ffmpeg") and its licences
           Copy-Item ffmpeg-out/* "$p/tools/"
+          # the same ffmpeg.exe as a standalone release asset, so
+          # restore_ffmpeg() can fetch it from our own release
+          # (tools.rs: releases/download/v<version>/ffmpeg.exe)
+          Copy-Item ffmpeg-out/ffmpeg.exe "dist/ffmpeg.exe"
           # yt-dlp of one release, checked against that release's SHA2-256SUMS
           $yt = Invoke-RestMethod "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest" -Headers @{ "User-Agent" = "EzooDownload-ci"; "Authorization" = "Bearer ${{ github.token }}" }
           $ytExe = $yt.assets | Where-Object { $_.name -eq "yt-dlp.exe" } | Select-Object -First 1
@@ -230,15 +246,10 @@ jobs:
         run: |
           gh release view "v$env:VERSION" --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) { Write-Host "v$env:VERSION is already released"; exit 0 }
-          $files = @("dist/EzooDownload-Setup.exe", "dist/version.json")
-          if (Test-Path dist/ezoo-download-firefox.xpi) { $files += "dist/ezoo-download-firefox.xpi", "dist/firefox-updates.json" }
+          $files = @("dist/EzooDownload-Setup.exe", "dist/version.json", "dist/ffmpeg.exe")
+          if (Test-Path dist/ezoo-download-firefox-$extVersion.xpi) { $files += "dist/ezoo-download-firefox-$extVersion.xpi", "dist/firefox-updates.json" }
           gh release create "v$env:VERSION" @files --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Ezoo Download $env:VERSION" --notes "Ezoo Download $env:VERSION" --latest
           if ($LASTEXITCODE -ne 0) { throw "could not create the release" }
-          # only the newest release stays: older ones (and their tags) go
-          $tags = gh release list --repo "${{ github.repository }}" --limit 100 --json tagName -q '.[].tagName'
-          foreach ($t in $tags) {
-            if ($t -and $t -ne "v$env:VERSION") {
-              Write-Host "Removing old release $t"
-              gh release delete $t --repo "${{ github.repository }}" --yes --cleanup-tag
-            }
-          }
+          # old releases are KEPT (Q24, decided 2026-10-31): this step
+          # must never delete other releases or their tags — deleting
+          # them is what removed upstream v1.0.7 when 1.0.8 shipped.
