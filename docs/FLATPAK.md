@@ -96,6 +96,17 @@ with `flatpak-cargo-generator` from `flatpak-builder-tools`:
   generator and commit the new `cargo-sources.json` with it. A stale
   list fails the CI build (hash/version mismatch), it does not
   silently build old dependencies.
+- Regenerated 2026-11-01 (WP10 fix): Phase 9 added `proptest` 1.12.0
+  (dev-dependency, property tests) and its closure, but the list was
+  still the Phase 8 one — the CI Flatpak build failed offline with
+  "no matching package named `proptest`". Same generator (pinned
+  commit `41c20aa`, fresh venv) re-run against the current lock:
+  718 `archive` entries, 0 missing, 0 sha256 mismatches, 0 extra
+  (lock: 720 packages = 718 registry + 2 workspace); +9 entries vs
+  the old file, all proptest closure (`proptest` 1.12.0, `bit-set`
+  0.11.1, `bit-vec` 0.10.1, `borsh-derive` 1.8.1, `quick-error`
+  1.2.3, `rand_xorshift` 0.5.0, `rusty-fork` 0.3.1, `unarray` 0.1.4,
+  `wait-timeout` 0.2.1), each sha256 equal to its lock checksum.
 
 Build dependencies, verified from the code (not assumed): besides
 the app module itself, the manifest adds two modules — a static
