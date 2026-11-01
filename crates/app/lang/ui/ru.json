@@ -290,6 +290,8 @@
  "Type a start page and click \\\"Start exploring\\\".": "Введите начальную страницу и нажмите \\\"Начать обход\\\".",
  "Use link texts as descriptions": "Использовать текст ссылок как описание",
  "Download checked": "Скачать отмеченные",
+ "Preview": "Предпросмотр",
+ "Copy link": "Копировать ссылку",
  "Tip of the day": "Совет дня",
  "Did you know…": "А вы знали…",
  "Show tips at startup": "Показывать советы при запуске",
@@ -474,8 +476,15 @@
  "What's new in Ezoo Download": "Что нового в Ezoo Download",
  "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \\\"Download all links with Ezoo Download\\\": every link you see there is collected.": "Некоторые страницы создают ссылки только в браузере (скриптами или простым текстом). Для них: откройте страницу в браузере, щёлкните правой кнопкой и выберите \\\"Download all links with Ezoo Download\\\": будет собрана каждая видимая ссылка.",
  "Check for updates automatically": "Проверять обновления автоматически",
- "needs-review": "estimated from bitrate; estimated from sampled segments; Stalled; Receiving data…; Waiting; Check for updates automatically",
  "Stalled": "Зависший",
  "Receiving data…": "Получение данных…",
- "Waiting": "Ожидание"
+ "Waiting": "Ожидание",
+ "Ask before removing downloads from the list": "Спрашивать перед удалением загрузок из списка",
+ "Delete the downloaded files from the disk too (be careful)": "Удалить и скачанные файлы с диска (осторожно)",
+ "Don't show this question again": "Больше не задавать этот вопрос",
+ "Download the subtitles of videos too, in these languages:": "Скачивать и субтитры видео на этих языках:",
+ "Quality of MP3 files": "Качество файлов MP3",
+ "Next to the clock": "К часам",
+ "Draw the windows with the graphics card (uses more memory; after a restart)": "Рисовать окна видеокартой (больше памяти; после перезапуска)",
+ "needs-review": "estimated from bitrate; estimated from sampled segments; Stalled; Receiving data…; Waiting; Check for updates automatically; Ask before removing downloads from the list; Delete the downloaded files from the disk too (be careful); Don't show this question again; Download the subtitles of videos too, in these languages:; Quality of MP3 files; Next to the clock; Draw the windows with the graphics card (uses more memory; after a restart)"
 }

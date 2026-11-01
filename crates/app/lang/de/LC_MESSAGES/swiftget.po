@@ -49,6 +49,12 @@ msgstr "Alle oder einige Videos einer Playlist herunterladen."
 msgid "Download a .torrent file or a magnet link."
 msgstr "Eine .torrent-Datei oder einen Magnet-Link herunterladen."
 
+msgid "Move to queue"
+msgstr "In Warteschlange verschieben"
+
+msgid "Delete from queue"
+msgstr "Aus Warteschlange entfernen"
+
 msgid "{} downloads selected"
 msgstr "{} Downloads ausgewählt"
 
@@ -81,12 +87,6 @@ msgstr "Download-Adresse aktualisieren…"
 
 msgid "Move / Rename…"
 msgstr "Verschieben / Umbenennen…"
-
-msgid "Move to queue"
-msgstr "In Warteschlange verschieben"
-
-msgid "Delete from queue"
-msgstr "Aus Warteschlange entfernen"
 
 msgid "Copy address"
 msgstr "Adresse kopieren"
@@ -604,6 +604,9 @@ msgstr "<< Details ausblenden"
 msgid "Show details >>"
 msgstr "Details anzeigen >>"
 
+msgid "Next to the clock"
+msgstr "Neben die Uhr"
+
 msgid "Pause"
 msgstr "Pause"
 
@@ -627,9 +630,6 @@ msgstr "Nr."
 
 msgid "Info"
 msgstr "Info"
-
-msgid "Hide next to the clock"
-msgstr "Neben der Uhr ausblenden"
 
 msgid "Download complete"
 msgstr "Download abgeschlossen"
@@ -747,6 +747,12 @@ msgstr "Wenn fertig, anzeigen, sonst fortsetzen"
 
 msgid "Remember my choice (Options > Downloads)"
 msgstr "Meine Wahl merken (Optionen > Downloads)"
+
+msgid "Delete the downloaded files from the disk too (be careful)"
+msgstr "Die heruntergeladenen Dateien auch von der Festplatte löschen (Vorsicht)"
+
+msgid "Don't show this question again"
+msgstr "Diese Frage nicht mehr anzeigen"
 
 msgid "All downloads are finished."
 msgstr "Alle Downloads sind fertig."
@@ -934,6 +940,12 @@ msgstr "Alle abwählen"
 msgid "Link text"
 msgstr "Linktext"
 
+msgid "Preview"
+msgstr "Vorschau"
+
+msgid "Copy link"
+msgstr "Link kopieren"
+
 msgid "No links on this page."
 msgstr "Keine Links auf dieser Seite."
 
@@ -1051,6 +1063,9 @@ msgstr "Zwischenablage auf Download-Links überwachen"
 msgid "Automatically start downloading links placed in the clipboard"
 msgstr "Links aus der Zwischenablage automatisch herunterladen"
 
+msgid "Draw the windows with the graphics card (uses more memory; after a restart)"
+msgstr "Fenster mit der Grafikkarte zeichnen (mehr Speicher; nach einem Neustart)"
+
 msgid "Show \"Tip of the day\" at startup"
 msgstr "\"Tipp des Tages\" beim Start anzeigen"
 
@@ -1144,6 +1159,15 @@ msgstr "Fenster \"Dateiinformationen\" für Downloads aus dem Browser anzeigen"
 msgid "Start downloading immediately while showing \"Download File Info\""
 msgstr "Sofort herunterladen, während \"Dateiinformationen\" angezeigt wird"
 
+msgid "Ask before removing downloads from the list"
+msgstr "Vor dem Entfernen von Downloads aus der Liste fragen"
+
+msgid "Quality of MP3 files"
+msgstr "Qualität der MP3-Dateien"
+
+msgid "Download the subtitles of videos too, in these languages:"
+msgstr "Auch die Untertitel der Videos herunterladen, in diesen Sprachen:"
+
 msgid "Show the download progress window"
 msgstr "Fortschrittsfenster anzeigen"
 
@@ -1218,6 +1242,9 @@ msgstr "Ausnahmen: Server mit eigener Verbindungsanzahl"
 
 msgid "Server"
 msgstr "Server"
+
+msgid "Max downloads"
+msgstr "Max downloads"
 
 msgid "example.com"
 msgstr "example.com"

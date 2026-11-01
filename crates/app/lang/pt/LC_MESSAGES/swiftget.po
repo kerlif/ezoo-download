@@ -49,6 +49,12 @@ msgstr "Baixar todos ou alguns vídeos de uma playlist."
 msgid "Download a .torrent file or a magnet link."
 msgstr "Baixar um arquivo .torrent ou um link magnet."
 
+msgid "Move to queue"
+msgstr "Mover para a fila"
+
+msgid "Delete from queue"
+msgstr "Remover da fila"
+
 msgid "{} downloads selected"
 msgstr "{} downloads selecionados"
 
@@ -81,12 +87,6 @@ msgstr "Atualizar o endereço do download…"
 
 msgid "Move / Rename…"
 msgstr "Mover / Renomear…"
-
-msgid "Move to queue"
-msgstr "Mover para a fila"
-
-msgid "Delete from queue"
-msgstr "Remover da fila"
 
 msgid "Copy address"
 msgstr "Copiar endereço"
@@ -604,6 +604,9 @@ msgstr "<< Ocultar detalhes"
 msgid "Show details >>"
 msgstr "Mostrar detalhes >>"
 
+msgid "Next to the clock"
+msgstr "Perto do relógio"
+
 msgid "Pause"
 msgstr "Pausar"
 
@@ -627,9 +630,6 @@ msgstr "N.º"
 
 msgid "Info"
 msgstr "Info"
-
-msgid "Hide next to the clock"
-msgstr "Ocultar perto do relógio"
 
 msgid "Download complete"
 msgstr "Download concluído"
@@ -747,6 +747,12 @@ msgstr "Se estiver concluído mostrar, senão retomar"
 
 msgid "Remember my choice (Options > Downloads)"
 msgstr "Lembrar minha escolha (Opções > Downloads)"
+
+msgid "Delete the downloaded files from the disk too (be careful)"
+msgstr "Apagar também os arquivos baixados do disco (cuidado)"
+
+msgid "Don't show this question again"
+msgstr "Não mostrar esta pergunta novamente"
 
 msgid "All downloads are finished."
 msgstr "Todos os downloads terminaram."
@@ -934,6 +940,12 @@ msgstr "Desmarcar todos"
 msgid "Link text"
 msgstr "Texto do link"
 
+msgid "Preview"
+msgstr "Pré-visualizar"
+
+msgid "Copy link"
+msgstr "Copiar link"
+
 msgid "No links on this page."
 msgstr "Nenhum link nesta página."
 
@@ -1051,6 +1063,9 @@ msgstr "Monitorar a área de transferência em busca de links"
 msgid "Automatically start downloading links placed in the clipboard"
 msgstr "Iniciar automaticamente os links copiados para a área de transferência"
 
+msgid "Draw the windows with the graphics card (uses more memory; after a restart)"
+msgstr "Desenhar as janelas com a placa de vídeo (mais memória; depois de reiniciar)"
+
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Mostrar a \"Dica do dia\" ao iniciar"
 
@@ -1144,6 +1159,15 @@ msgstr "Mostrar a janela \"Informações do arquivo\" para downloads do navegado
 msgid "Start downloading immediately while showing \"Download File Info\""
 msgstr "Começar a baixar imediatamente enquanto mostra \"Informações do arquivo\""
 
+msgid "Ask before removing downloads from the list"
+msgstr "Perguntar antes de remover downloads da lista"
+
+msgid "Quality of MP3 files"
+msgstr "Qualidade dos arquivos MP3"
+
+msgid "Download the subtitles of videos too, in these languages:"
+msgstr "Baixar também as legendas dos vídeos, nestes idiomas:"
+
 msgid "Show the download progress window"
 msgstr "Mostrar a janela de progresso"
 
@@ -1218,6 +1242,9 @@ msgstr "Exceções: servidores com o próprio número de conexões"
 
 msgid "Server"
 msgstr "Servidor"
+
+msgid "Max downloads"
+msgstr "Max downloads"
 
 msgid "example.com"
 msgstr "example.com"

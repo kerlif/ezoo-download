@@ -307,30 +307,20 @@ pub(crate) fn drag_file_out(w: &slint::Window, path: &std::path::Path) {
     }
 }
 
-/// Windows drawn without the Windows frame (their own title bar): move the
-/// window while the mouse button is held on the title.
+/// Files dropped on the window from Explorer.
 #[cfg(windows)]
-pub(crate) fn drag_window(w: &slint::Window) {
-    use slint::winit_030::{winit, WinitWindowAccessor};
-    w.with_winit_window(|win: &winit::window::Window| {
-        let _ = win.drag_window();
-    });
-}
-
-/// ...and make it bigger / smaller from its bottom right corner.
-#[cfg(windows)]
-pub(crate) fn drag_resize_window(w: &slint::Window) {
-    use slint::winit_030::{winit, WinitWindowAccessor};
-    w.with_winit_window(|win: &winit::window::Window| {
-        let _ = win.drag_resize_window(winit::window::ResizeDirection::SouthEast);
+pub(crate) fn on_files_dropped(w: &slint::Window, f: impl Fn(std::path::PathBuf) + 'static) {
+    use slint::winit_030::{winit, EventResult, WinitWindowAccessor};
+    w.on_winit_window_event(move |_, ev| {
+        if let winit::event::WindowEvent::DroppedFile(p) = ev {
+            f(p.clone());
+        }
+        EventResult::Propagate
     });
 }
 
 #[cfg(not(windows))]
-pub(crate) fn drag_window(_w: &slint::Window) {}
-
-#[cfg(not(windows))]
-pub(crate) fn drag_resize_window(_w: &slint::Window) {}
+pub(crate) fn on_files_dropped(_w: &slint::Window, _f: impl Fn(std::path::PathBuf) + 'static) {}
 
 /// A file / folder picker that belongs to `w`: it stays on top of it and
 /// `w` waits for it.
@@ -400,6 +390,9 @@ pub(crate) fn msg_box() -> rfd::MessageDialog {
 
 /// The same for file / folder pickers.
 pub(crate) fn file_box() -> rfd::FileDialog {
+    // the windows wait for the picker: no "does not answer" meanwhile (the
+    // main timer clears this once the windows move again)
+    crate::api::UI_WAITS.store(true, std::sync::atomic::Ordering::Relaxed);
     let d = rfd::FileDialog::new();
     #[cfg(windows)]
     if let Some(h) = own_front_window() {

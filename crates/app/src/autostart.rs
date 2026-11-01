@@ -51,11 +51,26 @@ mod imp {
 mod imp {
     use std::path::PathBuf;
 
+    // The desktop file ships as io.github.kerlif.EzooDownload.desktop;
+    // 1.1.0 and older shipped ezoo-download.desktop — an upgrader who
+    // enabled autostart under the old name keeps working, because the
+    // old file's Exec points at the program itself, so both names are
+    // accepted here and both are removed when autostart is turned off.
+    const FILE: &str = "io.github.kerlif.EzooDownload.desktop";
+    const OLD_FILE: &str = "ezoo-download.desktop";
+
     fn autostart_file() -> Option<PathBuf> {
         let dir = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-        Some(dir.join("autostart").join("ezoo-download.desktop"))
+        Some(dir.join("autostart").join(FILE))
+    }
+
+    fn old_autostart_file() -> Option<PathBuf> {
+        let dir = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+        Some(dir.join("autostart").join(OLD_FILE))
     }
 
     fn entry(exe: &std::path::Path) -> String {
@@ -77,13 +92,16 @@ mod imp {
 
     pub fn is_enabled() -> bool {
         autostart_file().is_some_and(|p| p.exists())
+            || old_autostart_file().is_some_and(|p| p.exists())
     }
 
     /// Installed by the .deb (which ships the desktop file but never asks
     /// about autostart), so like on Windows a copy from the setup does not
     /// turn autostart on by itself.
     pub fn installed_by_setup() -> bool {
-        std::path::Path::new("/usr/share/applications/ezoo-download.desktop").exists()
+        std::path::Path::new("/usr/share/applications/io.github.kerlif.EzooDownload.desktop")
+            .exists()
+            || std::path::Path::new("/usr/share/applications/ezoo-download.desktop").exists()
     }
 
     pub fn set(enabled: bool) -> bool {
@@ -99,7 +117,14 @@ mod imp {
             }
             std::fs::write(&path, entry(&exe)).is_ok()
         } else {
-            !is_enabled() || std::fs::remove_file(&path).is_ok()
+            // turning autostart off removes both the current file and a
+            // leftover from 1.1.0 and older (see above); a file that was
+            // never there counts as removed
+            let _ = std::fs::remove_file(&path);
+            if let Some(old) = old_autostart_file() {
+                let _ = std::fs::remove_file(old);
+            }
+            !is_enabled()
         }
     }
 }

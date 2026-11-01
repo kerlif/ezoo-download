@@ -290,6 +290,8 @@
  "Type a start page and click \\\"Start exploring\\\".": "Digite uma página inicial e clique em \\\"Começar a explorar\\\".",
  "Use link texts as descriptions": "Usar o texto dos links como descrição",
  "Download checked": "Baixar marcados",
+ "Preview": "Pré-visualizar",
+ "Copy link": "Copiar link",
  "Tip of the day": "Dica do dia",
  "Did you know…": "Você sabia…",
  "Show tips at startup": "Mostrar dicas ao iniciar",
@@ -477,5 +479,12 @@
  "Receiving data…": "A receber dados…",
  "Waiting": "Aguardando",
  "Check for updates automatically": "Procurar atualizações automaticamente",
- "needs-review": "Stalled; Receiving data…; Waiting; Check for updates automatically"
+ "Ask before removing downloads from the list": "Perguntar antes de remover downloads da lista",
+ "Delete the downloaded files from the disk too (be careful)": "Apagar também os arquivos baixados do disco (cuidado)",
+ "Don't show this question again": "Não mostrar esta pergunta novamente",
+ "Download the subtitles of videos too, in these languages:": "Baixar também as legendas dos vídeos, nestes idiomas:",
+ "Quality of MP3 files": "Qualidade dos arquivos MP3",
+ "Next to the clock": "Perto do relógio",
+ "Draw the windows with the graphics card (uses more memory; after a restart)": "Desenhar as janelas com a placa de vídeo (mais memória; depois de reiniciar)",
+ "needs-review": "Stalled; Receiving data…; Waiting; Check for updates automatically; Ask before removing downloads from the list; Delete the downloaded files from the disk too (be careful); Don't show this question again; Download the subtitles of videos too, in these languages:; Quality of MP3 files; Next to the clock; Draw the windows with the graphics card (uses more memory; after a restart)"
 }

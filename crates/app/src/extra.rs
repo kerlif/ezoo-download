@@ -358,13 +358,20 @@ fn save_properties(ui: &Ui) {
         d.set_message(format!("{e:#}").into());
         return;
     }
-    let target = PathBuf::from(d.get_save_to().trim());
+    let mut target = PathBuf::from(d.get_save_to().trim());
+    // a name typed without its extension keeps the file's own
+    if let Some(n) = target
+        .file_name()
+        .map(|n| crate::with_extension_of(&n.to_string_lossy(), &v.file_name))
+    {
+        target.set_file_name(n);
+    }
     if !target.as_os_str().is_empty() && target != v.save_path {
         let result = if v.status == Status::Completed {
             // on its own thread: a move to another disk is a copy
             let mgr = ui.ctx.mgr.clone();
             std::thread::spawn(move || {
-                if let Err(e) = mgr.move_file(id, &target) {
+                if let Err(e) = mgr.move_file(id, &target, true) {
                     let text = format!("{e:#}");
                     let _ = slint::invoke_from_event_loop(move || crate::message(&text));
                 }
@@ -475,22 +482,27 @@ pub(crate) fn is_web_address(s: &str) -> bool {
 }
 
 /// What the newest version brings (shown once after an automatic update).
-const WHATS_NEW: [&str; 15] = [
-    "Arabic: every window now reads from right to left (the program restarts once when the direction changes).",
-    "The program has its own small FFmpeg inside: video and sound are joined, MP3 files are made and live streams are saved, with nothing extra to download.",
-    "Live streams are saved as MP4 files.",
-    "MP3 files keep the title of the audio file.",
-    "Much less memory and processor work, also with many downloads at once.",
-    "No more freezes when a file is deleted or moved during its download, and message windows no longer hide behind the main window.",
-    "Downloads are taken from the browser before its own Save As window opens.",
-    "The browser button finds more videos, also streams in several qualities, and on more sites.",
-    "AV1 qualities are offered when a video has them.",
-    "The window of a download gets smaller when its details are hidden.",
-    "The video button in the browser has five looks to choose from (in the add-in's window).",
-    "A clear message when the download folder is on a drive locked by BitLocker.",
-    "Fixed videos that could not be downloaded on some computers because of the Windows temporary folder.",
-    "The Grabber also finds links written as plain text, and the menu next to the clock is in the program's language.",
-    "The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.",
+const WHATS_NEW: [&str; 20] = [
+    "A click on a file link in the browser goes straight to Ezoo Download: the browser's own Save As window no longer opens (Brave too).",
+    "Changing the folder or the name in \"Download File Info\" no longer gives a small broken file, and a name typed without its extension keeps it.",
+    "Downloads never wait for ever any more: when a server stops answering, Ezoo Download asks again by itself, so a video or a file no longer stays at 0 KB/s or never starts, and Pause / Resume is not needed.",
+    "Big files keep going by themselves when the server has trouble: Ezoo Download tries again later on its own.",
+    "A link that stops working (expired) is renewed by itself and checked first, then the download goes on from where it was.",
+    "The number of connections changes at once, even while a file downloads, and a connection much slower than the others is made again, so the speed stays steady.",
+    "The download window has the Windows title bar again, so every button answers the mouse where it is (Windows 10 and 11); its details stay hidden until you show them, and the windows keep the size you gave them.",
+    "The windows are drawn without the graphics card: much less memory, and the program no longer closes by itself at start on some computers (Options > General switches it back).",
+    "When Ezoo Download is open but does not answer, opening it again offers to close it and start it fresh; an update shows its small window and never closes the program again and again.",
+    "The speed limiter goes on and off with a click in the status bar, and \"Move to queue\" opens in a list of its own.",
+    "Torrents: a .torrent link in the browser opens the torrent window at once, .torrent files and magnet links open with Ezoo Download, and a .torrent file can be dropped on the window.",
+    "Removing downloads can delete their files from the disk too (if you tick it), and the question can be turned off.",
+    "Ctrl+A, Ctrl+N and the other shortcuts work with the Arabic keyboard too, and files are selected with the mouse in both directions.",
+    "The video button: a small style (arrow and ✕) with a see-through slider, videos in the Facebook feed, and the qualities of streams on many more sites instead of an error.",
+    "The video button in the browser hides in full screen (or not: the add-in's window), stays closed when you close it, and streams show their quality first.",
+    "The browser add-in reloads itself after an update, and Chrome / Edge get its files back when some went missing (\"files missing or unreadable\").",
+    "Playlists have 240p and 144p, the MP3 quality can be chosen, and the subtitles of videos can be downloaded too (Options > Downloads).",
+    "Safer files: every part is checked before it is written, a moved file never replaces another one, and streams made of one big file or sent elsewhere download correctly.",
+    "Opening a finished file or \"Open with\" never makes the program wait.",
+    "The toolbar grows with bigger text, so the names are never cut.",
 ];
 
 thread_local! {
@@ -590,16 +602,54 @@ pub(crate) fn open_refresh(ui: &Ui, id: u64) {
     open_window!(d);
 }
 
-/// The browser sent a download while we were waiting for a new address.
+/// The browser sent a download while we were waiting for a new address,
+/// or the user pasted one: check it is the same file first (Phase 1
+/// `refresh_link_with_headers` probes with the fresh headers and swaps
+/// the link only when size + validator match), then continue from where
+/// it stopped. A link that fails the check leaves the dialog open with
+/// the wait still armed, so the user can try another link. A second
+/// link while a probe is in flight is ignored (`refresh_busy`).
 pub(crate) fn refresh_received(ui: &Ui, id: u64, url: &str, headers: RequestHeaders) {
-    ui.refresh_id.set(None);
-    if let Some(d) = ui.refresh_dlg.upgrade() {
-        let _ = d.hide();
+    if ui.refresh_busy.get() {
+        return;
     }
-    ui.ctx.mgr.set_url(id, url, Some(headers));
-    ui.ctx.mgr.start(id);
-    open_progress(ui, id);
-    refresh(ui);
+    ui.refresh_busy.set(true);
+    // only Send data crosses into the spawned task (the Ui itself is
+    // full of Rc and must not leave the UI thread); the Ui is read back
+    // from `lazy_ui()` on the UI thread when the probe lands
+    let mgr = ui.ctx.mgr.clone();
+    let rt = ui.ctx.rt.clone();
+    let url = url.to_string();
+    rt.spawn(async move {
+        let checked = mgr.refresh_link_with_headers(id, &url, headers).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(ui2) = crate::lazy_ui() else {
+                return;
+            };
+            ui2.refresh_busy.set(false);
+            // the user may have closed the dialog while the probe was
+            // running: then the link is swapped but nothing starts
+            let armed = ui2.refresh_id.get() == Some(id);
+            match checked {
+                Ok(()) if armed => {
+                    ui2.refresh_id.set(None);
+                    if let Some(d) = ui2.refresh_dlg.upgrade() {
+                        let _ = d.hide();
+                    }
+                    ui2.ctx.mgr.start(id);
+                    open_progress(&ui2, id);
+                    refresh(&ui2);
+                }
+                Ok(()) => {}
+                Err(e) if armed => {
+                    // same-file check or probe failed: keep waiting for
+                    // another link, tell the user why this one did not
+                    message(&crate::err_text(&e.to_string()));
+                }
+                Err(_) => {}
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------- export / import
@@ -948,7 +998,7 @@ fn wire_refresh(ui: &Ui, d: &RefreshDialog) {
                 // only a web page: the address came from the browser or
                 // a list file and must never start a program
                 if is_web_address(&page) {
-                    let _ = open::that(page.trim());
+                    let _ = open::that_detached(page.trim());
                 }
             }
         });

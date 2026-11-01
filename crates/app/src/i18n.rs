@@ -57,6 +57,7 @@ pub fn is_rtl() -> bool {
     current() == "ar"
 }
 
+#[allow(dead_code)]
 pub fn is_arabic() -> bool {
     current() == "ar"
 }
@@ -600,6 +601,33 @@ const AR: &[(&str, &str)] = &[
     ("Fixed videos that could not be downloaded on some computers because of the Windows temporary folder.", "تم إصلاح فيديوهات كانت لا تُحمَّل على بعض الأجهزة بسبب مجلد الملفات المؤقتة في ويندوز."),
     ("The Grabber also finds links written as plain text, and the menu next to the clock is in the program's language.", "الجامع يجد أيضًا الروابط المكتوبة كنص عادي، وقائمة الأيقونة بجوار الساعة أصبحت بلغة البرنامج."),
     ("The speed limit stays smooth with many connections, and the clipboard also catches the file types you added.", "تحديد السرعة يبقى سلسًا مع الاتصالات الكثيرة، ومراقبة الحافظة تلتقط أيضًا أنواع الملفات التي أضفتها."),
+    ("Remove these {} downloads from the download list?", "إزالة هذه التحميلات ({}) من قائمة التحميل؟"),
+    ("Remove “{}” from the download list?", "إزالة “{}” من قائمة التحميل؟"),
+    ("A click on a file link in the browser goes straight to Ezoo Download: the browser's own Save As window no longer opens (Brave too).", "الضغط على رابط ملف في المتصفح يذهب مباشرة إلى Ezoo Download: نافذة \"حفظ باسم\" الخاصة بالمتصفح لم تعد تظهر (وفي Brave أيضًا)."),
+    ("Changing the folder or the name in \"Download File Info\" no longer gives a small broken file, and a name typed without its extension keeps it.", "تغيير المجلد أو الاسم في نافذة \"معلومات الملف\" لم يعد ينتج ملفًا صغيرًا تالفًا، والاسم المكتوب بدون امتداد يحتفظ بامتداده."),
+    ("Big files keep going by themselves when the server has trouble: Ezoo Download tries again later on its own.", "الملفات الكبيرة تكمل وحدها عندما يواجه السيرفر مشكلة: Ezoo Download يحاول مرة أخرى لاحقًا من نفسه."),
+    ("Torrents: a .torrent link in the browser opens the torrent window at once, .torrent files and magnet links open with Ezoo Download, and a .torrent file can be dropped on the window.", "التورنت: رابط ملف تورنت في المتصفح يفتح نافذة التورنت مباشرة، وملفات التورنت وروابط magnet تُفتح ببرنامج Ezoo Download، ويمكن سحب ملف تورنت وإفلاته على النافذة."),
+    ("Removing downloads can delete their files from the disk too (if you tick it), and the question can be turned off.", "إزالة التحميلات يمكنها حذف ملفاتها من القرص أيضًا (إذا اخترت ذلك)، ويمكن إيقاف ظهور السؤال."),
+    ("Ctrl+A, Ctrl+N and the other shortcuts work with the Arabic keyboard too, and files are selected with the mouse in both directions.", "اختصارات Ctrl+A وCtrl+N وغيرها تعمل مع لوحة المفاتيح العربية أيضًا، وتحديد الملفات بالماوس يعمل في الاتجاهين."),
+    ("The download window is smaller, never gets wider for a long name, and its title bar is like the main window's.", "نافذة التحميل أصبحت أصغر، ولا تتسع مع الاسم الطويل، وشريط عنوانها مثل النافذة الرئيسية."),
+    ("The video button in the browser hides in full screen (or not: the add-in's window), stays closed when you close it, and streams show their quality first.", "زر الفيديو في المتصفح يختفي في وضع ملء الشاشة (أو لا: من نافذة الإضافة)، ويبقى مغلقًا عند إغلاقه، والبث يُظهر جودته أولًا."),
+    ("Playlists have 240p and 144p, the MP3 quality can be chosen, and the subtitles of videos can be downloaded too (Options > Downloads).", "قوائم التشغيل فيها جودة 240p و144p، ويمكن اختيار جودة MP3، وتحميل ترجمة الفيديوهات أيضًا (الخيارات > التحميلات)."),
+    ("The toolbar grows with bigger text, so the names are never cut.", "شريط الأدوات يكبر مع تكبير الخط، فلا تُقص أسماء الأزرار."),
+    ("The download window has the Windows title bar again, so every button answers the mouse where it is (Windows 10 and 11); its details stay hidden until you show them, and the windows keep the size you gave them.", "نافذة التحميل رجع لها شريط عنوان ويندوز، فكل زر يستجيب للماوس في مكانه (ويندوز 10 و11)؛ والتفاصيل مخفية حتى تُظهرها، والنوافذ تحتفظ بالمقاس الذي اخترته."),
+    ("The windows are drawn without the graphics card: much less memory, and the program no longer closes by itself at start on some computers (Options > General switches it back).", "النوافذ تُرسم بدون كارت الشاشة: استهلاك ذاكرة أقل بكثير، والبرنامج لم يعد يُغلق وحده عند الفتح على بعض الأجهزة (يمكن إرجاعه من الخيارات > عام)."),
+    ("A link that stops working (expired) is renewed by itself and checked first, then the download goes on from where it was.", "الرابط الذي يتوقف عن العمل (انتهت صلاحيته) يتجدد وحده ويُفحص أولًا، ثم يكمل التحميل من حيث توقف."),
+    ("The number of connections changes at once, even while a file downloads, and a connection much slower than the others is made again, so the speed stays steady.", "عدد الاتصالات يتغير فورًا حتى أثناء تحميل الملف، والاتصال الأبطأ بكثير من الباقي يُعاد فتحه، فتبقى السرعة ثابتة."),
+    ("The speed limiter goes on and off with a click in the status bar, and \"Move to queue\" opens in a list of its own.", "محدد السرعة يعمل ويتوقف بضغطة في شريط الحالة، و\"نقل إلى قائمة الانتظار\" تُفتح في قائمة خاصة بها."),
+    ("The link stopped working. A new one is fetched in {} s and checked before the download goes on.", "الرابط توقف عن العمل. سيتم جلب رابط جديد خلال {} ثانية وفحصه قبل أن يكمل التحميل."),
+    ("A file with this name is already in that folder, so nothing was moved. Choose another name.", "يوجد ملف بنفس الاسم في هذا المجلد، لذلك لم يتم النقل. اختر اسمًا آخر."),
+    ("ffmpeg.exe (it joins the video and the sound) is missing and could not be downloaded again. Allow it in your antivirus or install Ezoo Download again, then click Resume: nothing downloaded is lost.", "برنامج ffmpeg.exe (الذي يدمج الصورة والصوت) غير موجود ولم يمكن تحميله مرة أخرى. اسمح به في برنامج الحماية أو ثبّت Ezoo Download من جديد، ثم اضغط استئناف: لن يضيع شيء مما تم تحميله."),
+    ("Downloads never wait for ever any more: when a server stops answering, Ezoo Download asks again by itself, so a video or a file no longer stays at 0 KB/s or never starts, and Pause / Resume is not needed.", "التحميل لم يعد ينتظر إلى الأبد: عندما يتوقف السيرفر عن الرد يعيد Ezoo Download الطلب وحده، فلا يقف الفيديو أو الملف على 0 كيلوبايت ولا يبقى دون أن يبدأ، ولا حاجة للإيقاف ثم الاستئناف."),
+    ("When Ezoo Download is open but does not answer, opening it again offers to close it and start it fresh; an update shows its small window and never closes the program again and again.", "إذا كان Ezoo Download مفتوحًا لكنه لا يستجيب، فتحه مرة أخرى يعرض إغلاقه وتشغيله من جديد؛ والتحديث يُظهر نافذته الصغيرة ولا يُغلق البرنامج مرة بعد مرة."),
+    ("The video button: a small style (arrow and ✕) with a see-through slider, videos in the Facebook feed, and the qualities of streams on many more sites instead of an error.", "زر الفيديو: شكل صغير (سهم و✕) مع شريط للشفافية، وفيديوهات صفحة فيسبوك الرئيسية، وجودات البث في مواقع أكثر بكثير بدلًا من رسالة خطأ."),
+    ("The browser add-in reloads itself after an update, and Chrome / Edge get its files back when some went missing (\"files missing or unreadable\").", "إضافة المتصفح تعيد تحميل نفسها بعد التحديث، وكروم وإيدج تُعاد لهما ملفاتها إذا اختفى بعضها (\"الملفات ناقصة أو غير قابلة للقراءة\")."),
+    ("Safer files: every part is checked before it is written, a moved file never replaces another one, and streams made of one big file or sent elsewhere download correctly.", "ملفات أكثر أمانًا: كل جزء يُفحص قبل أن يُكتب، ونقل الملف لا يستبدل ملفًا آخر أبدًا، والبث المكوّن من ملف واحد كبير أو المحوَّل لمكان آخر يُحمَّل بشكل صحيح."),
+    ("Opening a finished file or \"Open with\" never makes the program wait.", "فتح ملف مكتمل أو \"فتح باستخدام\" لا يجعل البرنامج ينتظر أبدًا."),
+    ("The new link gives another file, so nothing more was written. Right-click the download and use \"Refresh download address\".", "الرابط الجديد يعطي ملفًا مختلفًا، لذلك لم يُكتب أي شيء إضافي. اضغط بزر الفأرة الأيمن على التحميل واختر \"تحديث عنوان التحميل\"."),
 ];
 
 #[cfg(test)]
