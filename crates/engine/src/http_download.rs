@@ -22,7 +22,7 @@ use crate::http::{
 use crate::model::RequestHeaders;
 use crate::segments::{self, Segment};
 use anyhow::{anyhow, bail};
-use reqwest::header::RANGE;
+use reqwest::header::{CONTENT_RANGE, RANGE};
 use reqwest::StatusCode;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -38,6 +38,17 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// How often a waiting connection is polled, so a stall rescue can close
 /// it promptly instead of waiting out the whole stall timeout.
 const CHUNK_POLL: Duration = Duration::from_secs(1);
+
+/// How long a request waits for the server's answer before it is made again.
+const HEADERS_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// A connection much slower than the others is dropped and made again (the
+/// server often gives a new one full speed): checked over this long...
+const SLOW_WINDOW: Duration = Duration::from_secs(8);
+/// ...when it brings less than this...
+const SLOW_BYTES_PER_SEC: u64 = 48 * 1024;
+/// ...and less than this part of what one connection brings on average.
+const SLOW_SHARE: u64 = 6;
 
 /// A segmented HTTP file download: URL, request data, part file, and limits.
 #[derive(Clone)]
@@ -105,6 +116,19 @@ impl std::fmt::Display for Takeover {
 }
 impl std::error::Error for Takeover {}
 
+/// Error returned when the pool shrank below the live workers: this one
+/// stops at once, mid-segment if needed; its part stays in the table for
+/// the others. Not a failure: the download loop treats it as "this worker
+/// is done".
+#[derive(Debug)]
+pub struct Leave;
+impl std::fmt::Display for Leave {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("fewer connections wanted")
+    }
+}
+impl std::error::Error for Leave {}
+
 /// Shared adaptive state for one download run: the scaler, the stall
 /// monitor, and the counters the supervisor and the workers share.
 struct AdaptiveState {
@@ -143,6 +167,39 @@ impl AdaptiveState {
         self.target.store(target, Ordering::Relaxed);
     }
 
+    /// Enforce the connection count the user wants right now (0 = let the
+    /// scaler decide): returns the enforced target, if any. While the user
+    /// holds the count the scaler does not probe; the pool shrinks through
+    /// the workers' own check and grows through the supervisor spawning.
+    fn apply_want(&self, want: u32) -> Option<u32> {
+        if want == 0 {
+            return None;
+        }
+        let mut scaler = self.scaler.lock().unwrap();
+        // the held count may run past the count the download started
+        // with, up to the per-host and absolute ceilings
+        let target = self.cfg.cap_for(want);
+        scaler.set_target_external(target);
+        drop(scaler);
+        self.sync_target();
+        Some(target)
+    }
+
+    fn live(&self) -> u32 {
+        self.live.load(Ordering::Relaxed)
+    }
+
+    fn target(&self) -> u32 {
+        self.target.load(Ordering::Relaxed)
+    }
+
+    /// The most connections a count the user holds may ask for: the
+    /// per-host and absolute ceilings, not the count the download
+    /// started with (that one only sets where the scaler begins).
+    fn want_cap(&self) -> u32 {
+        self.cfg.cap_for(u32::MAX)
+    }
+
     fn halve(&self) {
         self.scaler.lock().unwrap().halve();
         self.sync_target();
@@ -169,6 +226,15 @@ impl AdaptiveState {
     }
 }
 
+/// Is there work a new connection could take (an untouched part, or one
+/// big enough to split)? Spawning without any only makes a connection
+/// that exits at once.
+fn has_work(segs: &SegTable, min_split: u64) -> bool {
+    let map = segs.lock().unwrap();
+    map.iter()
+        .any(|s| !s.is_finished() && (!s.active || s.remaining() >= min_split * 2))
+}
+
 /// Counts a live worker. Dropping it releases the slot, unless the
 /// worker already released it by shrinking the pool (see `shrink`).
 struct WorkerGuard {
@@ -189,10 +255,9 @@ impl WorkerGuard {
     /// report that it should exit. The compare-and-swap makes sure
     /// exactly the surplus workers exit, even when several check at
     /// the same moment.
-    fn shrink(&mut self) -> bool {
+    fn shrink_to(&mut self, target: u32) -> bool {
         loop {
             let live = self.state.live.load(Ordering::Relaxed);
-            let target = self.state.target.load(Ordering::Relaxed);
             if live <= target {
                 return false;
             }
@@ -206,6 +271,12 @@ impl WorkerGuard {
                 return true;
             }
         }
+    }
+
+    /// This worker already gave its slot back (it left mid-segment):
+    /// it must exit instead of taking new work.
+    fn released(&self) -> bool {
+        self.released
     }
 }
 
@@ -340,7 +411,12 @@ pub async fn run(
     scale_tick.tick().await;
     let mut stall_tick = tokio::time::interval(Duration::from_secs(1));
     stall_tick.tick().await;
+    // the count the user wants is checked often (not once a measure
+    // window): a change takes effect within a fraction of a second
+    let mut want_tick = tokio::time::interval(Duration::from_millis(100));
+    want_tick.tick().await;
     let mut last_bytes = bytes_at_start;
+    let mut applied_want = 0u32;
 
     let mut first_error: Option<anyhow::Error> = None;
     loop {
@@ -360,7 +436,39 @@ pub async fn run(
                     child.cancel();
                 }
             }
-            _ = scale_tick.tick(), if segmented && cfg.enabled => {
+            _ = want_tick.tick(), if segmented => {
+                // the user changed the connection count while it runs:
+                // hold that count instead of probing (also when the
+                // adaptive engine is off: the count is then fixed at
+                // it). Workers shrink on their own against the same
+                // count; this arm grows the pool back up to it.
+                let want = progress.want_connections.load(Ordering::Relaxed);
+                if want != 0 {
+                    if let Some(target) = adaptive.apply_want(want) {
+                        for _ in adaptive.live()..target {
+                            if !has_work(&segs, job.min_split) {
+                                break;
+                            }
+                            worker_args.spawn(&mut set);
+                        }
+                        if applied_want != want {
+                            applied_want = want;
+                            last_bytes = progress.bytes.load(Ordering::Relaxed);
+                        }
+                    }
+                } else {
+                    applied_want = 0;
+                }
+            }
+            _ = scale_tick.tick(), if segmented => {
+                // while the user holds the count, the scaler does not
+                // probe (observe would move the target it holds)
+                if progress.want_connections.load(Ordering::Relaxed) != 0 {
+                    continue;
+                }
+                if !cfg.enabled {
+                    continue;
+                }
                 let now_bytes = progress.bytes.load(Ordering::Relaxed);
                 let window_secs = cfg.measure_window.as_secs_f64().max(0.05);
                 let bps = now_bytes.saturating_sub(last_bytes) as f64 / window_secs;
@@ -368,7 +476,9 @@ pub async fn run(
                 let errors = adaptive.window_errors.swap(0, Ordering::Relaxed);
                 let decision = adaptive.scaler.lock().unwrap().observe(bps, errors);
                 adaptive.sync_target();
-                if decision == crate::adaptive::ScaleDecision::Add {
+                if decision == crate::adaptive::ScaleDecision::Add
+                    && has_work(&segs, job.min_split)
+                {
                     worker_args.spawn(&mut set);
                 }
             }
@@ -447,22 +557,59 @@ struct Worker {
 }
 
 impl Worker {
+    /// Connections the pool should hold now: the count the user wants,
+    /// when they set one, else the scaler's target. Read straight from
+    /// the request (not through the supervisor's tick), so a change
+    /// takes effect at the next chunk, not a whole measure window later.
+    fn effective_target(&self) -> u32 {
+        let want = self.progress.want_connections.load(Ordering::Relaxed);
+        if want == 0 {
+            self.adaptive.target()
+        } else {
+            want.clamp(1, self.adaptive.want_cap())
+        }
+    }
+
     async fn run(self) -> anyhow::Result<()> {
         let mut guard = WorkerGuard::new(&self.adaptive);
         loop {
             // the pool shrank below the number of live workers: exit
             // instead of taking more work
-            if guard.shrink() {
+            if guard.shrink_to(self.effective_target()) {
                 return Ok(());
             }
             let idx = {
                 let mut table = self.segs.lock().unwrap();
                 if self.segmented {
                     let idx = if self.adaptive.cfg.enabled {
-                        segments::claim_work_split(
-                            &mut table,
-                            self.adaptive.cfg.dynamic_split_min_remaining,
-                        )
+                        // work-stealing: the free connection takes half of
+                        // the segment that will take longest to finish
+                        // (remaining bytes over current speed), not the
+                        // biggest one; a stalled connection is split first
+                        let speeds: Vec<(usize, f64)> = {
+                            let monitor = self.adaptive.monitor.lock().unwrap();
+                            let now = Instant::now();
+                            table
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, s)| s.active && !s.is_finished())
+                                .filter_map(|(i, s)| monitor.speed(i, s.pos, now).map(|sp| (i, sp)))
+                                .collect()
+                        };
+                        // While the pool is still growing toward the count
+                        // it should hold, splits may go down to the job's
+                        // own minimum: the supervisor only spawns a worker
+                        // when such a piece exists (see `has_work`), so a
+                        // higher floor here would leave the new worker with
+                        // nothing to take. At full strength the 1 MB floor
+                        // stands: splitting a nearly-done piece is not
+                        // worth a fresh connection.
+                        let floor = if self.adaptive.live() < self.effective_target() {
+                            self.job.min_split
+                        } else {
+                            self.adaptive.cfg.dynamic_split_min_remaining
+                        };
+                        segments::claim_work_eta(&mut table, floor, &speeds)
                     } else {
                         segments::claim_work(&mut table, self.job.min_split)
                     };
@@ -489,7 +636,7 @@ impl Worker {
                     .unwrap()
                     .start(idx, pos, Instant::now());
             }
-            let result = self.download_segment(idx).await;
+            let result = self.download_segment(idx, &mut guard).await;
             {
                 let mut table = self.segs.lock().unwrap();
                 let finished = table.get(idx).map(|s| s.is_finished()).unwrap_or(false);
@@ -500,13 +647,18 @@ impl Worker {
                     self.adaptive.monitor.lock().unwrap().finish(idx);
                 }
             }
+            if guard.released() {
+                // left mid-segment because fewer connections are wanted
+                // now: exit instead of taking new work
+                return Ok(());
+            }
             result?;
         }
     }
 
     /// Download one segment, retrying with back-off and continuing from where
     /// the previous attempt stopped.
-    async fn download_segment(&self, idx: usize) -> anyhow::Result<()> {
+    async fn download_segment(&self, idx: usize, guard: &mut WorkerGuard) -> anyhow::Result<()> {
         let mut attempt = 0u32;
         let mut net_tries = 0u32;
         loop {
@@ -515,7 +667,7 @@ impl Worker {
             }
             let before = self.segs.lock().unwrap()[idx].pos;
             let outcome = tokio::select! {
-                r = self.fetch_once(idx) => r,
+                r = self.fetch_once(idx, guard) => r,
                 _ = self.cancel.cancelled() => return Err(Cancelled.into()),
             };
             match outcome {
@@ -526,6 +678,11 @@ impl Worker {
                     attempt = 0; // one request done, ask for the next piece
                 }
                 Err(e) => {
+                    // fewer connections wanted: stop at once, the part
+                    // stays in the table for the others
+                    if e.chain().any(|c| c.is::<Leave>()) {
+                        return Ok(());
+                    }
                     // rescue: the segment was handed to a fresh
                     // connection. Its progress stands; leave it idle
                     // for the next claim, from the last byte written.
@@ -608,7 +765,7 @@ impl Worker {
         }
     }
 
-    async fn fetch_once(&self, idx: usize) -> anyhow::Result<()> {
+    async fn fetch_once(&self, idx: usize, guard: &mut WorkerGuard) -> anyhow::Result<()> {
         let (pos, end) = {
             let table = self.segs.lock().unwrap();
             (table[idx].pos, table[idx].end)
@@ -631,7 +788,17 @@ impl Worker {
             rb = rb.header(RANGE, format!("bytes={}-{}", pos, req_end - 1));
         }
         let request_started = Instant::now();
-        let mut resp = rb.send().await?;
+        let mut resp = match tokio::time::timeout(HEADERS_TIMEOUT, rb.send()).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
+                // a single request that fails is a passing failure;
+                // anything else is too
+                return Err(NetDrop(format!("the server did not answer ({e})")).into());
+            }
+            Err(_) => {
+                return Err(NetDrop("the server did not answer (timed out)".into()).into());
+            }
+        };
         let status = resp.status();
         if matches!(status.as_u16(), 429 | 503) {
             return Err(RateLimited::from_headers(status.as_u16(), resp.headers()).into());
@@ -646,10 +813,35 @@ impl Worker {
                     status.as_u16()
                 );
             }
+            // the part must be the one asked for (and of the same file):
+            // anything else is never written
+            if let Some((start, total)) = resp
+                .headers()
+                .get(CONTENT_RANGE)
+                .and_then(|v| v.to_str().ok())
+                .and_then(parse_content_range)
+            {
+                if start != pos {
+                    return Err(NetDrop("the server sent another part of the file".into()).into());
+                }
+                if let (Some(total), Some(known)) = (total, self.job.total_size) {
+                    if total != known {
+                        bail!(
+                            "the link now gives another file: not the same file ({total} bytes instead of {known})"
+                        );
+                    }
+                }
+            }
         } else if !status.is_success() {
             return Err(HttpStatus(status.as_u16()).into());
         }
         let _guard = ConnGuard::new(&self.progress);
+
+        // how much this connection brings, over the last slow window
+        let mut window = Instant::now();
+        let mut mine = 0u64;
+        let mut all_before = self.progress.bytes.load(Ordering::Relaxed);
+        let mut slow_windows = 0u32;
 
         // Poll in short slices: a connection that stops sending must
         // be closable promptly when the stall monitor flags its
@@ -670,16 +862,61 @@ impl Worker {
                         return Err(Takeover.into());
                     }
                     if idle >= STALL_TIMEOUT {
-                        return Err(NetDrop("connection timed out").into());
+                        return Err(NetDrop("connection timed out".into()).into());
                     }
                     continue;
                 }
             };
             let Some(chunk) = chunk else { break };
+            // Only when the user holds a count: the surplus goes at once,
+            // mid-segment if needed. The scaler's own target changes
+            // (probe/shed) act at segment boundaries instead, as before:
+            // a shed after the fast work is done must not strand the
+            // slow remainder on one connection.
+            if self.segmented
+                && self.progress.want_connections.load(Ordering::Relaxed) != 0
+                && guard.shrink_to(self.effective_target())
+            {
+                // fewer connections wanted: this one goes at once, its
+                // part stays in the table for the others (the chunk is
+                // dropped, not written, so it is fetched again later)
+                return Err(Leave.into());
+            }
             idle = Duration::ZERO;
             if !first_byte_recorded {
                 first_byte_recorded = true;
                 self.adaptive.record_first_byte(request_started.elapsed());
+            }
+            if self.segmented {
+                // a connection much slower than the others is dropped
+                // and made again (the server often gives a new one full
+                // speed): two slow windows in a row, and only while no
+                // speed limit is holding the download back
+                mine += chunk.len() as u64;
+                let spent = window.elapsed();
+                if spent >= SLOW_WINDOW {
+                    let all_now = self.progress.bytes.load(Ordering::Relaxed);
+                    let conns = self.progress.connections.load(Ordering::Relaxed).max(1) as u64;
+                    let secs = spent.as_secs().max(1);
+                    let my_rate = mine / secs;
+                    let average = all_now.saturating_sub(all_before) / secs / conns;
+                    let limited = self.shared.limiter.rate() > 0 || self.job.limiter.rate() > 0;
+                    if !limited
+                        && conns >= 2
+                        && my_rate < SLOW_BYTES_PER_SEC
+                        && my_rate * SLOW_SHARE < average
+                    {
+                        slow_windows += 1;
+                    } else {
+                        slow_windows = 0;
+                    }
+                    if slow_windows >= 2 {
+                        return Err(NetDrop("slow connection, made again".into()).into());
+                    }
+                    window = Instant::now();
+                    mine = 0;
+                    all_before = all_now;
+                }
             }
             self.shared.limiter.acquire(chunk.len()).await;
             self.job.limiter.acquire(chunk.len()).await;
@@ -728,7 +965,36 @@ impl Worker {
         if s.pos >= s.end.min(req_end) {
             Ok(())
         } else {
-            Err(NetDrop("connection closed early").into())
+            Err(NetDrop("connection closed early".into()).into())
         }
+    }
+}
+
+/// Read a `Content-Range` answer: "bytes 100-199/1000" is (100, Some(1000));
+/// "bytes 0-0/*" is (0, None). Only the start and the total size are used.
+pub fn parse_content_range(header: &str) -> Option<(u64, Option<u64>)> {
+    let rest = header.strip_prefix("bytes ")?;
+    let (range, total) = rest.split_once('/')?;
+    let start: u64 = range.split_once('-')?.0.parse().ok()?;
+    let total = if total == "*" {
+        None
+    } else {
+        Some(total.parse().ok()?)
+    };
+    Some((start, total))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_content_range_reads_start_and_total() {
+        assert_eq!(
+            parse_content_range("bytes 100-199/1000"),
+            Some((100, Some(1000)))
+        );
+        assert_eq!(parse_content_range("bytes 0-0/*"), Some((0, None)));
+        assert_eq!(parse_content_range("items 0-9/10"), None);
     }
 }

@@ -1,5 +1,5 @@
 //! Update checker against a LOCAL test server only (127.0.0.1, ephemeral
-//! port, std TcpListener): no live api.github.com call is ever made.
+//! port, shared testserver module): no live api.github.com call is ever made.
 //! Covers the Phase 7 gate fixtures: (a) offline, (b) older version,
 //! (c) newer version with a valid signature, (d) bad hash, (e) bad
 //! signature, (f) malformed JSON, (g) rate limit, (h) cross-host
@@ -7,11 +7,11 @@
 //! and reuse of an already-downloaded verified copy. Signing fixtures
 //! use throwaway keys generated at test runtime, never a real key.
 
+mod testserver;
+
 use reqwest::{redirect::Policy, Client};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use serde_json::json;
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,108 +19,7 @@ use swiftget_engine::selfupdate::{
     check_latest_with_key, current, download_artifact, sha256_hex, signed_message, CheckOutcome,
     UPDATE_PUBLIC_KEY,
 };
-
-// ---------------------------------------------------------------------------
-// Canned local server.
-
-struct Req {
-    path: String,
-    headers: Vec<(String, String)>,
-}
-
-struct Resp {
-    status: u16,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-}
-
-#[derive(Default)]
-struct Stats {
-    hits: HashMap<String, usize>,
-    last_headers: HashMap<String, Vec<(String, String)>>,
-}
-
-fn reason(status: u16) -> &'static str {
-    match status {
-        200 => "OK",
-        302 => "Found",
-        304 => "Not Modified",
-        403 => "Forbidden",
-        404 => "Not Found",
-        429 => "Too Many Requests",
-        _ => "Status",
-    }
-}
-
-fn handle_conn(
-    mut stream: std::net::TcpStream,
-    handler: &Arc<dyn Fn(&Req) -> Resp + Send + Sync>,
-    stats: &Arc<Mutex<Stats>>,
-) {
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line).is_err() || request_line.is_empty() {
-        return;
-    }
-    let path = request_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .to_string();
-    let mut headers = Vec::new();
-    loop {
-        let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) | Err(_) => return,
-            Ok(_) => {
-                if line == "\r\n" || line == "\n" {
-                    break;
-                }
-                if let Some((k, v)) = line.trim_end().split_once(':') {
-                    headers.push((k.trim().to_string(), v.trim().to_string()));
-                }
-            }
-        }
-    }
-    let req = Req { path, headers };
-    let resp = handler(&req);
-    {
-        let mut s = stats.lock().unwrap();
-        *s.hits.entry(req.path.clone()).or_insert(0) += 1;
-        s.last_headers.insert(req.path.clone(), req.headers.clone());
-    }
-    let mut out = format!("HTTP/1.1 {} {}\r\n", resp.status, reason(resp.status));
-    for (k, v) in &resp.headers {
-        out.push_str(&format!("{k}: {v}\r\n"));
-    }
-    out.push_str(&format!("Content-Length: {}\r\n", resp.body.len()));
-    out.push_str("Connection: close\r\n\r\n");
-    let _ = stream.write_all(out.as_bytes());
-    let _ = stream.write_all(&resp.body);
-}
-
-fn serve<F>(handler: F) -> (u16, Arc<Mutex<Stats>>)
-where
-    F: Fn(&Req) -> Resp + Send + Sync + 'static,
-{
-    let handler: Arc<dyn Fn(&Req) -> Resp + Send + Sync> = Arc::new(handler);
-    let stats = Arc::new(Mutex::new(Stats::default()));
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let (h2, s2) = (handler.clone(), stats.clone());
-    std::thread::spawn(move || {
-        for conn in listener.incoming() {
-            match conn {
-                Ok(stream) => {
-                    let (h3, s3) = (h2.clone(), s2.clone());
-                    std::thread::spawn(move || handle_conn(stream, &h3, &s3));
-                }
-                Err(_) => break,
-            }
-        }
-    });
-    (port, stats)
-}
+use testserver::Response;
 
 fn checker_client() -> Client {
     Client::builder()
@@ -130,13 +29,6 @@ fn checker_client() -> Client {
         .timeout(Duration::from_secs(10))
         .build()
         .unwrap()
-}
-
-fn header<'a>(req: &'a Req, name: &str) -> Option<&'a str> {
-    req.headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case(name))
-        .map(|(_, v)| v.as_str())
 }
 
 // ---------------------------------------------------------------------------
@@ -256,10 +148,10 @@ async fn offline_connection_refused_is_a_silent_fail() {
 async fn older_release_is_up_to_date_and_manifest_is_not_fetched() {
     let (port, stats) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             move |req| match req.path.as_str() {
-                "/latest" => Resp {
+                "/latest" => Response {
                     status: 200,
                     headers: vec![],
                     body: payload(
@@ -269,7 +161,7 @@ async fn older_release_is_up_to_date_and_manifest_is_not_fetched() {
                     )
                     .into_bytes(),
                 },
-                _ => Resp {
+                _ => Response {
                     status: 404,
                     headers: vec![],
                     body: vec![],
@@ -301,13 +193,13 @@ async fn newer_release_with_valid_signature_is_offered() {
     let (port, stats) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
         let fx = Arc::new(fx);
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             let fx = fx.clone();
             move |req| {
                 let base = base_holder.lock().unwrap().clone();
                 match req.path.as_str() {
-                    "/latest" => Resp {
+                    "/latest" => Response {
                         status: 200,
                         headers: vec![("ETag".into(), "\"v99\"".into())],
                         body: payload(
@@ -321,17 +213,17 @@ async fn newer_release_with_valid_signature_is_offered() {
                         )
                         .into_bytes(),
                     },
-                    "/version.json" => Resp {
+                    "/version.json" => Response {
                         status: 200,
                         headers: vec![],
                         body: manifest("99.0.0", &fx.sha, &fx.sig).into_bytes(),
                     },
-                    "/sums.txt" => Resp {
+                    "/sums.txt" => Response {
                         status: 200,
                         headers: vec![],
                         body: sums(&[(&fx.sha, "EzooDownload-Setup.exe")]).into_bytes(),
                     },
-                    _ => Resp {
+                    _ => Response {
                         status: 404,
                         headers: vec![],
                         body: vec![],
@@ -393,13 +285,13 @@ async fn tampered_artifact_bytes_are_refused() {
     let (port, _stats) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
         let fx = Arc::new(fx);
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             let fx = fx.clone();
             move |req| {
                 let base = base_holder.lock().unwrap().clone();
                 match req.path.as_str() {
-                    "/latest" => Resp {
+                    "/latest" => Response {
                         status: 200,
                         headers: vec![],
                         body: payload(
@@ -413,22 +305,22 @@ async fn tampered_artifact_bytes_are_refused() {
                         )
                         .into_bytes(),
                     },
-                    "/version.json" => Resp {
+                    "/version.json" => Response {
                         status: 200,
                         headers: vec![],
                         body: manifest("99.0.0", &fx.sha, &fx.sig).into_bytes(),
                     },
-                    "/sums.txt" => Resp {
+                    "/sums.txt" => Response {
                         status: 200,
                         headers: vec![],
                         body: sums(&[(&fx.sha, "EzooDownload-Setup.exe")]).into_bytes(),
                     },
-                    "/setup.exe" => Resp {
+                    "/setup.exe" => Response {
                         status: 200,
                         headers: vec![],
                         body: b"tampered-bytes".to_vec(),
                     },
-                    _ => Resp {
+                    _ => Response {
                         status: 404,
                         headers: vec![],
                         body: vec![],
@@ -476,14 +368,14 @@ async fn sums_entry_that_disagrees_with_the_manifest_is_refused() {
     let (port, stats) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
         let fx = Arc::new(fx);
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             let fx = fx.clone();
             let other_sha = other_sha.clone();
             move |req| {
                 let base = base_holder.lock().unwrap().clone();
                 match req.path.as_str() {
-                    "/latest" => Resp {
+                    "/latest" => Response {
                         status: 200,
                         headers: vec![],
                         body: payload(
@@ -497,22 +389,22 @@ async fn sums_entry_that_disagrees_with_the_manifest_is_refused() {
                         )
                         .into_bytes(),
                     },
-                    "/version.json" => Resp {
+                    "/version.json" => Response {
                         status: 200,
                         headers: vec![],
                         body: manifest("99.0.0", &fx.sha, &fx.sig).into_bytes(),
                     },
-                    "/sums.txt" => Resp {
+                    "/sums.txt" => Response {
                         status: 200,
                         headers: vec![],
                         body: sums(&[(&other_sha, "EzooDownload-Setup.exe")]).into_bytes(),
                     },
-                    "/setup.exe" => Resp {
+                    "/setup.exe" => Response {
                         status: 200,
                         headers: vec![],
                         body: fx.body.clone(),
                     },
-                    _ => Resp {
+                    _ => Response {
                         status: 404,
                         headers: vec![],
                         body: vec![],
@@ -571,13 +463,13 @@ async fn wrong_key_signature_and_missing_signature_are_never_offered() {
             let base_holder = Arc::new(Mutex::new(String::new()));
             let fx = Arc::new(fx);
             let sig = make_sig.clone();
-            let (p, s) = serve({
+            let (p, s) = testserver::spawn({
                 let base_holder = base_holder.clone();
                 let fx = fx.clone();
                 move |req| {
                     let base = base_holder.lock().unwrap().clone();
                     match req.path.as_str() {
-                        "/latest" => Resp {
+                        "/latest" => Response {
                             status: 200,
                             headers: vec![],
                             body: payload(
@@ -590,17 +482,17 @@ async fn wrong_key_signature_and_missing_signature_are_never_offered() {
                             )
                             .into_bytes(),
                         },
-                        "/version.json" => Resp {
+                        "/version.json" => Response {
                             status: 200,
                             headers: vec![],
                             body: manifest("99.0.0", &fx.sha, &sig).into_bytes(),
                         },
-                        "/sums.txt" => Resp {
+                        "/sums.txt" => Response {
                             status: 200,
                             headers: vec![],
                             body: sums(&[(&fx.sha, "EzooDownload-Setup.exe")]).into_bytes(),
                         },
-                        _ => Resp {
+                        _ => Response {
                             status: 404,
                             headers: vec![],
                             body: vec![],
@@ -633,13 +525,13 @@ async fn wrong_key_signature_and_missing_signature_are_never_offered() {
 #[tokio::test]
 async fn malformed_answers_fail_silently() {
     // malformed API JSON
-    let (port, _) = serve(|req| match req.path.as_str() {
-        "/latest" => Resp {
+    let (port, _) = testserver::spawn(|req| match req.path.as_str() {
+        "/latest" => Response {
             status: 200,
             headers: vec![],
             body: b"{not json".to_vec(),
         },
-        _ => Resp {
+        _ => Response {
             status: 404,
             headers: vec![],
             body: vec![],
@@ -661,15 +553,15 @@ async fn malformed_answers_fail_silently() {
     // malformed tag
     let (port, _) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             move |req| match req.path.as_str() {
-                "/latest" => Resp {
+                "/latest" => Response {
                     status: 200,
                     headers: vec![],
                     body: payload(&base_holder.lock().unwrap(), "banana", &[]).into_bytes(),
                 },
-                _ => Resp {
+                _ => Response {
                     status: 404,
                     headers: vec![],
                     body: vec![],
@@ -695,10 +587,10 @@ async fn malformed_answers_fail_silently() {
     // malformed version.json
     let (port, _) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             move |req| match req.path.as_str() {
-                "/latest" => Resp {
+                "/latest" => Response {
                     status: 200,
                     headers: vec![],
                     body: payload(
@@ -708,12 +600,12 @@ async fn malformed_answers_fail_silently() {
                     )
                     .into_bytes(),
                 },
-                "/version.json" => Resp {
+                "/version.json" => Response {
                     status: 200,
                     headers: vec![],
                     body: b"{\"version\":".to_vec(),
                 },
-                _ => Resp {
+                _ => Response {
                     status: 404,
                     headers: vec![],
                     body: vec![],
@@ -742,8 +634,8 @@ async fn malformed_answers_fail_silently() {
 
 #[tokio::test]
 async fn rate_limit_fails_silently_once_with_a_backoff_hint() {
-    let (port, stats) = serve(|req| match req.path.as_str() {
-        "/latest" => Resp {
+    let (port, stats) = testserver::spawn(|req| match req.path.as_str() {
+        "/latest" => Response {
             status: 403,
             headers: vec![
                 ("X-RateLimit-Remaining".into(), "0".into()),
@@ -751,7 +643,7 @@ async fn rate_limit_fails_silently_once_with_a_backoff_hint() {
             ],
             body: b"{\"message\":\"API rate limit exceeded\"}".to_vec(),
         },
-        _ => Resp {
+        _ => Response {
             status: 404,
             headers: vec![],
             body: vec![],
@@ -781,13 +673,13 @@ async fn rate_limit_fails_silently_once_with_a_backoff_hint() {
         .unwrap()
         .as_secs()
         + 300;
-    let (port, stats) = serve(move |req| match req.path.as_str() {
-        "/latest" => Resp {
+    let (port, stats) = testserver::spawn(move |req| match req.path.as_str() {
+        "/latest" => Response {
             status: 429,
             headers: vec![("X-RateLimit-Reset".into(), reset.to_string())],
             body: vec![],
         },
-        _ => Resp {
+        _ => Response {
             status: 404,
             headers: vec![],
             body: vec![],
@@ -818,13 +710,13 @@ async fn rate_limit_fails_silently_once_with_a_backoff_hint() {
 #[tokio::test]
 async fn cross_host_redirect_is_rejected_and_never_followed() {
     // the "other host": a second local server that must never be hit
-    let (other_port, other_stats) = serve(|_| Resp {
+    let (other_port, other_stats) = testserver::spawn(|_| Response {
         status: 200,
         headers: vec![],
         body: b"{}".to_vec(),
     });
-    let (port, _) = serve(move |req| match req.path.as_str() {
-        "/latest" => Resp {
+    let (port, _) = testserver::spawn(move |req| match req.path.as_str() {
+        "/latest" => Response {
             status: 302,
             headers: vec![(
                 "Location".into(),
@@ -832,7 +724,7 @@ async fn cross_host_redirect_is_rejected_and_never_followed() {
             )],
             body: vec![],
         },
-        _ => Resp {
+        _ => Response {
             status: 404,
             headers: vec![],
             body: vec![],
@@ -853,18 +745,18 @@ async fn cross_host_redirect_is_rejected_and_never_followed() {
 
 #[tokio::test]
 async fn same_origin_redirect_is_followed() {
-    let (port, stats) = serve(|req| match req.path.as_str() {
-        "/latest" => Resp {
+    let (port, stats) = testserver::spawn(|req| match req.path.as_str() {
+        "/latest" => Response {
             status: 302,
             headers: vec![("Location".into(), "/real".into())],
             body: vec![],
         },
-        "/real" => Resp {
+        "/real" => Response {
             status: 200,
             headers: vec![],
             body: payload("http://127.0.0.1:0", "v0.0.1", &[]).into_bytes(),
         },
-        _ => Resp {
+        _ => Response {
             status: 404,
             headers: vec![],
             body: vec![],
@@ -893,21 +785,21 @@ async fn etag_cache_is_used_on_304() {
     let (port, stats) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
         let fx = Arc::new(fx);
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             let fx = fx.clone();
             move |req| {
                 let base = base_holder.lock().unwrap().clone();
                 match req.path.as_str() {
                     "/latest" => {
-                        if header(req, "if-none-match") == Some("\"v99\"") {
-                            Resp {
+                        if req.header("if-none-match") == Some("\"v99\"") {
+                            Response {
                                 status: 304,
                                 headers: vec![],
                                 body: vec![],
                             }
                         } else {
-                            Resp {
+                            Response {
                                 status: 200,
                                 headers: vec![("ETag".into(), "\"v99\"".into())],
                                 body: payload(
@@ -922,17 +814,17 @@ async fn etag_cache_is_used_on_304() {
                             }
                         }
                     }
-                    "/version.json" => Resp {
+                    "/version.json" => Response {
                         status: 200,
                         headers: vec![],
                         body: manifest("99.0.0", &fx.sha, &fx.sig).into_bytes(),
                     },
-                    "/sums.txt" => Resp {
+                    "/sums.txt" => Response {
                         status: 200,
                         headers: vec![],
                         body: sums(&[(&fx.sha, "EzooDownload-Setup.exe")]).into_bytes(),
                     },
-                    _ => Resp {
+                    _ => Response {
                         status: 404,
                         headers: vec![],
                         body: vec![],
@@ -994,10 +886,10 @@ async fn missing_manifest_or_sums_is_a_silent_fail() {
     // no version.json asset at all
     let (port, _) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             move |req| match req.path.as_str() {
-                "/latest" => Resp {
+                "/latest" => Response {
                     status: 200,
                     headers: vec![],
                     body: payload(
@@ -1007,7 +899,7 @@ async fn missing_manifest_or_sums_is_a_silent_fail() {
                     )
                     .into_bytes(),
                 },
-                _ => Resp {
+                _ => Response {
                     status: 404,
                     headers: vec![],
                     body: vec![],
@@ -1035,24 +927,24 @@ async fn missing_manifest_or_sums_is_a_silent_fail() {
     let (port, _) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
         let fx = Arc::new(fx);
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             let fx = fx.clone();
             move |req| {
                 let base = base_holder.lock().unwrap().clone();
                 match req.path.as_str() {
-                    "/latest" => Resp {
+                    "/latest" => Response {
                         status: 200,
                         headers: vec![],
                         body: payload(&base, "v99.0.0", &[("version.json", "/version.json")])
                             .into_bytes(),
                     },
-                    "/version.json" => Resp {
+                    "/version.json" => Response {
                         status: 200,
                         headers: vec![],
                         body: manifest("99.0.0", &fx.sha, &fx.sig).into_bytes(),
                     },
-                    _ => Resp {
+                    _ => Response {
                         status: 404,
                         headers: vec![],
                         body: vec![],
@@ -1086,13 +978,13 @@ async fn verified_download_succeeds_and_is_reused() {
     let (port, stats) = {
         let base_holder = Arc::new(Mutex::new(String::new()));
         let fx = Arc::new(fx);
-        let (p, s) = serve({
+        let (p, s) = testserver::spawn({
             let base_holder = base_holder.clone();
             let fx = fx.clone();
             move |req| {
                 let base = base_holder.lock().unwrap().clone();
                 match req.path.as_str() {
-                    "/latest" => Resp {
+                    "/latest" => Response {
                         status: 200,
                         headers: vec![],
                         body: payload(
@@ -1106,22 +998,22 @@ async fn verified_download_succeeds_and_is_reused() {
                         )
                         .into_bytes(),
                     },
-                    "/version.json" => Resp {
+                    "/version.json" => Response {
                         status: 200,
                         headers: vec![],
                         body: manifest("99.0.0", &fx.sha, &fx.sig).into_bytes(),
                     },
-                    "/sums.txt" => Resp {
+                    "/sums.txt" => Response {
                         status: 200,
                         headers: vec![],
                         body: sums(&[(&fx.sha, "EzooDownload-Setup.exe")]).into_bytes(),
                     },
-                    "/setup.exe" => Resp {
+                    "/setup.exe" => Response {
                         status: 200,
                         headers: vec![],
                         body: fx.body.clone(),
                     },
-                    _ => Resp {
+                    _ => Response {
                         status: 404,
                         headers: vec![],
                         body: vec![],

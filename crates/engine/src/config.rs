@@ -195,6 +195,11 @@ pub const DEFAULT_CAPTURE_EXTS: &str = "3GP 7Z AAC ACE AIF APK ARJ ASF AVI BIN B
 pub struct ServerLimit {
     pub host: String,
     pub connections: u32,
+    /// downloads from this site running at the same time (None = no
+    /// limit): a download over the limit waits in the queue and takes
+    /// no running slot
+    #[serde(default)]
+    pub max_downloads: Option<u32>,
 }
 
 /// Login for a site (Options > Site Logins).
@@ -231,6 +236,14 @@ pub fn default_column_width(key: &str) -> u32 {
         "added" => 140,
         _ => 190,
     }
+}
+
+/// Lowercase host of a URL ("" when it has none).
+pub fn host_of(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+        .unwrap_or_default()
 }
 
 pub const DEFAULT_COLUMNS: [&str; 7] = ["q", "size", "status", "eta", "speed", "last", "desc"];
@@ -386,6 +399,34 @@ pub struct Settings {
     /// automatic update checks (Options > General); turning it off stops
     /// the startup / 24-hour checks, Help > Check for updates still works
     pub update_check: bool,
+    /// ask before removing a download from the list
+    #[serde(default)]
+    pub ask_before_remove: bool,
+    /// removing a download also deletes its files
+    #[serde(default)]
+    pub remove_deletes_files: bool,
+    /// MP3 bitrate of the sound-only option (128 / 192 / 256 / 320)
+    #[serde(default)]
+    pub mp3_kbps: u32,
+    /// save subtitles next to a video, when yt-dlp finds any
+    #[serde(default)]
+    pub subtitles: bool,
+    /// subtitle languages, space separated ("" = the page language)
+    #[serde(default)]
+    pub subtitle_langs: String,
+    /// saved window sizes, by window name
+    #[serde(default)]
+    pub window_sizes: std::collections::BTreeMap<String, (f32, f32)>,
+    /// the main window was maximized when the program closed
+    #[serde(default)]
+    pub main_maximized: bool,
+    /// the progress window shows the details of each download
+    #[serde(default)]
+    pub progress_details: bool,
+    /// draw with the graphics card (off: the processor draws, steadier on
+    /// Linux/Wayland)
+    #[serde(default)]
+    pub gpu_drawing: bool,
 }
 
 impl Default for Settings {
@@ -476,6 +517,15 @@ impl Default for Settings {
             start_while_info: true,
             language: String::new(),
             update_check: true,
+            ask_before_remove: true,
+            remove_deletes_files: false,
+            mp3_kbps: 192,
+            subtitles: false,
+            subtitle_langs: "ar en".into(),
+            window_sizes: Default::default(),
+            main_maximized: false,
+            progress_details: false,
+            gpu_drawing: false,
         }
     }
 }
@@ -579,15 +629,22 @@ impl Settings {
 
     /// Connections allowed for this address (server exceptions).
     pub fn connections_for(&self, url: &str, wanted: u32) -> u32 {
-        let host = url::Url::parse(url)
-            .ok()
-            .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
-            .unwrap_or_default();
+        let host = host_of(url);
         self.server_limits
             .iter()
             .find(|l| host_matches(&host, &l.host))
             .map(|l| wanted.min(l.connections.max(1)))
             .unwrap_or(wanted)
+    }
+
+    /// Downloads from this site running at the same time, if the user
+    /// limited them (None = no limit).
+    pub fn max_downloads_for(&self, url: &str) -> Option<u32> {
+        let host = host_of(url);
+        self.server_limits
+            .iter()
+            .find(|l| host_matches(&host, &l.host))
+            .and_then(|l| l.max_downloads)
     }
 
     /// Starting connection count the adaptive engine should use for
@@ -826,6 +883,27 @@ mod tests {
     }
 
     #[test]
+    fn per_site_download_limit() {
+        let mut s = Settings::default();
+        assert_eq!(s.max_downloads_for("https://example.com/f.bin"), None);
+        s.server_limits.push(ServerLimit {
+            host: "example.com".into(),
+            connections: 4,
+            max_downloads: Some(2),
+        });
+        assert_eq!(s.max_downloads_for("https://example.com/f.bin"), Some(2));
+        // subdomains count, other sites do not
+        assert_eq!(s.max_downloads_for("https://dl.example.com/f.bin"), Some(2));
+        assert_eq!(s.max_downloads_for("https://other.org/f.bin"), None);
+        // the per-download connection cap is untouched by the new field
+        assert_eq!(s.connections_for("https://example.com/f.bin", 32), 4);
+        // an old settings file without the field still loads
+        let v: ServerLimit =
+            serde_json::from_str("{\"host\":\"example.com\",\"connections\":4}").unwrap();
+        assert_eq!(v.max_downloads, None);
+    }
+
+    #[test]
     fn categories_and_logins() {
         let mut s = Settings::default();
         assert_eq!(
@@ -853,6 +931,7 @@ mod tests {
         s.server_limits.push(ServerLimit {
             host: "slow.example.com".into(),
             connections: 2,
+            max_downloads: None,
         });
         assert_eq!(s.connections_for("https://a.slow.example.com/x", 32), 2);
         assert_eq!(s.connections_for("https://fast.example.com/x", 32), 32);

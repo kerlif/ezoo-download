@@ -2,7 +2,7 @@
 //! speed measurement and persistence. The UI only talks to this type.
 
 use crate::adaptive::{AdaptiveConfig, AdaptiveReport};
-use crate::config::{parse_hhmm, AfterDone, QueueDef, Settings, MAIN_QUEUE};
+use crate::config::{host_of, parse_hhmm, AfterDone, QueueDef, Settings, MAIN_QUEUE};
 use crate::filename;
 use crate::hls::{self, HlsJob};
 use crate::http::{self, build_client_with, Progress, ProxyConfig, Shared};
@@ -90,6 +90,8 @@ pub struct Manager {
     proxy: Mutex<ProxyConfig>,
     rt: Handle,
     data_dir: PathBuf,
+    /// downloads whose link went stale and is being fetched again
+    relink: Mutex<HashSet<DownloadId>>,
     /// the hidden torrent program (started when the first torrent runs)
     torrents: Arc<torrent::Aria2>,
 }
@@ -116,11 +118,47 @@ pub fn default_data_dir() -> PathBuf {
     dir
 }
 
+/// A fresh look at a link: the same file when it is not a web page, it
+/// takes ranges, and its size is known and the same as before.
+fn same_file(p: &ProbeResult, old_size: u64) -> bool {
+    !p.is_web_page() && p.resumable && p.total_size == Some(old_size)
+}
+
+/// Is a new link the same file as an unfinished download (manual
+/// refresh)? Size must match, and the strongest validator both sides
+/// have must match too: a strong ETag when both sides have one, else
+/// Last-Modified when both sides have one. A weak ETag (W/...) only
+/// says the content is close enough, not identical, so it never proves
+/// the same file. When the old download has no validator at all, size +
+/// resumable + not-a-web-page is all there is to check.
+fn same_file_strong(p: &ProbeResult, rec: &DownloadRecord) -> bool {
+    if p.is_web_page() || !p.resumable {
+        return false;
+    }
+    if p.total_size != rec.total_size {
+        return false;
+    }
+    let strong = |e: &str| !e.starts_with("W/");
+    if let (Some(new), Some(old)) = (&p.etag, &rec.etag) {
+        if strong(new) && strong(old) {
+            return new == old;
+        }
+        // one side weak: fall through to Last-Modified
+    }
+    if let (Some(new), Some(old)) = (p.last_modified, rec.server_time) {
+        return new == old;
+    }
+    // no validator that both sides share: only accept when the old
+    // download never had one
+    rec.etag.is_none() && rec.server_time.is_none()
+}
+
 impl Manager {
     pub fn new(rt: Handle, data_dir: PathBuf) -> anyhow::Result<Arc<Manager>> {
         std::fs::create_dir_all(&data_dir)?;
         let settings = Settings::load(&data_dir.join("settings.json"));
         settings.create_folders();
+        ytdlp::set_mp3_kbps(settings.mp3_kbps);
         let proxy = ProxyConfig::from_settings(&settings);
         // a broken manual proxy must not keep the app from starting
         let client = build_client_with(&proxy).or_else(|_| {
@@ -198,6 +236,7 @@ impl Manager {
             shared,
             proxy: Mutex::new(proxy),
             rt: rt.clone(),
+            relink: Mutex::new(HashSet::new()),
             torrents: Arc::new(torrent::Aria2::new(&data_dir.join("torrents"))),
             data_dir,
         });
@@ -231,7 +270,19 @@ impl Manager {
         }
         s.save(&self.data_dir.join("settings.json"))?;
         s.create_folders();
-        *self.settings.write().unwrap() = s;
+        *self.settings.write().unwrap() = s.clone();
+        // the connection count changed while downloads run: they get more /
+        // fewer connections at once; the MP3 bitrate follows new lookups
+        ytdlp::set_mp3_kbps(s.mp3_kbps);
+        {
+            let inner = self.inner.lock().unwrap();
+            for e in inner.entries.values() {
+                if e.task.is_some() && e.rec.kind != DownloadKind::Torrent {
+                    let n = s.connections_for(&e.rec.url, s.connections);
+                    e.progress.want_connections.store(n, Ordering::Relaxed);
+                }
+            }
+        }
         self.pump();
         Ok(())
     }
@@ -409,6 +460,8 @@ impl Manager {
             video_size: None,
             source_page: req.source_page.clone(),
             source_key: req.source_key.clone(),
+            quality_key: req.quality_key.clone(),
+            stream_variant_url: req.stream_variant_url.clone(),
             queue: req.queue,
             auto_name,
             description: req.description.clone().filter(|d| !d.trim().is_empty()),
@@ -438,6 +491,7 @@ impl Manager {
             queue_pos: id,
             last_try: None,
             server_time: probe.as_ref().and_then(|p| p.last_modified),
+            etag: probe.as_ref().and_then(|p| p.etag.clone()),
             retry_count: 0,
             pick_quality: req.pick_quality.clone(),
             work_stem: None,
@@ -648,7 +702,9 @@ impl Manager {
     }
 
     /// Move / rename a finished file ("Save as" for downloads that are done).
-    pub fn move_file(&self, id: DownloadId, new_path: &Path) -> anyhow::Result<()> {
+    /// `replace` says whether a file already at the new place may be
+    /// overwritten.
+    pub fn move_file(&self, id: DownloadId, new_path: &Path, replace: bool) -> anyhow::Result<()> {
         // the list is not held while the file moves: a copy to another disk
         // can take minutes and everything else must go on meanwhile
         let from = {
@@ -662,12 +718,34 @@ impl Manager {
             }
             e.rec.target_path()
         };
+        if new_path == from {
+            return Ok(());
+        }
+        if new_path.exists() && !replace {
+            anyhow::bail!("a file with this name is already there");
+        }
         if let Some(dir) = new_path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         if std::fs::rename(&from, new_path).is_err() {
-            // another drive: copy, then delete the old one
-            std::fs::copy(&from, new_path)?;
+            // another drive: copy to a hidden temporary name first, check
+            // the size, then rename, so a broken copy never replaces the
+            // old file; only then is the old file removed
+            let file_name = new_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let tmp = new_path.with_file_name(format!(".{file_name}.ezoo-move"));
+            std::fs::copy(&from, &tmp)?;
+            let ok = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0)
+                == std::fs::metadata(&from)
+                    .map(|m| m.len())
+                    .unwrap_or(u64::MAX);
+            if !ok {
+                let _ = std::fs::remove_file(&tmp);
+                anyhow::bail!("the copy did not finish");
+            }
+            std::fs::rename(&tmp, new_path)?;
             std::fs::remove_file(&from)?;
         }
         let mut inner = self.inner.lock().unwrap();
@@ -687,6 +765,61 @@ impl Manager {
         }
         inner.dirty = true;
         Ok(())
+    }
+
+    /// Can this download go on from where it stopped (HTTP only)?
+    pub fn resumable(&self, id: DownloadId) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .entries
+            .get(&id)
+            .map(|e| e.rec.resumable || e.rec.kind != DownloadKind::Http)
+            .unwrap_or(false)
+    }
+
+    /// A .torrent file the browser sent us: fetch it with the page's
+    /// headers (cookies/auth), at most 16 MB, check it really is a
+    /// torrent, and save it under data_dir/torrents/from-browser/
+    /// under a name of our own (never a path from the server).
+    pub async fn fetch_torrent_file(
+        &self,
+        url: &str,
+        headers: &RequestHeaders,
+    ) -> anyhow::Result<PathBuf> {
+        const MAX: usize = 16 << 20;
+        let ua = self.settings().user_agent.clone();
+        let mut resp = http::request(&self.client(), url, headers, &ua)
+            .send()
+            .await?
+            .error_for_status()?;
+        if resp.content_length().is_some_and(|n| n > MAX as u64) {
+            anyhow::bail!("too big for a .torrent file");
+        }
+        let mut data = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            data.extend_from_slice(&chunk);
+            if data.len() > MAX {
+                anyhow::bail!("too big for a .torrent file");
+            }
+        }
+        let info = torrent::parse_torrent(&data)?;
+        let dir = self.data_dir.join("torrents").join("from-browser");
+        std::fs::create_dir_all(&dir)?;
+        // a name of our own: never a path from the server
+        let stem: String = info
+            .name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || " -_.()[]".contains(*c))
+            .take(80)
+            .collect();
+        let stem = if stem.trim().is_empty() {
+            "download".to_string()
+        } else {
+            stem.trim().to_string()
+        };
+        let path = dir.join(filename::unique_name(&dir, &format!("{stem}.torrent")));
+        std::fs::write(&path, &data)?;
+        Ok(path)
     }
 
     /// Put every download back into the category its file type says
@@ -729,6 +862,82 @@ impl Manager {
         inner.dirty = true;
     }
 
+    /// "Refresh download address" with a check: continue an unfinished
+    /// download from a new link, but only when the new link is the same
+    /// file (same size + same strong validator, see `same_file_strong`).
+    /// The downloaded parts stay: the download goes on from where it
+    /// was. A running download is stopped first; a failed one goes back
+    /// to Paused. The UI calls `refresh_link_with_headers` (Phase 2).
+    pub async fn refresh_link(&self, id: DownloadId, new_url: &str) -> anyhow::Result<()> {
+        let headers = {
+            let inner = self.inner.lock().unwrap();
+            let e = inner
+                .entries
+                .get(&id)
+                .ok_or_else(|| anyhow!("download not found"))?;
+            e.rec.headers.clone()
+        };
+        self.refresh_link_with_headers(id, new_url, headers).await
+    }
+
+    /// Same as `refresh_link`, but the probe uses the given headers
+    /// (fresh from the browser capture or the pasted link) instead of
+    /// the stored ones, and the headers are kept on the record when the
+    /// new link checks out (a stored login is kept when the new headers
+    /// have none). Called by the UI's "Refresh download address" flow.
+    pub async fn refresh_link_with_headers(
+        &self,
+        id: DownloadId,
+        new_url: &str,
+        headers: RequestHeaders,
+    ) -> anyhow::Result<()> {
+        let rec = {
+            let inner = self.inner.lock().unwrap();
+            let e = inner
+                .entries
+                .get(&id)
+                .ok_or_else(|| anyhow!("download not found"))?;
+            if e.rec.status == Status::Completed {
+                anyhow::bail!("a finished download needs no new link");
+            }
+            e.rec.clone()
+        };
+        let p = self.probe(new_url, &headers).await?;
+        if !same_file_strong(&p, &rec) {
+            anyhow::bail!("the new link is not the same file: same size and validator required");
+        }
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(e) = inner.entries.get_mut(&id) {
+                if let Some(t) = &e.task {
+                    t.cancel();
+                }
+                e.rec.url = new_url.to_string();
+                e.rec.final_url = Some(p.final_url.clone());
+                // the variant playlist came from the old master: a fresh
+                // probe of the new master picks the best variant again
+                e.rec.stream_variant_url = None;
+                e.rec.total_size = p.total_size;
+                e.rec.resumable = p.resumable;
+                e.rec.server_time = p.last_modified.or(e.rec.server_time);
+                e.rec.etag = p.etag.clone().or(e.rec.etag.clone());
+                // keep the fresh headers; never drop a stored login
+                let auth = e.rec.headers.auth.clone();
+                e.rec.headers = headers;
+                if e.rec.headers.auth.is_none() {
+                    e.rec.headers.auth = auth;
+                }
+                if e.rec.status == Status::Failed {
+                    e.rec.status = Status::Paused;
+                    e.rec.error = None;
+                }
+            }
+            inner.dirty = true;
+        }
+        self.relink.lock().unwrap().remove(&id);
+        Ok(())
+    }
+
     /// Changes from the File Properties window.
     pub fn update_details(&self, id: DownloadId, d: DetailsEdit) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
@@ -736,6 +945,11 @@ impl Manager {
             .entries
             .get_mut(&id)
             .ok_or_else(|| anyhow!("download not found"))?;
+        // the download already started in the temporary folder: keep the
+        // partly downloaded data where it is
+        if e.rec.work_stem.is_some() && e.rec.temp_dir.is_none() {
+            e.rec.temp_dir = Some(e.rec.work_dir());
+        }
         if let Some(u) = d.url.filter(|u| !u.trim().is_empty() && *u != e.rec.url) {
             if e.rec.status == Status::Completed {
                 anyhow::bail!("the address of a finished download can't be changed");
@@ -823,7 +1037,7 @@ impl Manager {
             let target = dir.join(filename::sanitize(name));
             let current = self.get(id).map(|v| v.save_path).unwrap_or_default();
             if target != current {
-                self.move_file(id, &target)?;
+                self.move_file(id, &target, true)?;
             }
         }
         Ok(())
@@ -1067,6 +1281,11 @@ impl Manager {
                     *per_queue.entry(q).or_default() += 1;
                 }
             }
+            // downloads running per site, for the per-site limits
+            let mut per_site: HashMap<String, usize> = HashMap::new();
+            for e in inner.entries.values().filter(|e| e.task.is_some()) {
+                *per_site.entry(host_of(&e.rec.url)).or_default() += 1;
+            }
             // queue files go in their queue order
             let mut order: Vec<(u64, DownloadId)> = inner
                 .entries
@@ -1101,6 +1320,16 @@ impl Manager {
                         continue;
                     }
                     *per_queue.entry(q).or_default() += 1;
+                }
+                // per-site limit: a download over the limit waits in the
+                // queue and takes no running slot (nor a queue slot)
+                if let Some(limit) = settings.max_downloads_for(&e.rec.url) {
+                    let host = host_of(&e.rec.url);
+                    let now = per_site.get(&host).copied().unwrap_or(0);
+                    if limit > 0 && now >= limit as usize {
+                        continue;
+                    }
+                    *per_site.entry(host).or_default() += 1;
                 }
                 let token = CancellationToken::new();
                 e.task = Some(token.clone());
@@ -1244,6 +1473,12 @@ impl Manager {
             .get(&id)
             .map(|e| e.progress.clone());
         let mut tries = 0u32;
+        let mut stuck = 0u32;
+        let mut relinks = 0u32;
+        let mut last_bytes = progress
+            .as_ref()
+            .map(|p| p.bytes.load(Ordering::Relaxed))
+            .unwrap_or(0);
         let result = loop {
             let r = self.run_download(id, cancel.clone()).await;
             // no internet when starting (or the whole transfer broke off):
@@ -1261,12 +1496,56 @@ impl Manager {
                         _ = cancel.cancelled() => break Err(Cancelled.into()),
                     }
                 }
+                // the server keeps failing but may come back: try again on
+                // its own a few times, then give up (making progress
+                // resets the count)
+                (Err(e), Some(p))
+                    if !cancel.is_cancelled()
+                        && !e.is::<Cancelled>()
+                        && http::is_passing_error(e) =>
+                {
+                    let now = p.bytes.load(Ordering::Relaxed);
+                    if now > last_bytes {
+                        stuck = 0;
+                        last_bytes = now;
+                    }
+                    stuck += 1;
+                    if stuck > 12 {
+                        break r;
+                    }
+                    p.waiting.store(true, Ordering::Relaxed);
+                    tokio::select! {
+                        _ = tokio::time::sleep(http::retry_delay(stuck)) => {}
+                        _ = cancel.cancelled() => break Err(Cancelled.into()),
+                    }
+                }
+                // the link went stale: fetch a new one the way the first one
+                // was found, and go on with it from where it was
+                (Err(e), _)
+                    if !cancel.is_cancelled() && !e.is::<Cancelled>() && http::is_link_gone(e) =>
+                {
+                    let bytes = progress
+                        .as_ref()
+                        .map(|p| p.bytes.load(Ordering::Relaxed))
+                        .unwrap_or(0);
+                    let max = if bytes > 0 { 6 } else { 2 };
+                    relinks += 1;
+                    if relinks > max {
+                        break r;
+                    }
+                    self.relink.lock().unwrap().insert(id);
+                    tokio::select! {
+                        _ = tokio::time::sleep(http::relink_delay(relinks)) => {}
+                        _ = cancel.cancelled() => break Err(Cancelled.into()),
+                    }
+                }
                 _ => break r,
             }
         };
         if let Some(p) = &progress {
             p.waiting.store(false, Ordering::Relaxed);
         }
+        let mut sub: Option<(PathBuf, String)> = None;
         {
             let mut inner = self.inner.lock().unwrap();
             let mut finished = false;
@@ -1300,6 +1579,13 @@ impl Manager {
                             e.rec.target_path(),
                             e.rec.final_url.clone().unwrap_or_else(|| e.rec.url.clone()),
                             e.rec.headers.referer.clone(),
+                        ));
+                        sub = Some((
+                            e.rec.target_path(),
+                            e.rec
+                                .source_page
+                                .clone()
+                                .unwrap_or_else(|| e.rec.url.clone()),
                         ));
                         action = std::mem::take(&mut e.rec.on_complete);
                         open_file = e
@@ -1352,6 +1638,27 @@ impl Manager {
             drop(inner);
             if action != AfterDone::Nothing {
                 self.after_done(action);
+            }
+        }
+        // subtitles, when asked for: next to the finished file, from the
+        // page the video came from; a failure here never fails the download
+        if let Some((path, page)) = sub {
+            let settings = self.settings();
+            if settings.subtitles && !settings.subtitle_langs.trim().is_empty() {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let ext = filename::extension(&name);
+                if !matches!(ext.as_str(), "mp3" | "m4a" | "opus" | "ogg") {
+                    let dir = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                    let (stem, _) = filename::split_ext(&name);
+                    let stem = stem.to_string();
+                    let langs = settings.subtitle_langs.clone();
+                    tokio::task::spawn_blocking(move || {
+                        ytdlp::fetch_subtitles(&page, &dir, &stem, &langs);
+                    });
+                }
             }
         }
         self.pump();
@@ -1418,6 +1725,9 @@ impl Manager {
         }
         rec.headers = with_login(&settings, &rec.url, &rec.headers);
         rec.connections = settings.connections_for(&rec.url, rec.connections);
+        // folder / name as the download started: the probe's name is only
+        // applied when the user did not change them meanwhile
+        let (was_dir, was_name) = (rec.save_dir.clone(), rec.file_name.clone());
         if rec.kind == DownloadKind::Dash {
             return self
                 .run_dash(
@@ -1437,6 +1747,22 @@ impl Manager {
             r = http::probe(&client, &rec.url, &rec.headers, &settings.user_agent) => r?,
             _ = cancel.cancelled() => return Err(Cancelled.into()),
         };
+        // the old link went stale and this run uses a new one (found again
+        // the way the first one was): it must be the same file, or the
+        // download stops instead of writing a different file over the old one
+        if self.relink.lock().unwrap().remove(&id) {
+            if let Some(old) = rec.total_size {
+                if !segs.lock().unwrap().is_empty() && !same_file(&p, old) {
+                    let got = p
+                        .total_size
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "unknown".into());
+                    anyhow::bail!(
+                        "the link now gives another file: not the same file ({got} bytes instead of {old})"
+                    );
+                }
+            }
+        }
         if p.is_web_page() && rec.downloaded == 0 && segs.lock().unwrap().is_empty() {
             anyhow::bail!(
                 "the address opens a web page, not a file (the link may have expired - use \"Refresh download address\")"
@@ -1461,6 +1787,7 @@ impl Manager {
         rec.resumable = p.resumable;
         rec.kind = p.kind;
         rec.server_time = p.last_modified.or(rec.server_time);
+        rec.etag = p.etag.clone().or(rec.etag);
         rec.connections = settings.connections_for(&p.final_url, rec.connections);
         // added without a name (batch, clipboard): use the server's real name
         // and the matching category folder before the first byte is written
@@ -1489,11 +1816,17 @@ impl Manager {
                 x.total_size = r.total_size;
                 x.resumable = r.resumable;
                 x.kind = r.kind;
-                x.file_name = r.file_name;
-                x.save_dir = r.save_dir;
-                x.category = r.category;
+                // the folder / name may have changed while it was
+                // downloading (File Properties): only the server's own
+                // name is applied when nothing changed meanwhile
+                if x.save_dir == was_dir && x.file_name == was_name {
+                    x.file_name = r.file_name;
+                    x.save_dir = r.save_dir;
+                    x.category = r.category;
+                }
                 x.auto_name = false;
                 x.server_time = r.server_time;
+                x.etag = r.etag;
                 if x.status == Status::Connecting {
                     x.status = Status::Downloading;
                 }
@@ -1538,8 +1871,14 @@ impl Manager {
                 self.record_learning(&p.final_url, &report, rec.total_size);
             }
             DownloadKind::Hls => {
+                // Q7 steering: a picked variant's own playlist downloads
+                // exactly that quality; without a pick the master is
+                // fetched and its best variant wins, as before.
                 let job = HlsJob {
-                    url: rec.request_url().to_string(),
+                    url: rec
+                        .stream_variant_url
+                        .clone()
+                        .unwrap_or_else(|| rec.request_url().to_string()),
                     headers: rec.headers.clone(),
                     user_agent: settings.user_agent.clone(),
                     output: part.clone(),
@@ -1556,11 +1895,13 @@ impl Manager {
         if rec.source_key.as_deref() == Some(ytdlp::MP3_KEY) {
             // "Audio · MP3": the sound is here, now make the MP3 file
             progress.assembling.store(true, Ordering::Relaxed);
+            let client = self.shared.client();
+            crate::tools::restore_ffmpeg(&client).await;
             let (input, tmp) = (part.clone(), part.with_extension("mp3tmp"));
             let t2 = tmp.clone();
             let title = song_title(&rec.file_name);
             tokio::task::spawn_blocking(move || {
-                mux::to_mp3(&input, &t2, ytdlp::MP3_KBPS, Some(&title))
+                mux::to_mp3(&input, &t2, ytdlp::mp3_kbps(), Some(&title))
             })
             .await??;
             std::fs::rename(&tmp, &part)?;
@@ -1572,6 +1913,8 @@ impl Manager {
             // a joined stream: an ordinary MP4 plays everywhere and can be
             // wound forward; if that fails the .ts file stays as it is
             progress.assembling.store(true, Ordering::Relaxed);
+            let client = self.shared.client();
+            crate::tools::restore_ffmpeg(&client).await;
             let (input, tmp) = (part.clone(), part.with_extension("mp4tmp"));
             let t2 = tmp.clone();
             let made = tokio::task::spawn_blocking(move || mux::ts_to_mp4(&input, &t2))
@@ -1935,6 +2278,36 @@ impl Manager {
                 .total_size
                 .zip(rec.video_size)
                 .map(|(t, v)| t.saturating_sub(v));
+            // the old links went stale and these runs use new ones (found
+            // again the way the first ones were): both must be the same files
+            if self.relink.lock().unwrap().remove(&id) {
+                if !segs.lock().unwrap().is_empty() {
+                    if let Some(old) = rec.video_size {
+                        if !same_file(&vp, old) {
+                            let got = vp
+                                .total_size
+                                .map(|t| t.to_string())
+                                .unwrap_or_else(|| "unknown".into());
+                            anyhow::bail!(
+                                "the link now gives another file: not the same file ({got} bytes instead of {old})"
+                            );
+                        }
+                    }
+                }
+                if !audio_segs.lock().unwrap().is_empty() {
+                    if let Some(old) = old_audio {
+                        if !same_file(&ap, old) {
+                            let got = ap
+                                .total_size
+                                .map(|t| t.to_string())
+                                .unwrap_or_else(|| "unknown".into());
+                            anyhow::bail!(
+                                "the link now gives another file: not the same file ({got} bytes instead of {old})"
+                            );
+                        }
+                    }
+                }
+            }
             if vp.total_size != rec.video_size || !vp.resumable {
                 segs.lock().unwrap().clear();
             }
@@ -1945,6 +2318,7 @@ impl Manager {
             rec.total_size = vp.total_size.zip(ap.total_size).map(|(v, a)| v + a);
             rec.resumable = vp.resumable && ap.resumable;
             rec.final_url = Some(vp.final_url.clone());
+            rec.etag = vp.etag.clone().or(rec.etag);
             if let Some(total) = rec.total_size {
                 let have = segments::downloaded(&segs.lock().unwrap())
                     + segments::downloaded(&audio_segs.lock().unwrap());
@@ -1963,6 +2337,7 @@ impl Manager {
                     x.total_size = r.total_size;
                     x.video_size = r.video_size;
                     x.resumable = r.resumable;
+                    x.etag = r.etag;
                     if x.status == Status::Connecting {
                         x.status = Status::Downloading;
                     }
@@ -2038,6 +2413,8 @@ impl Manager {
 
         // merge
         progress.assembling.store(true, Ordering::Relaxed);
+        let client = self.shared.client();
+        crate::tools::restore_ffmpeg(&client).await;
         let (video, audio, output, name) = (
             rec.video_part_path(),
             rec.audio_part_path(),
@@ -2073,6 +2450,9 @@ impl Manager {
             url: rec.request_url().to_string(),
             headers: rec.headers.clone(),
             user_agent: settings.user_agent.clone(),
+            // Q7 steering: the picked quality (a height like "720");
+            // None = the best track, as before.
+            quality_key: rec.quality_key.clone(),
             video_out: rec.video_part_path(),
             audio_out: Some(rec.audio_part_path()),
             temp_dir: rec.hls_temp_dir().join("dash"),
@@ -2086,6 +2466,8 @@ impl Manager {
         };
         // merge, exactly like the two-stream downloads
         progress.assembling.store(true, Ordering::Relaxed);
+        let client = self.shared.client();
+        crate::tools::restore_ffmpeg(&client).await;
         let (video, audio, output, name) = (
             rec.video_part_path(),
             rec.audio_part_path(),
@@ -2500,6 +2882,8 @@ fn view_of(e: &Entry, with_parts: bool) -> DownloadView {
             .source_page
             .clone()
             .or_else(|| e.rec.headers.referer.clone()),
+        quality_key: e.rec.quality_key.clone(),
+        stream_variant_url: e.rec.stream_variant_url.clone(),
         queue_pos: e.rec.queue_pos,
     }
 }

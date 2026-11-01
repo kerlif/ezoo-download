@@ -89,6 +89,8 @@ pub struct ProbeResult {
     pub kind: DownloadKind,
     /// the server's "Last-Modified" date
     pub last_modified: Option<DateTime<Utc>>,
+    /// the server's ETag for the file, when it sends one
+    pub etag: Option<String>,
     /// the server refused the request as it was (HTTP 403 and the like) and
     /// took it with these headers instead: the download uses them too
     pub headers_used: Option<RequestHeaders>,
@@ -122,6 +124,16 @@ pub struct NewDownload {
     /// YouTube page + chosen quality, to get fresh links when old ones expire
     pub source_page: Option<String>,
     pub source_key: Option<String>,
+    /// the quality the overlay offered for this download (e.g. an HLS
+    /// variant like "1080p"), so a later quality window can offer the
+    /// same choice again (Q26 plumbing; the full window is a later phase)
+    pub quality_key: Option<String>,
+    /// the chosen stream variant's own playlist (HLS): when set, the
+    /// runner fetches this instead of the master playlist, so the picked
+    /// quality is what actually downloads (Q7 steering, Phase 6).
+    /// None = the best variant, as before. DASH does not use it: the
+    /// DASH runner picks by `quality_key` instead.
+    pub stream_variant_url: Option<String>,
     /// put it in this download queue
     pub queue: Option<u64>,
     /// the user's note from the download dialog
@@ -162,6 +174,12 @@ pub struct DownloadRecord {
     #[serde(default)]
     pub source_key: Option<String>,
     #[serde(default)]
+    pub quality_key: Option<String>,
+    /// the chosen HLS variant playlist (see `NewDownload`); cleared when
+    /// the link is refreshed, since it came from the old master
+    #[serde(default)]
+    pub stream_variant_url: Option<String>,
+    #[serde(default)]
     pub queue: Option<u64>,
     /// name was only guessed from the URL; the server's real name wins
     #[serde(default)]
@@ -201,6 +219,9 @@ pub struct DownloadRecord {
     /// server's file date (Last-Modified)
     #[serde(default)]
     pub server_time: Option<DateTime<Utc>>,
+    /// server's ETag for the file, when it sends one
+    #[serde(default)]
+    pub etag: Option<String>,
     /// automatic retries done by its queue
     #[serde(default)]
     pub retry_count: u32,
@@ -352,6 +373,10 @@ pub struct DownloadView {
     pub headers: RequestHeaders,
     /// page the download came from
     pub parent_page: Option<String>,
+    /// the picked quality key ("1080p", ...) and, for HLS, the picked
+    /// variant's own playlist (None = the best variant)
+    pub quality_key: Option<String>,
+    pub stream_variant_url: Option<String>,
     pub queue_pos: u64,
     /// the connection dropped: waiting for the internet to come back
     pub waiting: bool,

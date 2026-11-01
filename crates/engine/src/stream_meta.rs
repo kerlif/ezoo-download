@@ -260,7 +260,11 @@ async fn probe_hls(
     let mut duration: Option<f64> = None;
     let mut drm: Option<String> = None;
     // Cap the variants fetched: each needs its own media playlist, and
-    // the whole probe must finish inside the deadline.
+    // the whole probe must finish inside the deadline. Sort best-first
+    // before capping, so the cap keeps the best 8 — a master that lists
+    // its qualities low-to-high would otherwise lose its best ones.
+    let mut variants = variants;
+    variants.sort_by_key(|v| std::cmp::Reverse(v.bandwidth));
     for v in variants.iter().take(8) {
         let media_text = match fetch_text(client, &v.url, headers, default_ua, deadline).await {
             Ok(t) => t,

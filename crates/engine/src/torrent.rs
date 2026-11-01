@@ -318,6 +318,44 @@ pub struct AddOptions {
     pub check: bool,
 }
 
+/// The aria2c command line for one daemon. Pure (no process is spawned),
+/// so the argument vector can be unit-tested: RPC is on, but loopback-only
+/// (`--rpc-listen-all=false`, `--rpc-allow-origin-all=false`) and gated by
+/// the random per-run secret (`--rpc-secret`), on an ephemeral port, and
+/// the daemon dies with the app (`--stop-with-process`). The secret is
+/// held in memory only — it is never written to a log or a file.
+fn aria2_args(port: u16, secret: &str, dht: &Path, pid: u32) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "--enable-rpc=true".into(),
+        "--rpc-listen-all=false".into(),
+        "--rpc-allow-origin-all=false".into(),
+        "--rpc-max-request-size=32M".into(),
+        "--continue=true".into(),
+        "--file-allocation=none".into(),
+        "--seed-time=0".into(),
+        "--bt-save-metadata=false".into(),
+        "--follow-torrent=mem".into(),
+        "--follow-metalink=false".into(),
+        "--auto-file-renaming=false".into(),
+        "--allow-overwrite=false".into(),
+        "--max-concurrent-downloads=64".into(),
+        "--enable-dht=true".into(),
+        "--bt-enable-lpd=true".into(),
+        "--enable-peer-exchange=true".into(),
+        "--bt-max-peers=80".into(),
+        "--console-log-level=error".into(),
+        "--summary-interval=0".into(),
+        "--quiet=true".into(),
+        "--check-certificate=true".into(),
+        "--disk-cache=32M".into(),
+    ];
+    args.push(format!("--rpc-listen-port={port}"));
+    args.push(format!("--rpc-secret={secret}"));
+    args.push(format!("--stop-with-process={pid}"));
+    args.push(format!("--dht-file-path={}", dht.display()));
+    args
+}
+
 impl Aria2 {
     pub fn new(data_dir: &Path) -> Aria2 {
         // straight to 127.0.0.1, never through a proxy
@@ -341,7 +379,15 @@ impl Aria2 {
             }
         }
         let tool = crate::mux::find_tool("aria2c").ok_or_else(|| {
-            anyhow!("aria2c.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again")
+            // Absent by construction (`bundled = false`): the selector
+            // always yields a message for this case.
+            let msg = crate::tools::aria2_missing_message(
+                cfg!(windows),
+                crate::tools::in_flatpak(),
+                false,
+            )
+            .unwrap_or("aria2c is missing");
+            anyhow!("{msg}")
         })?;
         let port = std::net::TcpListener::bind("127.0.0.1:0")?
             .local_addr()?
@@ -350,37 +396,10 @@ impl Aria2 {
         let _ = std::fs::create_dir_all(&self.data_dir);
         let dht = self.data_dir.join("dht.dat");
         let mut cmd = std::process::Command::new(&tool);
-        cmd.args([
-            "--enable-rpc=true",
-            "--rpc-listen-all=false",
-            "--rpc-allow-origin-all=false",
-            "--rpc-max-request-size=32M",
-            "--continue=true",
-            "--file-allocation=none",
-            "--seed-time=0",
-            "--bt-save-metadata=false",
-            "--follow-torrent=mem",
-            "--follow-metalink=false",
-            "--auto-file-renaming=false",
-            "--allow-overwrite=false",
-            "--max-concurrent-downloads=64",
-            "--enable-dht=true",
-            "--bt-enable-lpd=true",
-            "--enable-peer-exchange=true",
-            "--bt-max-peers=80",
-            "--console-log-level=error",
-            "--summary-interval=0",
-            "--quiet=true",
-            "--check-certificate=true",
-            "--disk-cache=32M",
-        ])
-        .arg(format!("--rpc-listen-port={port}"))
-        .arg(format!("--rpc-secret={secret}"))
-        .arg(format!("--stop-with-process={}", std::process::id()))
-        .arg(format!("--dht-file-path={}", dht.display()))
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        cmd.args(aria2_args(port, &secret, &dht, std::process::id()))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
         crate::mux::hide_window(&mut cmd);
         let child = cmd.spawn().context("could not start aria2c")?;
         *guard = Some(Daemon {
@@ -656,5 +675,36 @@ mod tests {
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foo"), "Zm9v");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn aria2_rpc_is_loopback_only_with_a_secret() {
+        let secret = "deadbeefdeadbeefdeadbeefdeadbeef";
+        let args = aria2_args(45678, secret, Path::new("/tmp/x/dht.dat"), 1234);
+        // RPC is on — the app drives aria2 over it — but loopback-only
+        // and origin-locked, so no other machine or web page can reach it
+        assert!(args.iter().any(|a| a == "--enable-rpc=true"));
+        assert!(args.iter().any(|a| a == "--rpc-listen-all=false"));
+        assert!(args.iter().any(|a| a == "--rpc-allow-origin-all=false"));
+        assert!(args.iter().any(|a| a == "--rpc-listen-port=45678"));
+        // the secret gates every call and is passed through verbatim
+        assert!(args.iter().any(|a| a == &format!("--rpc-secret={secret}")));
+        // the daemon dies with the app
+        assert!(args.iter().any(|a| a == "--stop-with-process=1234"));
+        assert!(args.iter().any(|a| a == "--dht-file-path=/tmp/x/dht.dat"));
+        // never the open variants
+        assert!(!args.iter().any(|a| a == "--rpc-listen-all=true"));
+        assert!(!args.iter().any(|a| a == "--rpc-allow-origin-all=true"));
+        assert!(!args.iter().any(|a| a == "--enable-rpc=false"));
+    }
+
+    #[test]
+    fn rpc_secret_is_random_per_run() {
+        let a = random_secret();
+        let b = random_secret();
+        assert_ne!(a, b);
+        // 16 random bytes, hex-encoded
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

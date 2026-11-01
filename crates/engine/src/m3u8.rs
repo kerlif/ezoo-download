@@ -14,11 +14,15 @@ pub struct Part {
     pub url: String,
     pub sequence: u64,
     pub key: Option<Key>,
+    /// only this slice of the file (start, end), when the playlist says so
+    pub range: Option<(u64, u64)>,
 }
 
 #[derive(Debug, Default, PartialEq)]
 pub struct MediaPlaylist {
     pub init_url: Option<String>,
+    /// only this slice of the init file (start, end), when the playlist says so
+    pub init_range: Option<(u64, u64)>,
     pub parts: Vec<Part>,
     pub ended: bool,
 }
@@ -258,6 +262,17 @@ fn parse_iv(s: &str) -> Option<[u8; 16]> {
 pub const MAX_PARTS: usize = 200_000;
 pub const MAX_PLAYLIST_BYTES: usize = 32 << 20;
 
+/// Read an `#EXT-X-BYTERANGE` value: "1000@200" is (length 1000, offset
+/// 200); "1000" is (length 1000, no offset: it follows the last slice of
+/// the same file).
+pub fn parse_byterange(s: &str) -> Option<(u64, Option<u64>)> {
+    let (len, off) = match s.split_once('@') {
+        Some((len, off)) => (len.parse().ok()?, Some(off.parse().ok()?)),
+        None => (s.parse().ok()?, None),
+    };
+    Some((len, off))
+}
+
 pub fn parse_media(base: &str, text: &str) -> anyhow::Result<MediaPlaylist> {
     if text.len() > MAX_PLAYLIST_BYTES {
         bail!("the stream's list is too big");
@@ -265,6 +280,10 @@ pub fn parse_media(base: &str, text: &str) -> anyhow::Result<MediaPlaylist> {
     let mut pl = MediaPlaylist::default();
     let mut seq: u64 = 0;
     let mut key: Option<Key> = None;
+    // a part may be only a slice of a file (#EXT-X-BYTERANGE): the slice
+    // that comes next, and where each file's slices left off
+    let mut pending_range: Option<(u64, Option<u64>)> = None;
+    let mut last_end: HashMap<String, u64> = HashMap::new();
     for line in text.lines().map(str::trim) {
         if line.is_empty() {
             continue;
@@ -290,10 +309,16 @@ pub fn parse_media(base: &str, text: &str) -> anyhow::Result<MediaPlaylist> {
                 }
                 other => bail!("this stream is DRM protected ({other}) and cannot be downloaded"),
             };
+        } else if let Some(v) = line.strip_prefix("#EXT-X-BYTERANGE:") {
+            pending_range = parse_byterange(v.trim());
         } else if let Some(attrs) = line.strip_prefix("#EXT-X-MAP:") {
             let a = parse_attrs(attrs);
             if let Some(uri) = a.get("URI") {
                 pl.init_url = Some(resolve(base, uri)?);
+            }
+            if let Some((len, off)) = a.get("BYTERANGE").and_then(|b| parse_byterange(b)) {
+                let start = off.unwrap_or(0);
+                pl.init_range = Some((start, start + len));
             }
         } else if line.starts_with("#EXT-X-ENDLIST") {
             pl.ended = true;
@@ -301,10 +326,17 @@ pub fn parse_media(base: &str, text: &str) -> anyhow::Result<MediaPlaylist> {
             if pl.parts.len() >= MAX_PARTS {
                 bail!("the stream has too many parts");
             }
+            let url = resolve(base, line)?;
+            let range = pending_range.take().map(|(len, off)| {
+                let start = off.unwrap_or_else(|| *last_end.get(&url).unwrap_or(&0));
+                last_end.insert(url.clone(), start + len);
+                (start, start + len)
+            });
             pl.parts.push(Part {
-                url: resolve(base, line)?,
+                url,
                 sequence: seq,
                 key: key.clone(),
+                range,
             });
             seq = seq.wrapping_add(1);
         }
@@ -362,6 +394,18 @@ mod tests {
             p.parts[0].key.as_ref().unwrap().uri,
             "https://cdn.x/v/key.bin"
         );
+    }
+
+    #[test]
+    fn byte_ranges() {
+        assert_eq!(parse_byterange("1000@200"), Some((1000, Some(200))));
+        assert_eq!(parse_byterange("1000"), Some((1000, None)));
+        let m = "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\",BYTERANGE=\"720@0\"\n#EXT-X-BYTERANGE:1000@0\nseg.m4s\n#EXT-X-BYTERANGE:1000\nseg.m4s\n#EXT-X-BYTERANGE:1000@3000\nseg.m4s\n#EXT-X-ENDLIST\n";
+        let p = parse_media("https://cdn.x/v/index.m3u8", m).unwrap();
+        assert_eq!(p.init_range, Some((0, 720)));
+        assert_eq!(p.parts[0].range, Some((0, 1000)));
+        assert_eq!(p.parts[1].range, Some((1000, 2000)));
+        assert_eq!(p.parts[2].range, Some((3000, 4000)));
     }
 
     #[test]

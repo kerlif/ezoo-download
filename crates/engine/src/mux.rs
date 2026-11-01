@@ -63,7 +63,7 @@ pub fn format_for(file_name: &str) -> &'static str {
 
 pub fn merge(video: &Path, audio: &Path, output: &Path, final_name: &str) -> anyhow::Result<()> {
     let Some(ffmpeg) = find_ffmpeg() else {
-        bail!("{MISSING}");
+        bail!("{}", missing_message());
     };
     let format = format_for(final_name);
     let mut cmd = Command::new(&ffmpeg);
@@ -91,14 +91,19 @@ pub fn merge(video: &Path, audio: &Path, output: &Path, final_name: &str) -> any
     Ok(())
 }
 
-/// What to say when our ffmpeg.exe is not there (it comes with the setup).
-const MISSING: &str = "ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download: install Ezoo Download again to get it back";
+/// What to say when ffmpeg is not there. The message is
+/// platform-specific (see `tools::ffmpeg_missing_message`); on Windows
+/// it is the exact wording the UI maps to its translation.
+fn missing_message() -> &'static str {
+    crate::tools::ffmpeg_missing_message(cfg!(windows), crate::tools::in_flatpak(), false)
+        .unwrap_or("ffmpeg is missing")
+}
 
 /// A joined stream (HLS, a .ts file) into an ordinary MP4 file: plays in
 /// every player, with seeking. Nothing is re-encoded.
 pub fn ts_to_mp4(input: &Path, output: &Path) -> anyhow::Result<()> {
     let Some(ffmpeg) = find_ffmpeg() else {
-        bail!("{MISSING}");
+        bail!("{}", missing_message());
     };
     let mut cmd = Command::new(&ffmpeg);
     cmd.args([
@@ -153,7 +158,7 @@ pub fn preview_snapshot(
     output: &Path,
 ) -> anyhow::Result<()> {
     let Some(ffmpeg) = find_ffmpeg() else {
-        bail!("{MISSING}");
+        bail!("{}", missing_message());
     };
     // only the part with no gap ("subfile": ffmpeg reads just those bytes)
     let part = |p: &Path, n: u64| {
@@ -201,7 +206,7 @@ pub fn preview_snapshot(
 /// Turn a downloaded sound (or video) file into an MP3 file.
 pub fn to_mp3(input: &Path, output: &Path, kbps: u64, title: Option<&str>) -> anyhow::Result<()> {
     let Some(ffmpeg) = find_ffmpeg() else {
-        bail!("{MISSING}");
+        bail!("{}", missing_message());
     };
     let mut cmd = Command::new(&ffmpeg);
     cmd.args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
