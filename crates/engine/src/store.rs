@@ -94,6 +94,7 @@ pub fn save_downloads(path: &Path, list: &[DownloadRecord]) -> anyhow::Result<()
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use super::*;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
