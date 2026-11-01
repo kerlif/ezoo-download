@@ -54,6 +54,17 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.1" date="2026-11-02" type="stable">
+      <description>
+        <p>Fork release: quality choice in the capture window now steers the
+        download (HLS variant URL, DASH quality key), capture rows with name,
+        size, Preview and Copy-link buttons, refresh-link for expired links,
+        per-site connection limits, split-half work-stealing on stalled
+        segments, file and torrent link interception with automatic retry in
+        the browser extension, signed release checksums, and a per-install
+        token for the local bridge.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-10-29" type="stable">
       <description>
         <p>Fork release: adaptive multi-connection download engine, bundled

@@ -51,8 +51,7 @@
     </screenshot>
   </screenshots>
   <releases>
-    <!-- Date provisional: correct to the actual v1.1.1 tag date at release time. -->
-    <release version="1.1.1" date="2026-11-01" type="stable">
+    <release version="1.1.1" date="2026-11-02" type="stable">
       <description>
         <p>Fork release: quality choice in the capture window now steers the
         download (HLS variant URL, DASH quality key), capture rows with name,
