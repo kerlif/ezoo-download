@@ -24,10 +24,8 @@
     </p>
     <p>
       Ezoo Download was created by Ahmed Ezzat (Ezoo Tech). This package is
-      built from the fork at https://github.com/kerlif/ezoo-download, based
-      on the upstream project at
-      https://github.com/AhmedEzo686/ezoo-download; all author credits are
-      kept.
+      built from the fork, based on the upstream project; all author credits
+      are kept.
     </p>
     <ul>
       <li>Multi-connection downloads with resume (HTTP/HTTPS)</li>
