@@ -1,12 +1,15 @@
-# Flatpak — v1.1.0 (Phase 8)
+# Flatpak — v1.1.1 (Phase 8 build)
 
 Ezoo Download as a Flatpak, built only in GitHub Actions CI from the
 fork `kerlif/ezoo-download`. Nothing in this document claims a
 Flatpak was built or run locally: `flatpak-builder` and `flatpak`
 are not installed in the development environment, no Flatpak build
 or run happened in Phase 8, and every CI-only claim below is marked
-as such. Phase 8 status: PREPARED — AWAITING CI (see
-`docs/PHASES.md`).
+as such. Phase 8 status: BUILD — the manifest, workflow, docs and
+site changes of work packages WP0–WP8 are committed on branch
+`v111-upgrade`; the proof run (WP10) on a real machine is still
+pending, and until it succeeds the Flatpak stays "coming later"
+in every public text (see `docs/FLATPAK-BUILD-REPORT.md`).
 
 ## 1. Identity and runtime
 
@@ -18,7 +21,8 @@ as such. Phase 8 status: PREPARED — AWAITING CI (see
 | Metainfo | `packaging/flatpak/io.github.kerlif.EzooDownload.metainfo.xml` |
 | Vendored sources | `packaging/flatpak/cargo-sources.json` (§2) |
 | Runtime / SDK | `org.freedesktop.Platform` / `org.freedesktop.Sdk`, version `26.08` |
-| Rust toolchain | `org.freedesktop.Sdk.Extension.rust-stable` (26.08 branch ships Rust 1.98.0) |
+| Rust toolchain | `org.freedesktop.Sdk.Extension.rust-stable` (26.08 branch ships Rust 1.99.1 — freedesktop-sdk 26.08.4, 2026-10-26, per the Phase 8 review) |
+| Architecture | x86_64 only — the manifest, the CI job and the bundle are x86_64; no arm64 Flatpak is built |
 | Command | `EzooDownload` (binary installed at `/app/bin/EzooDownload`) |
 | Bundle (CI artifact) | `EzooDownload-x86_64.flatpak` |
 
@@ -34,10 +38,11 @@ Runtime version — how `26.08` was verified (2026-10-28, not guessed):
   latest `org.freedesktop.Platform` release.
 - The rust-stable extension's `branch/26.08` manifest
   (`org.freedesktop.Sdk.Extension.rust-stable.json`) declares runtime
-  `org.freedesktop.Sdk 26.08` and ships Rust 1.98.0 (channel
-  2026-08-20). The local toolchain is 1.99.1 and the tree has no
-  `rust-version` requirement (edition 2021), so 1.98.0 is expected
-  to build it — CI is the proof, not this document.
+  `org.freedesktop.Sdk 26.08` and ships Rust 1.99.1 (freedesktop-sdk
+  26.08.4, 2026-10-26, per the Phase 8 review — the review verified
+  the SDK release; the local toolchain is also 1.99.1 and the tree
+  has no `rust-version` requirement (edition 2021), so the extension
+  is expected to build it — CI is the proof, not this document.
 - `24.08` was rejected: it is end-of-life (Flathub reports it "is no
   longer receiving fixes and security updates"). `25.08` also
   resolves but is older than `26.08`; there was no reason to pin an
@@ -92,15 +97,17 @@ with `flatpak-cargo-generator` from `flatpak-builder-tools`:
   list fails the CI build (hash/version mismatch), it does not
   silently build old dependencies.
 
-Build dependencies, verified from the code (not assumed): the
-manifest adds NO extra modules. Slint's Linux backends need the
-fontconfig, freetype, xkbcommon, X11 and xcb development files, all
-of which the Freedesktop SDK ships; TLS is rustls with the native
-certificate store (no OpenSSL headers — see `crates/engine/Cargo.toml`);
-the UI fonts are embedded in the binary (Phase 3); Slint's
-`build.rs` compiles `ui/app.slint` exactly as the `.deb`/AppImage
-builds do. If the SDK ever lacks one of those `-dev` files, CI is
-where it shows up — see §10.
+Build dependencies, verified from the code (not assumed): besides
+the app module itself, the manifest adds two modules — a static
+ffmpeg module and an aria2-from-source module (see §5 and §5b).
+Slint's Linux backends need the fontconfig, freetype, xkbcommon,
+X11 and xcb development files, all of which the Freedesktop SDK
+ships; TLS is rustls with the native certificate store (no OpenSSL
+headers — see `crates/engine/Cargo.toml`); the UI fonts are
+embedded in the binary (Phase 3); Slint's `build.rs` compiles
+`ui/app.slint` exactly as the `.deb`/AppImage builds do. If the
+SDK ever lacks one of those `-dev` files, CI is where it shows
+up — see §10.
 
 ## 3. Sandbox permissions — what, and why
 
@@ -132,7 +139,7 @@ Deliberately NOT granted:
 ## 4. Desktop file and metainfo
 
 - The desktop file is field-identical to the `.deb`'s
-  `packaging/linux/ezoo-download.desktop` (same Name/GenericName/
+  `packaging/linux/io.github.kerlif.EzooDownload.desktop` (same Name/GenericName/
   Comment incl. Arabic, `Exec=EzooDownload`, `Icon=ezoo-download`,
   categories, keywords, `StartupWMClass`), renamed to the app ID.
   Icons install from the same `packaging/linux/hicolor/` tree the
@@ -144,40 +151,37 @@ Deliberately NOT granted:
   URLs (fork), a fork-attribution paragraph in the description, a
   1.1.0 release entry, and screenshots.
 - Releases listed: exactly the releases that exist — 1.0.7
-  (2026-10-26, as in the existing metainfo) and 1.1.0. No earlier
-  releases are invented. The 1.1.0 entry is dated 2026-10-28, the
-  day Phase 8 was prepared; if the tag lands on a later date,
-  Phase 10 (or the release step) must correct the date before the
-  Flatpak is published — the date is metadata, not a build input.
+  (2026-10-26, as in the existing metainfo) and 1.1.0 (2026-10-29,
+  the tag date). No earlier releases are invented. The 1.1.1 entry
+  is added only at release time (WP10).
 - Screenshots: the three existing `docs/screenshots/*.png`
   (962×502 each), served from GitHub Pages. Each URL was verified
-  with `curl` on 2026-10-28 (HTTP 200, correct byte sizes:
-  77,613 / 77,559 / 57,443, `image/png`):
+  with `curl` on 2026-10-28 and again on 2026-11-01 (HTTP 200,
+  correct byte sizes: 77,613 / 77,559 / 57,443, `image/png`):
   `https://kerlif.github.io/ezoo-download/screenshots/01-main-ar.png`,
   `.../02-progress-ar.png`, `.../03-add-dialog-ar.png`.
   Pages URLs were chosen over `raw.githubusercontent.com/.../v110-upgrade/...`
   paths (which also resolve today) because they do not name a
-  branch and survive the merge to `main`. Phase 10 refreshes the
-  screenshots; until then these are the v1.0.7-era shots, which is
-  stated here rather than hidden.
-- Validation: `desktop-file-validate` and `appstreamcli` /
-  `appstream-util` are NOT installed in this environment, and
-  neither validator ran. What ran instead: (1) the metainfo XML
-  parses as well-formed XML (Python `xml.etree`, no errors);
-  (2) the manifest, desktop and metainfo YAML/XML parse cleanly
-  (Python `yaml.safe_load` for the manifest and staged workflows);
-  (3) a manual field-by-field check against the freedesktop
-  Desktop Entry and AppStream specifications — required desktop
-  keys (`Type`, `Name`, `Exec`, `Icon`) present, `Categories`
-  ends in `;`, metainfo has `id`, `launchable` matching the
-  desktop file name, `name`, `summary`, `developer`, both licence
-  tags, `description`, `screenshots` with `type="default"` on the
-  first, `releases` with version/date/type, `content_rating` and
-  `provides`. CI (and `flatpak-builder --run` / `appstreamcli
-  validate` in a follow-up) is where validator-cleanliness is
-  proven — see §10.
+  branch and survive the merge to `main`. These are the v1.1.0-era
+  shots (Phase 10 replaced 01–03); Phase 10 refreshes them again
+  for v1.1.1 if the UI changes.
+- Validation: `desktop-file-validate` ran locally on both desktop
+  files and exits 0 (WP0/WP5, 2026-11-01). `appstreamcli` is NOT
+  installed in this environment, so `appstreamcli validate` is
+  NOT VERIFIED locally — it was added as a blocking step to the
+  Linux CI job (WP6), which is where it is proven. What ran
+  instead: (1) the metainfo XML parses as well-formed XML (Python
+  `xml.etree`, no errors); (2) the manifest, desktop and metainfo
+  YAML/XML parse cleanly; (3) a manual field-by-field check
+  against the freedesktop Desktop Entry and AppStream
+  specifications — required desktop keys (`Type`, `Name`, `Exec`,
+  `Icon`) present, `Categories` ends in `;`, metainfo has `id`,
+  `launchable` matching the desktop file name, `name`, `summary`,
+  `developer`, both licence tags, `description`, `screenshots`
+  with `type="default"` on the first, `releases` with
+  version/date/type, `content_rating` and `provides`.
 
-## 5. ffmpeg in the Flatpak
+## 5. ffmpeg in the Flatpak (Open Question 13 — resolved by the static module)
 
 The spec (§2 Phase 8 item 4) says to use the
 `org.freedesktop.Platform.ffmpeg-full` extension. That premise is
@@ -196,32 +200,77 @@ NOT follow it literally:
   returns HTTP 200 (all checked 2026-10-28). Adding an
   `ffmpeg-full` stanza for 26.08 would reference an extension that
   does not exist on that branch.
-- What the Flatpak therefore gets: the runtime's codec libraries
-  via the automatically installed `codecs-extra` extension. The
-  other Linux packages keep their bundled ffmpeg exactly as before
-  (no change to `packaging/linux/build-linux.sh` or
-  `fetch-ffmpeg.sh`).
-- Licence: the runtime's FFmpeg/codec libraries are the
-  Freedesktop SDK's FFmpeg build (LGPL/GPL per the components
-  enabled in that build); no ffmpeg binary is bundled by this
-  manifest, so no new licence text ships in the Flatpak beyond
-  `THIRD-PARTY-NOTICES.txt`, which now carries a Flatpak paragraph
-  saying exactly that. The bundled johnvansickle build in the
-  .deb/.rpm/AppImage stays GPL-3, as documented in
-  `THIRD-PARTY-NOTICES.txt` (unchanged wording).
-- UNVERIFIED — Open Question 13: the app's muxer needs an `ffmpeg`
-  *binary* (`mux.rs::find_tool` probes the bundled locations, then
-  `ffmpeg` on `PATH`). Whether the 26.08 runtime/codecs-extra
-  puts an `ffmpeg` executable on the sandbox `PATH` could not be
-  established from documentation alone, and no Flatpak run was
-  possible here. If it does not, video+audio merging in the
-  Flatpak fails with the existing graceful "ffmpeg is missing"
-  error (no crash, no silent corruption — `mux.rs::merge` bails
-  with the `MISSING` message) and the follow-up is to add a
-  static-ffmpeg module to the manifest. CI/a real Flatpak run
-  must check `flatpak run --command=sh ... command -v ffmpeg`
-  and one real merge before the Flatpak is announced as
-  fully working.
+- What the Flatpak therefore gets: a static ffmpeg module, added
+  in the Phase 8 build (WP4a). The `ffmpeg` module in the manifest
+  downloads the johnvansickle static build
+  (`ffmpeg-release-amd64-static.tar.xz`), pinned by SHA-256
+  (`abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67`,
+  verified 2026-11-01 against the review value and
+  `packaging/linux/fetch-ffmpeg.sh`), and installs the 7.0.2-static
+  binary at `/app/lib/ezoo-download/ffmpeg` — the app's own search
+  path (`tools.rs::tool_dirs` / `ours_ffmpeg`, verified in the
+  code), so no code change was needed. The module also installs
+  `ffmpeg-version.txt` (from running the binary), the GPLv3 text
+  from the tarball, and `SOURCE-OFFER.txt` (the ffmpeg 7.0.2
+  source URL, verified HTTP 200, SHA-256 recorded) into
+  `/app/share/doc/ezoo-download/ffmpeg/`.
+- The source URL is a moving alias: it always serves the latest
+  johnvansickle build. The SHA-256 pin makes a silent change
+  fail the build loudly instead of shipping an unchecked binary,
+  but the tarball must be mirrored to an immutable URL before
+  any Flathub submission, or if the alias changes (Open
+  Question 22).
+- Licence: the bundled build is GPL-3 (it includes GPL components
+  such as libx264/libx265 and libmp3lame), exactly as in the
+  .deb/.rpm/AppImage; see `THIRD-PARTY-NOTICES.txt`. The runtime's
+  codec libraries (codecs-extra) are not used for merging — the
+  bundled binary is.
+- Remaining proof (Open Question 13, resolved in substance, proof
+  pending): a real Flatpak run must check `command -v ffmpeg`
+  inside the sandbox and one real video+audio merge (WP10 step
+  2). Until then the module is defined and hash-verified, not
+  run-proven.
+
+## 5b. aria2 in the Flatpak (R2 — bundled, proof pending)
+
+- The `aria2` module in the manifest builds aria2 1.37.0 from
+  source (official GitHub release tarball, SHA-256
+  `60a420ad7085eb616cb6e2bdf0a7206d68ff3d37fb5a956dc44242eb2f79b66b`,
+  verified 2026-11-01 against the release asset and the Gentoo
+  Manifest) and installs `aria2c` at `/app/bin/aria2c`, next to
+  the app binary — the app's `find_tool("aria2c")` probes the
+  bundled locations, then the exe directory, then `PATH`, so it
+  is found with no code change. Its licence text (GPL-2.0-or-
+  later) ships in the Flatpak as `aria2-COPYING.txt`.
+- Configure flags (recorded in the manifest): `--disable-nls
+  --disable-metalink --disable-websocket --without-gnutls
+  --without-libnettle --without-sqlite3 --without-libxml2
+  --without-libexpat --without-libcares --without-libssh2`.
+  The app only uses aria2 for torrents/magnets (RPC methods
+  `addUri`, `tellStatus`, `forceRemove`, `removeDownloadResult`,
+  `getFiles` — see `crates/engine/src/torrent.rs`), so metalink,
+  the websocket RPC transport, SFTP, sqlite3 cookie import,
+  async DNS and NLS are all dropped; TLS stays OpenSSL, zlib
+  stays, BitTorrent stays on. The flags were verified locally
+  with a `./configure` run (exit 0; summary: OpenSSL yes,
+  Zlib yes, Bittorrent yes, Metalink/WebSocket/XML-RPC no).
+  A post-install step greps the built binary's `--version`
+  output for `BitTorrent` and `HTTPS`, so a misconfigured
+  build fails loudly instead of shipping a torrent-less binary.
+- The module is DEFINED and hash-verified, but its build is
+  proven only by the WP10 proof run — no flatpak-builder exists
+  in this environment. If the module does not build there,
+  Fallback B applies: the torrent bullet is removed from the
+  Flatpak metainfo and torrents are documented as unavailable
+  in the Flatpak build (README, site, this document) — never
+  both claims at once (Open Question 21).
+- The app never fetches aria2 on Linux (R2): on .deb/.rpm/
+  AppImage torrents need a system `aria2c` installed by the
+  user; in the Flatpak it is bundled (this module); on Windows
+  the app fetches it (R3). The aria2 JSON-RPC listener is
+  loopback-only with a random per-run password (WP2), and its
+  DHT/peer connections are the torrent's own traffic — see
+  `docs/PRIVACY.md`.
 
 ## 6. yt-dlp in the Flatpak (Open Question 1 — resolved)
 
@@ -274,9 +323,10 @@ text lives in `docs/OPEN-QUESTIONS.md`.
 
 The bridge is the same token-authenticated localhost mechanism as
 on every platform: `tiny_http` on `127.0.0.1:9614`, `POST /add`
-with the `X-SwiftGet` token header and `Host` validation against
-DNS rebinding (`crates/app/src/api.rs`). Nothing about it changes
-for the Flatpak, and no code changed in Phase 8.
+with the `X-SwiftGet-Token` header (per-install token, Q29) and
+`Host` validation against DNS rebinding (`crates/app/src/api.rs`).
+Nothing about it changes for the Flatpak, and no code changed in
+Phase 8.
 
 Sandbox expectation (DOCUMENTED, NOT TESTED — no Flatpak run was
 possible): `--share=network` shares the host network namespace,
@@ -300,7 +350,7 @@ Related Flatpak behaviours, from the code, no changes made:
   self-install. That detection works unchanged in the sandbox
   (Flatpak sets `FLATPAK_ID` to the app ID).
 - Autostart: `autostart.rs` writes
-  `~/.config/autostart/ezoo-download.desktop`; inside the
+  `~/.config/autostart/io.github.kerlif.EzooDownload.desktop`; inside the
   sandbox that path is the sandbox-private config directory, so
   the setting has no effect on host login. The user can autostart
   the Flatpak manually with `flatpak run
@@ -336,40 +386,78 @@ minisign dependency anywhere in Phase 8:
   self-install (notify-only, §7), so no Flatpak-specific signing
   step exists.
 
-## 9. CI — what the escalated workflows do
+## 8b. Flathub submission caveats (review before any submission)
 
-The workflow files are ESCALATED ONLY (the GitHub App cannot push
-`.github/workflows/*`). Full contents are staged at
-`~/workspace/ezoo/workflow-escalations/phase8/` — see its
-`README-ESCALATION.md` for target paths, base commit, commit
-message and order of operations. Summary:
+Two things in this Flatpak must be reviewed against Flathub
+policy before any submission — neither is decided here:
+
+- Prebuilt ffmpeg: the `ffmpeg` module installs a prebuilt
+  static binary (johnvansickle 7.0.2-static) rather than
+  building FFmpeg from source. Flathub generally requires
+  building from source; a prebuilt binary needs a justification
+  (or a from-source ffmpeg module) at submission time. The
+  GPLv3 source offer (`SOURCE-OFFER.txt`, §5) covers the
+  licence side, not the Flathub build-from-source rule.
+- Runtime fetch of yt-dlp: the app downloads a hash-checked
+  `yt-dlp_linux` binary into its sandbox data directory on
+  first use (§6) and updates it with `yt-dlp -U`. That is a
+  runtime download of executable code, which Flathub reviewers
+  may question; the fetch is hash-checked and is the app's
+  long-standing behaviour on every platform (video sites change
+  constantly, so a release-time yt-dlp goes stale), but it must
+  be disclosed and reviewed, not assumed acceptable (Open
+  Question 23).
+
+## 9. CI — what the Linux workflow does
+
+The workflow file is edited directly (`.github/workflows/
+linux-release.yml`, WP6, commit `c7b302d` on branch
+`v111-upgrade` — the GitHub connector cannot push workflow
+files, so pushing it needs the browser route, as in previous
+phases). The staged escalation files at
+`~/workspace/ezoo/workflow-escalations/phase8/` are STALE and
+historical only (they predate the sudo-line fix and
+`continue-on-error`); they must NOT be re-applied (finding F4).
 
 Linux workflow (`.github/workflows/linux-release.yml`):
 
 - The Flatpak steps run FIRST in the `linux` job (before any
   cargo/packaging step creates `target/` or `dist/`), because
   the manifest's `type: dir, path: ../..` source copies the
-  tree as-is: add the Flathub remote, build with
-  `flatpak-builder --force-clean --install-deps-from=flathub`,
-  bundle with `flatpak build-bundle --runtime-repo=<Flathub>`
-  to `dist/EzooDownload-x86_64.flatpak`.
+  tree as-is: add the Flathub remote (`--user` only — the
+  `sudo --system` remote line was deleted, finding F1), build
+  with `flatpak-builder --force-clean --user
+  --install-deps-from=flathub`, bundle with `flatpak
+  build-bundle --runtime-repo=<Flathub>` to
+  `dist/EzooDownload-x86_64.flatpak`.
+- The Flatpak step keeps `continue-on-error: true` ONLY until
+  the WP10 proof run succeeds; then it is removed.
+- A blocking `appstreamcli validate --no-net` step runs on the
+  metainfo right after the Flatpak build (`appstream` is
+  installed with the other build dependencies).
 - The existing `sha256sum * > SHA256SUMS.txt` step then covers
   the `.flatpak` together with the `.deb`, AppImage, `.rpm`
   and extensions, and the existing tag-release step uploads
   `dist/*` — so the `.flatpak` reaches the release through the
   same path as every other Linux artifact, with no second
-  release-creation step.
+  release-creation step. The release-notes line naming the
+  Flatpak bundle is added only when `dist/*.flatpak` exists.
+- Publishing guards: the release-creation step runs only when
+  `github.ref_type == 'tag'` (the trigger accepts only `v*`
+  tags, so this is the `refs/tags/v*` guard); `workflow_dispatch`
+  runs upload `dist/*` as a workflow artifact and never create
+  a release. The Firefox signing step has the same tag guard.
 - Everything else in the Linux workflow is unchanged: triggers
   (push to `main`/`linux-support`, tags `v*`,
   `workflow_dispatch`; docs/README-only pushes ignored), the
   tag-must-match-`Cargo.toml` check, the extension tests, the
-  engine-tests-warn-only step, the Firefox signing step, and
-  `build.yml` is untouched (its destructive `[release]`
-  publish step is still there, and the string `[release]`
-  appears in no commit message in this upgrade).
-- `.deb` dependency fix (pushable files, in the branch, not the
-  escalation): `packaging/linux/debian/control` now also
-  `Depends` on `libxkbcommon-x11-0` and
+  engine-tests-warn-only step, and `build.yml` is untouched
+  (its destructive `[release]` publish step is still there, and
+  the string `[release]` appears in no commit message in this
+  upgrade).
+- `.deb` dependency fix (in the branch, not the escalation):
+  `packaging/linux/debian/control` now also `Depends` on
+  `libxkbcommon-x11-0` and
   `packaging/linux/rpm/ezoo-download.spec` now also `Requires`
   `libxkbcommon-x11` — `docs/FONTS.md` flagged the missing
   dependency for Phase 8: winit on X11 needs
@@ -408,36 +496,44 @@ Windows workflow (`.github/workflows/windows-release.yml`):
 
 ## 10. What CI / a real run must still prove
 
-Phase 8 is PREPARED — AWAITING CI. None of the following was
-provable in this environment, and none of it is claimed:
+Phase 8 is BUILT — AWAITING THE PROOF RUN (WP10). None of the
+following was provable in this environment, and none of it is
+claimed:
 
-1. `flatpak-builder` accepts the manifest and the vendored
-   sources build offline (Rust 1.98.0, SDK `-dev` files, no
-   network in the build sandbox).
+1. `flatpak-builder` accepts the manifest (with the ffmpeg and
+   aria2 modules) and the vendored sources build offline (Rust
+   1.99.1, SDK `-dev` files, no network in the build sandbox).
 2. The bundle installs and the app starts under Wayland and
    under X11 (fallback), with the tray icon, portal file
    chooser, and downloads landing in the real `~/Downloads`.
-3. An `ffmpeg` binary is on the sandbox `PATH` (§5) and one
-   real video+audio merge succeeds — or the static-ffmpeg
-   follow-up is needed (Open Question 13).
+3. An `ffmpeg` binary is on the sandbox `PATH` (the static
+   module installs it at `/app/lib/ezoo-download/ffmpeg`) and
+   one real video+audio merge succeeds.
 4. The browser bridge works from a host browser (§7), and
    yt-dlp is fetched into the sandbox data directory on first
    use (§6).
-5. `appstreamcli validate` / `desktop-file-validate` pass on
-   the metainfo/desktop files (§4).
-6. The Windows clippy + full-test steps pass on
-   `windows-latest` (first time either has run there).
+5. `appstreamcli validate` passes on the metainfo (now a
+   blocking CI step, WP6) and `desktop-file-validate` passes
+   (already verified locally, exit 0 — see §4).
+6. The aria2 module builds, `command -v aria2c` succeeds
+   inside the sandbox, and one magnet completes. If the module
+   does not build, Fallback B applies (§5b).
 7. The tag build produces `.deb`, `.rpm`, AppImage,
    `.flatpak`, the Windows installer, checksums and a signed
    `version.json` — the Phase 8 gate, runnable only after the
    parent creates the tag and CI runs.
+
+Proven already (no longer pending): the Windows clippy +
+full-test steps pass on `windows-latest` — the v1.1.0 release
+runs proved them (Windows run #5, 2026-10-29, 20m04s: clippy
++ tests + build + package all passed).
 
 Local build (for a machine WITH flatpak-builder installed):
 
 ```
 flatpak remote-add --user --if-not-exists flathub \
     https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak-builder --force-clean --install-deps-from=flathub \
+flatpak-builder --force-clean --user --install-deps-from=flathub \
     --repo=flatpak-repo flatpak-build \
     packaging/flatpak/io.github.kerlif.EzooDownload.yml
 flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \

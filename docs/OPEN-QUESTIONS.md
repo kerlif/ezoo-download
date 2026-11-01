@@ -23,25 +23,11 @@ the resolution and date.
    report.
    Resolution needs: running the v1.1.0 build on KDE Plasma (Wayland)
    and confirming dialogs open one at a time as floating windows.
-3. **Fork update-signing keypair.** The fork's `version.json` ships with an
-   empty `sig` (no `UPDATE_SIGNING_KEY` secret); the in-app updater
-   therefore refuses fork builds. CODE SIDE DONE in Phase 7
-   (2026-10-28): a NEW Ed25519 keypair was generated for the fork
-   (32 random bytes from `/dev/urandom` as the seed,
-   `ring::Ed25519KeyPair::from_seed_unchecked`; public key
-   `a495ab88…640fc`, fingerprint SHA-256 `6a8ee4d63d46aeaf…`, full
-   values in `docs/UPDATE-CHECKER.md` §9) and the public key is
-   committed in `selfupdate.rs`, replacing the upstream constant;
-   the existing `ring`/Ed25519 mechanism is kept (it is the
-   "equivalent" the spec allows for minisign); no second checker
-   was added. The private key (64-hex seed) was written ONCE to a
-   file OUTSIDE the git tree, mode 600:
-   `/home/hatch/workspace/ezoo/.update-signing-private.key` — it
-   is in no commit, report, or test fixture. The exact CI step
-   Phase 8 needs is written in `docs/UPDATE-CHECKER.md` §10.
-   Resolution needs: parent creates the CI secret
-   `UPDATE_SIGNING_KEY` via the browser with that private key, and
-   Phase 8 makes a missing key a hard error on release builds.
+   RESOLVED 2026-10-31 (Q27): Tensi tested the fix himself on real
+   KDE Plasma and the problem is solved — the KDE Plasma dialog bug
+   is FIXED in v1.1.0 and VERIFIED on real hardware by Tensi himself.
+   (Earlier wording calling this unverified was corrected by
+   Tensi 2026-10-31 20:10; see Q27 in the Decided section below.)
 4. **Update-check behavior for the Windows Store / portable copies.**
    `selfupdate::installed()` already gates self-update on installed
    copies. Default: keep that behavior; portable copies get notify-only.
@@ -56,6 +42,14 @@ the resolution and date.
    Slint/fontique fix, or a pinned upgrade that carries one; real
    systems always ship at least one font, so impact is limited to
    fontless test/container environments.
+   Phase 7 mitigation (2026-11-01): the .deb and .rpm now install the
+   six bundled OFL fonts (Carlito, Noto Sans Arabic, Liberation Serif)
+   into `/usr/share/fonts/truetype/ezoo-download/` with an `fc-cache`
+   refresh in postinst/`%post`, so a fontless system that installs the
+   package gains fonts and the panic no longer triggers. The AppImage
+   does not get this — fontconfig on the host cannot see inside it —
+   so the underlying upstream panic is still open for AppImage runs
+   on a fontless host.
 
 6. **Phase 4 translations marked needs-review.** The Russian and
    Turkish wordings of the two size-estimation labels ("estimated from
@@ -75,6 +69,29 @@ the resolution and date.
    no-download-behavior-change rule. Default: keep display-only until
    a later phase orders the plumbing. Resolution needs: a decision on
    whether selection should steer downloads, and if so, in which phase.
+   Decision Q26 (2026-10-31): implement the quality-selector plumbing
+   in v1.1.1. Plumbing DONE in Phase 5 (2026-11-01): `quality_key`
+   travels `/add` → `AddRequest` → `VideoExtra` → `NewDownload` →
+   `DownloadRecord` → `downloads.json`, with a storage test
+   (`quality_key_is_stored_with_the_record`). STEERING DONE in Phase 6
+   (2026-11-01): the AddDialog pick now steers the download — HLS by
+   the picked variant's own playlist (`stream_variant_url` on
+   `NewDownload`/`DownloadRecord`, the runner fetches it instead of
+   the master; no pick = the best variant, as before), DASH by the
+   quality key (`Manifest::pick`, a height like "720"/"720p"; unknown
+   heights and audio-only picks fall back to the best track). The
+   dialog reads the pick from the probed variants at confirm time; an
+   early download that started with the best quality is dropped and
+   re-added when the pick differs (its temp files are id-scoped, so
+   no stale segments can leak into the fresh download). Proven by a
+   cargo test (`hls::tests::variant_url_downloads_that_variant_only`:
+   the low variant's bytes only) and a `Manifest::pick` unit test.
+   Known limits: a picked variant URL can go stale on signed links
+   (refreshing the link clears it and falls back to the best variant);
+   a DASH manifest with video tracks offers no audio-only download
+   (the runner still needs a video track); the probe keeps the best 8
+   variants of a master, so a master with more than 8 qualities drops
+   its lowest ones.
 8. **HLS BANDWIDTH with a separate audio group.** When a variant
    refers to a separate audio group, Phase 4 treats its
    AVERAGE-BANDWIDTH/BANDWIDTH tag as the video bitrate and ADDS the
@@ -86,6 +103,11 @@ the resolution and date.
    includes the audio will show a slightly high estimate in that case.
    Default: keep. Resolution needs: none unless a server is found
    where the double count is visibly wrong.
+   Status (checked 2026-10-31, Phase 1): still open. The upstream
+   1.0.8 HLS byte-range merge does not touch bitrate counting, and
+   whether a packager's BANDWIDTH already includes the audio cannot be
+   told from the playlist alone — it needs an empirical comparison
+   (estimated size vs actual downloaded bytes) on real streams.
 
 9. **Scaling rule read as probe-then-measure.** The spec says to add
    a connection only while throughput rises by ≥10% and to stop
@@ -100,6 +122,9 @@ the resolution and date.
    Default: keep the probe reading. Resolution needs: a decision if
    the literal wait-for-a-rise reading was intended instead, in
    which case scaling would effectively be off for capped servers.
+   Decision Q32 (2026-10-31): split-half work-stealing — a free
+   connection takes half of the slowest segment's remainder —
+   replaces/complements the scaler in v1.1.1 Phase 1; this resolves Q9.
 
 10. **Phase 6 "Stalled" translations marked needs-review.** The new
     segment-state label "Stalled" (Rust `t()` string in the connections
@@ -140,22 +165,9 @@ the resolution and date.
     the signing contract shared with the release workflows.
     Resolution needs: a decision if per-platform hashes should be
     signed in a later phase.
-
-13. **Flatpak ffmpeg binary presence.** The Flatpak manifest uses
-    the Freedesktop runtime's codec libraries (codecs-extra,
-    auto-installed with runtime 25.08+) and bundles no ffmpeg
-    binary, because the `ffmpeg-full` extension no longer exists
-    on the 25.08/26.08 branches (see `docs/FLATPAK.md` §5). The
-    app's muxer needs an `ffmpeg` *binary* on `PATH`
-    (`mux.rs::find_tool`). Whether the 26.08 runtime puts one
-    there could not be established from documentation and no
-    Flatpak run was possible in Phase 8. Default: ship the
-    Flatpak as prepared; if a real run shows no `ffmpeg` on
-    `PATH`, merging fails gracefully with the existing
-    "ffmpeg is missing" error and the follow-up is a
-    static-ffmpeg module in the manifest. Resolution needs: a
-    real Flatpak run checking `command -v ffmpeg` in the
-    sandbox plus one real video+audio merge.
+    Decision Q28/Q33 (2026-10-31): sign `SHA256SUMS.txt` in v1.1.1
+    (Phase 9), plus an offline emergency signing key; signed
+    `tools.json` deferred to a later release.
 
 14. **Site font binaries + Lighthouse measurement (Phase 9).**
     The four WOFF2 site fonts (`docs/assets/fonts/`, manifest with
@@ -171,6 +183,10 @@ the resolution and date.
     Lighthouse against the live Pages URL after the merge to
     `main`, in both languages, and record the scores in
     `docs/README.md`.
+    Verification (2026-10-31, Phase 0): the binaries HAVE landed on
+    remote main — GitHub API git-trees at `d6807d8` lists 6 `.ttf`,
+    4 `.woff2`, 10 screenshots PNG. Lighthouse measurement still
+    unmeasured.
 15. **Screenshot binaries + metainfo dimensions + Windows screenshots
     (Phase 10).** The ten Phase 10 screenshots
     (`docs/screenshots/01`–`10`, manifest with SHA-256 in
@@ -191,6 +207,10 @@ the resolution and date.
     coordinator to accept or reject); until Windows shots exist,
     the release report states them as PENDING. Default: ship the
     Linux screenshots, capture Windows shots on Windows.
+    Verification (2026-10-31, Phase 0): the 10 screenshots + 6 `.ttf`
+    + 4 `.woff2` ARE on remote main (API git-trees at `d6807d8`).
+    Still open: metainfo `03` dimensions (640×488) + Windows
+    screenshots.
 16. **Browser-extension overlay redesign — FUTURE work, NOT part
     of v1.1.0.** The extension (`extension/content.js`) already
     shows a floating "Download this video" button on videos, with
@@ -211,6 +231,10 @@ the resolution and date.
     button/panel unchanged. Resolution needs: a design decision
     in a later phase, made against the reference screenshot, and
     only then implementation in the extension.
+    Decision (2026-10-31, Q19–Q22): the redesign is now the v1.1.1
+    Phase 5/6 work — counter-badge pill, rows with name + size +
+    Preview/Copy-link buttons, Preview = new browser tab,
+    GrabberDialog same row pattern.
 17. **No top-level LICENSE file; MIT terms stated in LICENSE-DEB
     only.** The task brief named a root `LICENSE` file, but no
     such file exists in this tree (verified: `git ls-files`
@@ -229,21 +253,277 @@ the resolution and date.
     to confirm `LICENSE-DEB` as the canonical copy. No license
     terms were changed by the v1.1.0 upgrade either way.
 
-18. **On-disk protection of stored browser-session headers on Linux
-    — unverified.** The alt-build's privacy notes claim session
-    headers are encrypted via Windows DPAPI and stored with mode
-    0600 on Linux. The Windows half is confirmed in this tree
-    (`crates/engine/src/secret.rs`: DPAPI `CryptProtectData`,
-    `dpapi:<hex>` format). No mode-0600 or permission-setting
-    code was found in `secret.rs`/`store.rs`, so the Linux half
-    of the claim is unverified and was NOT adopted into
-    `docs/PRIVACY.md`. Default: describe only what is verified
-    (DPAPI on Windows; encrypted-at-rest as before on Linux).
-    Resolution needs: inspect the Linux secret-storage write
-    path and record the actual file mode, or set 0600
-    explicitly if it is not already restricted.
+19. **A corrupt `downloads.json` is still overwritten on shutdown
+    (Phase 1 wart, inherited from upstream 1.0.8).** `store.rs`
+    copies a corrupt list to `downloads.broken.json` before returning
+    an empty list (Phase 1), so the bytes survive — strictly better
+    than before, when the overwrite lost them entirely. But
+    `Manager::shutdown()` then saves that empty list over
+    `downloads.json`, so the list still vanishes from the UI until
+    the backup is restored by hand. Default: keep the upstream
+    behaviour for now. Resolution needs: a guard that refuses to
+    save an empty list over a file that failed to load (only when the
+    load was corrupt and nothing was added since), in a later phase.
+
+20. **The scaler sheds a connection when the fast work is done
+    (Phase 1 finding).** `Scaler::observe` reads a fall in aggregate
+    throughput as "too many connections" and sheds one — but when a
+    download's fast segments finish and only a slow segment is left,
+    the fall means the fast work is done, not that a connection is
+    useless. Shedding then strands the slow remainder on one
+    connection (measured in Phase 1: the Q32 work-stealing test went
+    from 13.3 s to 20.3 s when the shed was allowed to act at once).
+    Phase 1 works around it by letting a shed act only at segment
+    boundaries, while an explicit user-held count still drops surplus
+    workers mid-segment. Default: keep the workaround. Resolution
+    needs: teach the scaler to tell "fast work finished" apart from
+    "too many connections" (e.g. judge per-segment speeds, not the
+    aggregate), in a later adaptive-tuning phase.
+
+21. **aria2 module status (Flatpak).** The `aria2` module is
+    defined in the manifest (aria2 1.37.0 from source, SHA-256
+    verified, configure flags verified by a local `./configure`
+    run) but its build is proven only by the WP10 proof run —
+    no flatpak-builder exists in this environment. Default: keep
+    the torrent bullet in the Flatpak metainfo, conditional on
+    that proof. Resolution needs: the proof run (aria2c builds,
+    `command -v aria2c` succeeds, one magnet completes); if the
+    module does not build, apply Fallback B — remove the torrent
+    bullet from the metainfo and document torrents as unavailable
+    in the Flatpak build.
+
+22. **ffmpeg alias mirroring.** The johnvansickle tarball URL is
+    a moving alias pinned by SHA-256; a silent change fails the
+    build loudly, but the alias itself can move. Default: keep
+    the pin. Resolution needs: mirror the tarball to an immutable
+    URL before any Flathub submission, or if the alias changes.
+
+23. **Flathub policy on runtime fetch of yt-dlp.** The app
+    downloads a hash-checked `yt-dlp_linux` binary into its
+    sandbox data directory on first use and updates it with
+    `yt-dlp -U` (see `docs/FLATPAK.md` §6 and §8b). That is a
+    runtime download of executable code; Flathub reviewers may
+    question it. Default: keep the fetch (it is the app's
+    long-standing behaviour on every platform). Resolution
+    needs: a Flathub policy review before any submission.
+
+24. **WM_CLASS verification.** Both desktop files declare
+    `StartupWMClass=EzooDownload`. Default: keep. Resolution
+    needs: a real run confirming the app's window actually
+    carries that WM_CLASS (Slint/winit sets it from the app
+    name; unverified in any environment so far).
+
+25. **Wayland and tray verification on a real desktop
+    (Flatpak).** The Flatpak runs under Wayland first with X11
+    fallback and registers its tray icon via
+    `org.kde.StatusNotifierWatcher`, but no Flatpak run was
+    possible in this environment. Default: ship as configured.
+    Resolution needs: the WP10 proof run on a real desktop
+    (Wayland + X11, tray icon visible, portal file chooser
+    opens).
+
+26. **Linux aria2/ffmpeg missing messages are untranslated.**
+    WP3 made the missing-tool messages platform-specific with a
+    pure selector (`tools.rs`), but the app UI maps only the
+    Windows ffmpeg wording to its translation (`main.rs` matches
+    on "ffmpeg.exe is missing"); the new Linux/Flatpak messages
+    show in English until strings are added. Default: show the
+    correct English message (better than a translated but wrong
+    one). Resolution needs: two new strings × 8 locales
+    (`crates/app/lang/rs/*.json` + `i18n.rs`, needs-review
+    markers per the Q6/Q10/Q11 pattern).
+
+## Decided for v1.1.1 (2026-10-31, Tensi)
+
+All of Q19–Q34 decided before Phase 0. Phase mapping per
+`~/workspace/ezoo/v111/PLAN-111.md` and
+`~/workspace/ezoo/v111/ZAJIL-COMPARISON.md` §5.
+
+- **Q19 — PR target: fork-internal PR (`v111-upgrade` ← `main`), as
+  PR #2 for v1.1.0.** Work happens on a separate internal branch,
+  then after verification, automation and full readiness it is pushed
+  to main as usual via that internal PR (merge commit, without the
+  bracketed release-trigger word in any message). NEVER any PR to upstream. (Correction
+  2026-10-31 20:10: an earlier reading of «الغي ال PR» as cancelling
+  every PR was wrong — Tensi clarified it meant cancelling the
+  UPSTREAM PR only. `PLAN-111.md` §7/§8/Phase 11 still records the
+  superseded "no PR at all / direct merge" version and must be
+  corrected to this.)
+- **Q20 — Preview: new browser tab.**
+- **Q21 — GrabberDialog: yes, same row pattern** (name + size +
+  Preview/Copy-link buttons).
+- **Q22 — Video button: IDM-style counter-badge pill**
+  («Download video (N) ▾»).
+- **Q23 — `restore_ffmpeg()` on Linux: the bundled ffmpeg inside the
+  Linux packages suffices** — no fetching.
+- **Q24 — Remove the old-release-deletion step from `build.yml`:
+  yes** (Phase 9). Implemented in Phase 9 (commit 64b6d8f):
+  the deletion loop (`gh release delete … --cleanup-tag`) is
+  removed from `.github/workflows/build.yml`; verified by grep
+  (no `release delete` / `cleanup-tag` remains in the file).
+  Nothing else depended on it — the publish step only creates
+  the release for the new version, and the "already released"
+  guard in `linux-release.yml` / `windows-release.yml` is
+  untouched. Old releases are now kept.
+- **Q25 — Star banner: keep.**
+- **Q26 — Q7 quality-selector plumbing: implement in v1.1.1.**
+  Plumbing done in Phase 5 (2026-11-01): `quality_key` is carried
+  from the overlay to the stored record; steering DONE in Phase 6
+  (2026-11-01): HLS by the picked variant's playlist, DASH by the
+  quality key — see Q7 above.
+- **Q27 — Wayland on real hardware: the KDE Plasma dialog bug is
+  FIXED in v1.1.0 and VERIFIED on real hardware by Tensi himself
+  (2026-10-31 — he tested the fix and the problem is solved).**
+  See also the resolution note on Q2 above.
+- **Q28 — Sign `SHA256SUMS.txt`: yes** (Phase 9; confirmed by Q33).
+  Implemented in Phase 9: `linux-release.yml` signs
+  `SHA256SUMS.txt` (new "Sign SHA256SUMS.txt" step, commit
+  af62455) and `windows-release.yml` signs
+  `SHA256SUMS-windows.txt` (commit 434fb4d), both with the
+  existing `sign_update` example and the `UPDATE_SIGNING_KEY`
+  secret, hard error on releases when the key is missing; the
+  `.sig` files ship as release assets. Engine side (commit
+  85099a5): `sums_signature_ok` verifies the signature when the
+  asset is present and refuses the offer when it does not verify;
+  releases without the asset (e.g. v1.1.0) keep the old behaviour.
+  See Q12 below.
+- **Q29 — Extension channel security: per-install secret token in
+  v1.1.1 + native-messaging host later.** Implemented in Phase 1:
+  token generated once per install (32 random bytes, hex, in
+  `local-api-token`, mode 0600 on Unix), delivered via GET `/config`,
+  enforced on all POST endpoints. The legacy fallback for the 1.1.0
+  extension (accept `X-SwiftGet`-only from browser-extension origins
+  or with no Origin) was removed in Phase 3, when the extension
+  started sending the token on every POST; GET `/ping` and `/config`
+  stay token-free. `/quit` (Phase 2) requires the token with NO legacy
+  fallback. Native-messaging host is a later release.
+- **Q30 — Per-site connection limits: yes, in v1.1.1.**
+  Implemented in Phase 1 (engine): `ServerLimit.max_downloads`
+  (separate from the per-download connection cap), shared counter in
+  `Manager::pump`; a waiting download takes no queue place. UI for
+  setting it is Phase 2.
+- **Q31 — Refresh-link for expired links: yes, in v1.1.1.**
+  Engine groundwork in Phase 1: `etag` captured on probe and stored
+  on the record, `Manager::refresh_link` accepts a new link only when
+  it is the same file (same size + same strong validator). UI button
+  is Phase 2.
+- **Q32 — Split-half work-stealing: yes** — a free connection takes
+  half of the slowest segment's remainder; replaces/complements the
+  adaptive scaler and resolves Q9. Implemented in Phase 1 (ETA-based
+  split, stalled connection split first, 0.5 s judgement floor).
+- **Q33 — Sign `SHA256SUMS` + offline emergency signing key: yes,
+  in v1.1.1; signed `tools.json` deferred** (Phase 9).
+  Implemented in Phase 9 (commits 85099a5, 434fb4d, af62455):
+  sums signing as in Q28; the offline emergency keypair generated
+  2026-11-01, public half committed in `selfupdate.rs`
+  (`UPDATE_PUBLIC_KEY_EMERGENCY`), private seed held offline
+  outside the repo (mode 600, see `docs/UPDATE-CHECKER.md` §12);
+  the checker accepts a manifest or sums signature made with
+  either key (`signature_ok_any` / `sums_signature_ok`,
+  unit-tested with throwaway keys). CI signs with the primary key
+  only — the emergency key is never provisioned in CI until the
+  owner decides to. A live check against an emergency-signed
+  manifest has not been run (it needs a release signed with that
+  key); the helper-level tests cover the verification logic.
+- **Q34 — Testserver + property-based segment tests in CI: yes,
+  in v1.1.1** (Phase 9). Property half DONE in Phase 9 (commit
+  22bf5d4): `crates/engine/tests/segments_property.rs`, proptest
+  dev-dependency, 3 properties, 1,056 randomized cases
+  (400 plan partitions + 400 progress/split sequences + 256
+  split-only), all passing — plans always partition the file
+  exactly, random progress + work-stealing splits never break
+  the map, splits alone never lose a byte. Testserver half
+  PARTIAL: the integration tests (`tests/download.rs`,
+  `tests/adaptive.rs`, `tests/update_checker.rs`) already run
+  against local HTTP servers with Range support, slow regions,
+  and resume — but each file carries its own inline server; the
+  shared reusable "testserver" module Zajil has: DONE in Phase 10
+  (commit 6a85e21): `crates/engine/tests/testserver/mod.rs` — one
+  accept loop + request parser + response writer; handlers return
+  a plain `Response`, a chunked `StreamResponse` (delays, holds,
+  per-chunk stop hook), or `Drop`. All nine inline servers
+  (`download.rs`, `adaptive.rs`, `update_checker.rs`) migrated
+  onto it with their fault behaviour kept (including the lying
+  `Content-Length` of the truncated-body servers). Full suite
+  still 203 passed / 0 failed / 1 ignored, no coverage loss.
+- **Q12 — AppImage hash signed via `SHA256SUMS.txt`: DECIDED
+  with evidence in Phase 9 (2026-11-01).** The v1.1.0 gap was
+  that the signed manifest's hash covered the Windows installer
+  only, and the AppImage went through the unsigned
+  `SHA256SUMS.txt`. Decision (Tensi's Q28/Q33, 2026-10-31):
+  sign the sums file. Implemented in Phase 9 (commits 85099a5,
+  434fb4d, af62455): the workflows sign `SHA256SUMS.txt` /
+  `SHA256SUMS-windows.txt` and ship the `.sig` assets; the
+  checker verifies the signature when present and refuses the
+  offer when it does not verify; `CheckedRelease.
+  sums_signature_verified` records which case applied. Unit
+  test: `selfupdate::tests::sums_signature_and_emergency_key`
+  (200 passed / 0 failed / 1 ignored, Phase 9 full run). What
+  still needs a CI run: the workflows' sign steps and the `.sig`
+  assets in a real release (local YAML validation passed only).
+- **Q35 — Firefox `update_url` still points at upstream: OPEN**
+  (Phase 9/10). `extension/manifest.firefox.json` still points at
+  `https://github.com/AhmedEzo686/ezoo-download/releases/latest/download/firefox-updates.json`.
+  The fork's workflows (`build.yml`, `linux-release.yml`,
+  `windows-release.yml`) do generate `firefox-updates.json` with a
+  `github.repository`-based `update_link` and publish it with the
+  release — but only when a signed XPI for that version exists, and
+  the repo holds only `extension-signed/ezoo-download-firefox-1.0.4.xpi`,
+  so the v1.1.0 release carries no `firefox-updates.json`. Do NOT
+  repoint the URL until a signed 1.1.1 XPI exists and a fork release
+  publishes `firefox-updates.json`; until then the upstream URL stays
+  (it serves upstream's file, not the fork's — Firefox would not find
+  a fork update there).
+  Phase 9 prep (2026-11-01): the `update_link` in
+  `linux-release.yml` was FIXED (commit af62455) — it pointed at
+  the unversioned `ezoo-download-firefox.xpi` while the asset is
+  the versioned `ezoo-download-firefox-$EXT_VERSION.xpi`
+  (Firefox would 404); it now points at the versioned name.
+  Phase 10 unification DONE (2026-11-01, this branch): all three
+  workflows now publish ONE name — the versioned
+  `ezoo-download-firefox-$EXT_VERSION.xpi` (Linux already did;
+  `windows-release.yml` and `build.yml` changed their `dist/`
+  copies, `update_link`s and publish conditions to the versioned
+  name). The stage copies (`$p/ezoo-download-firefox.xpi`) stay
+  unversioned on purpose: `browser.rs` (`FIREFOX_XPI`) and
+  `installer/ezoo.iss` look the unversioned name up in the stage
+  dir. This is the one recorded exception to Tensi's no-asset-
+  renames decision (2026-11-01): the pre-unification state left
+  two XPI files + a last-wins `firefox-updates.json` in the
+  release. What a signed 1.1.1 XPI needs: the AMO signing
+  secrets (`AMO_JWT_ISSUER` / `AMO_JWT_SECRET`) already in the
+  workflows, or a previously signed XPI placed in
+  `extension-signed/` (the workflows reuse it); then the
+  release's `firefox-updates.json` exists and the manifest's
+  `update_url` can be repointed to the fork's releases.
 
 ## Resolved
+
+13. **Flatpak ffmpeg binary presence** (resolved 2026-11-01,
+    Phase 8 build WP4a). The follow-up the question itself
+    named — a static-ffmpeg module — is now in the manifest:
+    the `ffmpeg` module downloads the johnvansickle 7.0.2-static
+    tarball pinned by SHA-256 (`abda8d77…`, verified 2026-11-01
+    against the review value and
+    `packaging/linux/fetch-ffmpeg.sh`) and installs the binary
+    at `/app/lib/ezoo-download/ffmpeg`, the app's own search
+    path (`tools.rs::tool_dirs` / `ours_ffmpeg`, verified in
+    the code), with `ffmpeg-version.txt`, the GPLv3 text and
+    `SOURCE-OFFER.txt` in `/app/share/doc/ezoo-download/ffmpeg/`.
+    The metainfo now says the Flatpak bundles ffmpeg;
+    `THIRD-PARTY-NOTICES.txt` and `docs/PRIVACY.md` were
+    corrected the same way. Remaining proof: a real Flatpak
+    run checking `command -v ffmpeg` in the sandbox plus one
+    real video+audio merge (WP10 step 2).
+
+3. **Fork update-signing keypair** (resolved 2026-10-31, Phase 0).
+   The `UPDATE_SIGNING_KEY` secret was created 2026-10-29 via the
+   browser. Re-verified 2026-10-31 (Phase 0) from the published
+   v1.1.0 release (tag `v1.1.0`, target `5de9f77`): `version.json`
+   downloaded from the release carries `sig` of 128 lowercase hex
+   chars (non-empty) and a 64-hex `sha256` — the in-app updater
+   accepts it. The stale claim that the fork ships an empty `sig`
+   no longer holds.
 
 4. **Flatpak yt-dlp** (resolved 2026-10-28, Phase 8). Decision:
     option (b) — no fixed yt-dlp is shipped inside the Flatpak —
@@ -304,3 +584,16 @@ the resolution and date.
    weight selection (400/700, verified from the files' OS/2 tables
    and by unit test) works through the registered families. Full
    evidence, hashes and name-table dumps: `docs/FONTS.md`.
+
+18. **On-disk protection of stored browser-session headers on Linux**
+    (resolved 2026-11-01, Phase 7). `store.rs` now writes both
+    secret-bearing files owner-only on Unix: the temporary file is
+    created with mode 0600 (`OpenOptions::mode`, so the secret never
+    sits world-readable even briefly) and the mode is re-asserted
+    before the atomic rename, so `settings.json` (proxy password) and
+    `downloads.json` (per-download cookies and auth headers) land at
+    0600; a file left world-readable by an older version heals itself
+    on the next save. Covered by the test
+    `store::tests::written_files_are_owner_only`. The Windows half
+    (DPAPI `CryptProtectData`, `dpapi:<hex>`) was already confirmed.
+    `docs/PRIVACY.md` now states the Linux mode-0600 fact.

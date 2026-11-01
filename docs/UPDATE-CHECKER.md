@@ -20,6 +20,10 @@ retries inside the check:
    signed manifest of that release.
 3. `GET <browser_download_url of "SHA256SUMS.txt" (else
    "SHA256SUMS-windows.txt")>` — the release checksum file.
+4. (v1.1.1+) When the release carries a `<name>.sig` asset next to
+   the checksum file, `GET` it too — the checksum file's signature
+   (§5). A release without the asset (e.g. v1.1.0) keeps the old
+   behaviour.
 
 Verification order, before anything is offered:
 
@@ -27,13 +31,19 @@ Verification order, before anything is offered:
    semantic version newer than the running version (§4). Otherwise:
    up to date (older tag) or silent fail (malformed tag).
 2. The manifest must parse and its Ed25519 signature must verify
-   against the public key built into the program (§5). Missing or
-   invalid signature: never offered, silent fail.
+   against a trusted key built into the program (§5) — the primary
+   key or the offline emergency key. Missing or invalid signature:
+   never offered, silent fail.
 3. The manifest's version must itself be a valid semantic version
    newer than the running version. Otherwise: up to date.
 4. The checksum file must be present in the release. Missing:
    silent fail.
-5. Only then is the release offered — and the artifact itself is
+5. (v1.1.1+) When the release carries the `<name>.sig` asset, its
+   signature must verify (same construction as the manifest,
+   over the checksum file's SHA-256); a listed-but-unverifiable
+   signature is a silent fail, exactly like a bad manifest. A
+   release without the asset proceeds with the old behaviour.
+6. Only then is the release offered — and the artifact itself is
    downloaded and verified (§5) before the user is asked anything.
 
 The offered version is the manifest's version; the tag is the
@@ -118,14 +128,24 @@ compatibility and is not used by the checker.
   out again. The installer re-checks the hash immediately before
   running (`run_installer`); the AppImage replace re-checks it too
   (`install_appimage`).
-- **AppImage hash provenance (known limit).** The signed manifest's
-  hash covers the Windows installer only, so the AppImage is
-  verified against the release's `SHA256SUMS.txt` entry, and the
-  signed manifest gates the whole offer: no offer exists at all
-  unless the signed manifest verified. The checksum file itself is
-  not signed. See Open Question 12. The Linux release workflow
-  must keep uploading `SHA256SUMS.txt` (it generates it from the
-  `dist/` files); a release without it offers nothing on Linux.
+- **AppImage hash provenance (Q12, resolved in Phase 9).** The
+  signed manifest's hash covers the Windows installer only, so the
+  AppImage is verified against the release's `SHA256SUMS.txt` entry,
+  and the signed manifest gates the whole offer: no offer exists at
+  all unless the signed manifest verified. Since v1.1.1 the checksum
+  file itself is ALSO signed: releases carry `SHA256SUMS.txt.sig`
+  (Linux workflow) and `SHA256SUMS-windows.txt.sig` (Windows
+  workflow), Ed25519 over
+  `signed_message(version, sha256(sums_file))` — the same
+  construction and the same `sign_update` example as the manifest
+  (`selfupdate.rs: sums_signature_ok`, verified against the primary
+  or the emergency key). The checker verifies the signature when
+  the asset is present and refuses the offer when it does not
+  verify; a release without the asset (e.g. v1.1.0) keeps the old
+  behaviour. `CheckedRelease.sums_signature_verified` records
+  which case applied. The Linux release workflow must keep
+  uploading `SHA256SUMS.txt` (it generates it from the `dist/`
+  files); a release without it offers nothing on Linux.
 - **Size.** Artifacts over 500 MiB are refused mid-download.
 
 ## 6. ETag cache
@@ -212,10 +232,12 @@ reads the real environment and executable path.
   It is never committed, never printed, never logged, and appears
   in no report, chat message, document, or test fixture. Tests sign
   fixtures with throwaway keys generated at runtime.
-- Status: code side done; the CI secret still has to be created by
-  the parent agent (Open Question 3). Until it exists, release
-  `version.json` files ship with an empty `sig` and installed
-  copies refuse them as auto-updates (manual install still works).
+- Status: code side done; the CI secret was created 2026-10-29
+  (`UPDATE_SIGNING_KEY`, Q3 resolved in Phase 0 — the v1.1.0
+  release's `version.json` carries a 128-hex `sig`, verified
+  2026-10-29). The hard-error rule in §10 item 2 is in place in
+  `windows-release.yml` (and the Linux workflow signs its sums
+  file the same way since Phase 9, §12).
 
 ## 10. CI step (Phase 8 escalation)
 
@@ -276,3 +298,46 @@ release's `SHA256SUMS.txt` (the Linux workflow's checksum step
 now includes the `.flatpak`); Flatpak copies are notify-only
 (§8) and never consume the signed manifest for self-install.
 Full Flatpak + CI design: `docs/FLATPAK.md`.
+
+## 12. Phase 9 — signed checksums + offline emergency key (Q12/Q28/Q33)
+
+- **Signed checksums.** Since v1.1.1 the release workflows sign
+  the checksum files with the same key and the same `sign_update`
+  example as `version.json`, and ship the signatures as release
+  assets: `SHA256SUMS.txt.sig` (Linux workflow, `dist/*` upload)
+  and `SHA256SUMS-windows.txt.sig` (Windows workflow, explicit
+  file list). A missing `UPDATE_SIGNING_KEY` is a hard error on
+  releases, exactly like the `version.json` rule. The engine
+  verifies the signature when the asset is present
+  (`selfupdate.rs: sums_signature_ok`, unit-tested with throwaway
+  keys in `sums_signature_and_emergency_key`) and records the
+  outcome in `CheckedRelease.sums_signature_verified`. Releases
+  without the asset keep the old behaviour, so v1.1.0 still
+  updates. `tools.json` signing stays deferred (Q33).
+- **Offline emergency key.** A second keypair exists for the case
+  the primary key is compromised or lost. Public half (committed
+  in `selfupdate.rs`, `UPDATE_PUBLIC_KEY_EMERGENCY`):
+  `6081969eeccdcc04903fc280a095f0e721ccc18deef693b6cf6ba0735ce93e44`
+  (generated 2026-11-01, Phase 9, same construction as §9).
+  Private half: the 64-hex seed, written ONCE to a file outside
+  the git tree, mode 600:
+  `/home/hatch/workspace/ezoo/.update-signing-emergency.key`.
+  It is never committed, never printed, never logged, and appears
+  in no report, chat message, document, or test fixture. The
+  checker accepts a manifest or a sums signature made with either
+  key (`signature_ok_any` / `sums_signature_ok`, both unit-tested
+  at the helper level; a live check against an emergency-signed
+  manifest has not been run — it needs a release signed with that
+  key, which only happens if the primary is ever retired).
+  **CI never uses the emergency key**: the workflows sign with
+  the primary key only. If the primary is ever compromised, the
+  owner provisions the emergency seed as a repository secret and
+  the workflows switch to it — installed copies accept the next
+  release with no code change.
+- **`ffmpeg.exe` asset (related, Phase 9).** The Windows
+  workflows now also bake the ffmpeg build's SHA-256 into the
+  binary (`EZOO_FFMPEG_SHA256`, computed from the ffmpeg this run
+  built) and upload `ffmpeg.exe` itself as a release asset, so
+  `restore_ffmpeg()` can fetch it from our own release and verify
+  it. Without the baked hash the function stays inert.
+
