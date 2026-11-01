@@ -3,7 +3,7 @@
 const fs = require("fs"), path = require("path"), vm = require("vm"), assert = require("assert");
 const dir = path.join(__dirname, "..");
 const listeners = {}; const on = (n) => ({ addListener: (f) => (listeners[n] = f) });
-const session = {}; const localStore = {}; let reloads = 0; let pingExt = null; const sent = []; const tabMsgs = []; let tabUrl = "https://www.youtube.com/watch?v=AAAAAAAAAAA";
+const session = {}; const localStore = {}; let reloads = 0; let pingExt = null; const sent = []; const sentHeaders = []; const tabMsgs = []; let tabUrl = "https://www.youtube.com/watch?v=AAAAAAAAAAA";
 const chrome = {
   storage: {
     onChanged: on("store"),
@@ -26,13 +26,24 @@ const chrome = {
 const ytCalls = []; const browserDl = []; const cancelled = []; const suggested = []; let appDown = false;
 const fetch = async (url, opts = {}) => {
   if (url.endsWith("/ping") && pingExt) return { ok: true, status: 200, json: async () => ({ ext: pingExt }) };
-  if (url.endsWith("/add")) { if (appDown) throw new TypeError("Failed to fetch"); sent.push(JSON.parse(opts.body)); }
+  // the token bootstrap: the app hands the add-in its per-install secret here
+  if (url.endsWith("/config")) return { ok: true, status: 200, json: async () => ({ localToken: "test-token" }) };
+  if (url.endsWith("/add")) { if (appDown) throw new TypeError("Failed to fetch"); sent.push(JSON.parse(opts.body)); sentHeaders.push(opts.headers || {}); }
+  if (url.endsWith("/resolve") && JSON.parse(opts.body).url.includes("unsupported.example")) {
+    return { ok: true, status: 200, json: async () => ({ ok: false, error: "Unsupported URL: https://unsupported.example/watch" }) };
+  }
   if (url.endsWith("/resolve")) {
     ytCalls.push(JSON.parse(opts.body));
     await new Promise((r) => setTimeout(r, 30)); // yt-dlp takes a moment
     return { ok: true, status: 200, json: async () => ({ ok: true, title: "Real: Title", options: [
       { key: "1080p|MP4", label: "1080p · MP4", sub: "94 MB", quality: "1080p", videoUrl: "https://gv/137", audioUrl: "https://gv/140", ext: "mp4", size: 94e6, headers: [["User-Agent", "YtDlpUA"]] },
       { key: "audio|M4A", label: "Audio only · M4A 130k", sub: "4 MB", quality: "audio", videoUrl: "https://gv/140", audioUrl: null, ext: "m4a", size: 4e6, headers: [] } ] }) };
+  }
+  if (url.includes("/pl/master")) {
+    return { ok: true, status: 200, text: async () => "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\n360/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n1080/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\nhttps://cdn2.example/720/index.m3u8\n" };
+  }
+  if (url.includes("/pl/") && url.endsWith("index.m3u8")) {
+    return { ok: true, status: 200, text: async () => "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6,\na.ts\n" };
   }
   return { ok: true, status: 200 };
 };
@@ -56,6 +67,13 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.strictEqual(last.type, "swiftget-media");
   assert.strictEqual(last.items[0].label, "1080p Full HD · MP4");
   assert.strictEqual(last.items[0].yt.tag, "Full HD");
+  // Q26 plumbing: every offered quality carries its identity, so the app
+  // can renew the expired link in the same quality later
+  assert.strictEqual(last.items[0].yt.source, tabUrl, "the page goes with the quality");
+  assert.strictEqual(last.items[0].yt.key, "1080p|MP4", "the chosen quality has a key");
+  const audioOpt = last.items.find((i) => i.yt && i.yt.quality === "audio");
+  assert(audioOpt && audioOpt.yt.key === "audio|M4A", "audio-only has a key too");
+  assert(last.items.every((i) => !/^https?:\/\//.test(i.sub || "")), "no row shows a URL");
   console.log("button shows:", last.items.map((i) => i.label).join(" | "));
 
   // user clicks 1080p on the page
@@ -63,9 +81,12 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     listeners.msg({ type: "swiftget-download", item: last.items[0], title: "(2) Cool video - YouTube" }, { tab: { id: 7, url: tabUrl } }, resolve));
   assert.strictEqual(res.ok, true);
   const req = sent[0];
+  assert.strictEqual(sentHeaders[0]["X-SwiftGet-Token"], "test-token", "every POST to the app carries the per-install token");
   assert(req.url.includes("itag=137") && !req.url.includes("range="));
   assert(req.audioUrl.includes("itag=140"));
   assert.strictEqual(req.fileName, "Cool video [1080p].mp4");
+  assert.strictEqual(req.sourcePage, tabUrl, "the page is sent, so the app can renew the link");
+  assert.strictEqual(req.sourceKey, "1080p|MP4", "the chosen quality is sent with the download");
   assert.strictEqual(req.userAgent, "TestUA");
   console.log("sent to app:", req.fileName, "| audio:", !!req.audioUrl);
 
@@ -196,6 +217,65 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(ytCalls[n].url, dash.resolve);
     assert.strictEqual(ytCalls[n].referer, "https://site.example/watch/1", "the page goes along as referrer");
     console.log("DASH stream: offered, qualities from the app with the page as referrer");
+  }
+  // an HLS stream with several qualities: each one by its name (from the
+  // playlist), the lists the player opened itself are not repeated
+  {
+    const hdr = [{ name: "Content-Type", value: "application/vnd.apple.mpegurl" }];
+    listeners.headers({ tabId: 41, url: "https://cdn.example/pl/master", statusCode: 200, responseHeaders: hdr });
+    await tick(); await tick(); await tick();
+    listeners.headers({ tabId: 41, url: "https://cdn.example/pl/1080/index.m3u8", statusCode: 200, responseHeaders: hdr });
+    for (let i = 0; i < 6; i++) await tick();
+    const items = await new Promise((r) => listeners.msg({ type: "swiftget-get-media", tabId: 41 }, {}, r));
+    const labels = items.map((i) => i.label);
+    assert.strictEqual(JSON.stringify(labels), JSON.stringify(["1080p · MP4 · stream", "720p · MP4 · stream", "360p · MP4 · stream"]));
+    assert.strictEqual(items[0].url, "https://cdn.example/pl/1080/index.m3u8");
+    assert.strictEqual(items[1].url, "https://cdn2.example/720/index.m3u8");
+    // Q26 plumbing: each HLS quality carries its identity, and no row shows a URL
+    assert.strictEqual(items[0].qualityKey, "1080p");
+    assert.strictEqual(items[1].qualityKey, "720p");
+    assert(items.every((i) => !/^https?:\/\//.test(i.sub || "")), "no HLS row shows a URL");
+    // the button of that player: the page is nothing the app knows -> its streams
+    const res = await new Promise((r) =>
+      listeners.msg({ type: "swiftget-resolve-video", page: "", src: "", frame: false }, { tab: { id: 41, url: "https://unsupported.example/watch" } }, r));
+    assert(res.items && res.items.length === 3, "the streams instead of an error: " + JSON.stringify(res));
+    console.log("HLS qualities:", labels.join(" | "));
+    // downloading an HLS quality sends its identity with it (Q26 plumbing)
+    const hlsBefore = sent.length;
+    const hlsRes = await new Promise((r) =>
+      listeners.msg({ type: "swiftget-download", item: items[0], title: "x" }, { tab: { id: 41, url: "https://site.example/watch" } }, r));
+    assert.strictEqual(hlsRes.ok, true);
+    assert.strictEqual(sent[hlsBefore].qualityKey, "1080p");
+    assert.strictEqual(sent[hlsBefore].url, "https://cdn.example/pl/1080/index.m3u8");
+  }
+  // a plain file found on a page: name + size, no URL anywhere in the row
+  {
+    listeners.headers({ tabId: 51, url: "https://cdn.example/clip.mp4", statusCode: 200,
+      responseHeaders: [{ name: "Content-Type", value: "video/mp4" }, { name: "Content-Length", value: "150000000" }] });
+    for (let i = 0; i < 6; i++) await tick();
+    const items = await new Promise((r) => listeners.msg({ type: "swiftget-get-media", tabId: 51 }, {}, r));
+    assert.strictEqual(items.length, 1);
+    assert.strictEqual(items[0].label, "MP4");
+    assert.strictEqual(items[0].size, 150000000);
+    assert.strictEqual(items[0].sub, "");
+    console.log("file row: name + size, no URL");
+  }
+  // a file link clicked in the page: straight to the app, with the token
+  {
+    const before = sent.length;
+    const res = await new Promise((r) =>
+      listeners.msg({ type: "swiftget-link", url: "https://example.com/file.pdf" }, { tab: { id: 7, url: "https://example.com/page" } }, r));
+    assert.strictEqual(res.ok, true, "click taken: " + JSON.stringify(res));
+    assert.strictEqual(sent.length, before + 1, "the clicked link goes to the app once");
+    assert.strictEqual(sent[sent.length - 1].url, "https://example.com/file.pdf");
+    assert.strictEqual(sent[sent.length - 1].referrer, "https://example.com/page");
+    assert.strictEqual(sentHeaders[sentHeaders.length - 1]["X-SwiftGet-Token"], "test-token", "the clicked link's POST carries the token");
+    // the same link again right away: sent once, the browser's copy is dropped
+    const res2 = await new Promise((r) =>
+      listeners.msg({ type: "swiftget-link", url: "https://example.com/file.pdf" }, { tab: { id: 7, url: "https://example.com/page" } }, r));
+    assert.strictEqual(res2.ok, true);
+    assert.strictEqual(sent.length, before + 1, "a second click on the same link is not sent again");
+    console.log("file-link click: to the app once, with the token");
   }
   console.log("background simulation: all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });

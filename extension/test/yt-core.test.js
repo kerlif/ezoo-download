@@ -43,7 +43,11 @@ const webm = opts.find((o) => o.ext === "webm");
 assert(webm.audioUrl.includes("itag=251"));
 const audioOnly = opts[opts.length - 2];
 assert.strictEqual(audioOnly.quality, "audio");
+assert.strictEqual(audioOnly.key, "audio|M4A", "audio-only carries a quality key, like every video option");
 assert.strictEqual(audioOnly.audioUrl, null);
+// every video option carries a quality key too (the app renews links by it)
+assert.strictEqual(opts[0].key, "1080p|MP4");
+assert(opts.every((o) => typeof o.key === "string" && o.key.length > 0), "every option has a key");
 // the MP3 choice: same sound, the app makes the MP3 file
 const mp3 = opts[opts.length - 1];
 assert.strictEqual(mp3.key, "audio|MP3");
