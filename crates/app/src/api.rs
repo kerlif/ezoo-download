@@ -575,6 +575,7 @@ mod tests {
         let server = bind(0).expect("bind test server");
         let port = match server.server_addr() {
             tiny_http::ListenAddr::IP(addr) => addr.port(),
+            #[cfg(unix)]
             tiny_http::ListenAddr::Unix(_) => panic!("expected an IP socket"),
         };
         let (tx, rx) = mpsc::channel();
