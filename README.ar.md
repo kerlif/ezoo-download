@@ -106,7 +106,7 @@ chmod +x EzooDownload-*-x86_64.AppImage
 
 </div>
 
-حزم `.deb` و`.rpm` وAppImage تتضمن ffmpeg، فدمج الفيديو والصوت يعمل دون تثبيت أي شيء آخر. وحزمة Flatpak غير مرفقة بإصدار 1.1.1 بعد — ما زالت قيد المراجعة، وستُضاف في إصدار لاحق.
+حزم `.deb` و`.rpm` وAppImage وFlatpak تتضمن ffmpeg، فدمج الفيديو والصوت يعمل دون تثبيت أي شيء آخر. وحزمة Flatpak تتضمن أيضًا aria2: [`EzooDownload-x86_64.flatpak`](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
 
 للتفاصيل وحل المشكلات، راجع [دليل لينكس](packaging/linux/README-Linux.md).
 
@@ -179,7 +179,7 @@ cargo build --release
 <details>
 <summary><b>هل يعمل على لينكس؟</b></summary>
 
-نعم، عبر حزم `.deb` و`.rpm` وAppImage. وحزمة Flatpak مخطط لها في إصدار لاحق.
+نعم، عبر حزم `.deb` و`.rpm` وAppImage و[Flatpak](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
 
 </details>
 

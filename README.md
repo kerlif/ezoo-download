@@ -100,7 +100,7 @@ chmod +x EzooDownload-*-x86_64.AppImage
 ./EzooDownload-*-x86_64.AppImage
 ```
 
-The `.deb`, `.rpm`, and AppImage packages include ffmpeg, so merging video and audio works without installing anything else. A Flatpak bundle is not attached to the 1.1.1 release yet — it is still under review and will be added in a later release.
+The `.deb`, `.rpm`, AppImage, and Flatpak packages include ffmpeg, so merging video and audio works without installing anything else. The Flatpak bundle also includes aria2: [`EzooDownload-x86_64.flatpak`](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
 
 For troubleshooting, see the [Linux guide](packaging/linux/README-Linux.md).
 
@@ -169,7 +169,7 @@ Yes. For HLS streams the download uses the picked variant's URL; for DASH it dow
 <details>
 <summary><b>Does it run on Linux?</b></summary>
 
-Yes, with `.deb`, `.rpm`, and AppImage packages. A Flatpak bundle is planned for a later release.
+Yes, with `.deb`, `.rpm`, AppImage, and [Flatpak](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak) packages.
 
 </details>
 
