@@ -34,7 +34,7 @@ Free and open source. No ads. No accounts.
 | <img src="assets/icons/segments.svg" width="22" height="22" alt=""> | **Adaptive connections** | Splits each file across up to 32 connections and adjusts their number to what your server and connection can handle. It adds connections while throughput keeps rising. |
 | <img src="assets/icons/resume.svg" width="22" height="22" alt=""> | **Real resume** | Continues after a crash, a closed app, or a dropped connection. Progress is saved locally and checked when the download resumes. |
 | <img src="assets/icons/video.svg" width="22" height="22" alt=""> | **Video and audio streams** | Reads HLS and DASH playlists and shows the duration, the available qualities, and an estimated size marked with "≈". |
-| <img src="assets/icons/browser.svg" width="22" height="22" alt=""> | **Browser capture** | The Chrome and Firefox extension sends a link to the app in one click. |
+| <img src="assets/icons/browser.svg" width="22" height="22" alt=""> | **Browser capture** | The Chrome and Firefox extension sends a link to the app in one click. The capture overlay lists each link with its name and size, plus Preview and Copy-link buttons. |
 | <img src="assets/icons/folder.svg" width="22" height="22" alt=""> | **Automatic folders** | Sorts finished files into folders by type. |
 | <img src="assets/icons/schedule.svg" width="22" height="22" alt=""> | **Scheduling and queues** | Starts downloads at a set time and can shut the computer down when the queue is done. |
 | <img src="assets/icons/speed.svg" width="22" height="22" alt=""> | **Speed limits** | A global limit, or a limit for a single download. |
@@ -44,8 +44,16 @@ Free and open source. No ads. No accounts.
 | <img src="assets/icons/shield.svg" width="22" height="22" alt=""> | **Private by design** | No accounts and no analytics. The only automatic network requests are the update check and a daily tool update check, both documented below. |
 | <img src="assets/icons/ban.svg" width="22" height="22" alt=""> | **No ads** | No banners and no donation prompts. |
 
-> [!NOTE]
-> In this version, choosing a quality in the capture window is for information only. The download uses the default quality.
+## What's new in 1.1.1
+
+- **Quality choice now steers the download.** Picking a quality in the capture window downloads that variant (HLS: the picked variant's URL; DASH: the picked quality key), falling back to the best quality when the picked variant is unavailable.
+- **Capture overlay rows** show each link's name and size, with small Preview and Copy-link buttons.
+- **Refresh-link** re-resolves an expired download link without losing progress.
+- **Per-site connection limits** keep one busy site from starving the rest.
+- **Split-half work-stealing:** a stalled segment is split and picked up by idle connections, so throttled servers finish faster.
+- **The browser extension** now also intercepts file and torrent links, and retries failed downloads automatically.
+- **Signed checksums:** every release file is listed in `SHA256SUMS.txt`, signed so you can verify it.
+- **Per-install token:** local bridge requests now need the install's own token, so other programs on the machine can't drive your downloads.
 
 ## How it works
 
@@ -92,7 +100,7 @@ chmod +x EzooDownload-*-x86_64.AppImage
 ./EzooDownload-*-x86_64.AppImage
 ```
 
-The `.deb`, `.rpm`, and AppImage packages include ffmpeg, so merging video and audio works without installing anything else. A Flatpak bundle is not attached to the 1.1.0 release yet — it is still under review and will be added in a later release.
+The `.deb`, `.rpm`, AppImage, and Flatpak packages include ffmpeg, so merging video and audio works without installing anything else. The Flatpak bundle also includes aria2: [`EzooDownload-x86_64.flatpak`](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
 
 For troubleshooting, see the [Linux guide](packaging/linux/README-Linux.md).
 
@@ -126,7 +134,7 @@ To build the Windows installer, run `build-windows.ps1`. For Linux packages, see
 ## Privacy and network
 
 - Downloads go directly from the server you chose to your computer.
-- Two automatic network requests: an update check (app name and version only, every 24 hours — you can turn it off in settings), and a tool update check that fetches yt-dlp and aria2 at most once a day and verifies their checksums before use.
+- Two automatic network requests: an update check (app name and version only, every 24 hours — you can turn it off in settings), and a tool update check that fetches yt-dlp at most once a day and verifies its checksum before use; aria2 is fetched on Windows only (on Linux install it with your system package manager; in the Flatpak it is bundled).
 - yt-dlp runs only when you request video, playlist, or tool-update features.
 - No telemetry, analytics, or automatic crash reports.
 
@@ -152,16 +160,16 @@ The app does not promise support for any specific site. Streams protected by DRM
 </details>
 
 <details>
-<summary><b>Why doesn't choosing a quality change the download?</b></summary>
+<summary><b>Does choosing a quality change the download?</b></summary>
 
-In this version the quality list is for information only, and the download uses the default quality. Choosing a quality that changes the download may be added in a future release.
+Yes. For HLS streams the download uses the picked variant's URL; for DASH it downloads the picked quality. If the picked variant is unavailable, the download falls back to the best quality.
 
 </details>
 
 <details>
 <summary><b>Does it run on Linux?</b></summary>
 
-Yes, with `.deb`, `.rpm`, and AppImage packages. A Flatpak bundle is planned for a later release.
+Yes, with `.deb`, `.rpm`, AppImage, and [Flatpak](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak) packages.
 
 </details>
 
