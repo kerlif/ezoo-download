@@ -60,6 +60,11 @@ and retry later with backoff (5 min, 15 min, 1 h, 6 h, 24 h; a
 server-asked `Retry-After` / rate-limit reset wins, clamped to
 1 min – 24 h). The checker never retries inside one check.
 
+Hotfix (2026-11-02, Q36): the `releases/latest` response body (the
+release notes) is shown to the user in the update notice — no new
+outbound request of any kind; it is the same response the check
+already fetches.
+
 ## Capture-window probing (Phase 4)
 
 All of these go to the captured link's own server only, on the user's

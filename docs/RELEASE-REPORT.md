@@ -1053,3 +1053,198 @@ limitation, not a regression. Windows-target compile, real KDE
 Plasma/Wayland behavior, Flatpak build/run, and Lighthouse
 remain unverified (see §11); Phase 8 is still NOT passed — no
 Flatpak/CI artifact exists yet.
+
+## Hotfix — patch of 1.1.1 (2026-11-02, branch `v111-hotfix`)
+
+A patch of 1.1.1, **not** 1.1.2: the version string stays `1.1.1`
+everywhere. After proof, the `v1.1.1` tag moves to the fix commit and
+the release assets are replaced (plan §8, H8 — owner-approved at the
+time). Existing 1.1.1 installs will **not** be offered this patch
+automatically: the auto-updater compares 3-part semver only, so
+`1.1.1.1` / `1.1.1+hotfix` / `1.1.1-hotfix1` can never be offered as
+newer; only new downloads and manual reinstalls get it. Full plan:
+`~/workspace/ezoo/v111-hotfix/PLAN-HOTFIX.md`. Scope (approved by
+Tensi 2026-11-02 10:08, amended plan approved 14:34): (1)
+update-control — the contradictions Tensi found testing 1.1.1 on a
+real machine; (2) delete default categories (upstream #56); (3)
+playlist reverse numbering + skip already-downloaded (upstream #67);
+(4) video panel respects its setting (upstream #62). Out of scope:
+#54, #61/#65/#66, #50/#53/#59, any version bump, any change to the
+update source (still `kerlif/ezoo-download` only).
+
+Test baseline at branch time (H0, from `v111-upgrade` `bba5aa5`):
+**203 passed / 0 failed / 1 ignored**. Final at H5 HEAD (`027dc63`):
+**229 passed / 0 failed / 1 ignored** (+26). No phase lowered a gate.
+
+### H0 — Branch + baseline
+
+Branch `v111-hotfix` created from `bba5aa5`. Gates: `cargo fmt
+--check` clean; `cargo clippy --all-targets -- -D warnings` exit 0;
+`cargo test` 203/0/1; release build OK.
+
+### H1 — Engine: notes + asset accessors (commit `8491b47`)
+
+**What changed.** `GithubPayload` gained a `body` field, carried into
+`CheckedRelease.notes` (capped at 4 KiB on a char boundary);
+`release_highlights()` parses the first ≤5 bullet lines,
+language-matched (Arabic bullets for an Arabic UI, the English
+paragraph otherwise), display-only; `CheckedRelease.deb_asset()` /
+`rpm_asset()` accessors (same pattern as `appimage_asset()`).
+`update_checker.rs` fixtures gained a `body`.
+
+**Tests.** 5 new tests (notes capped at 4 KiB on a char boundary,
+malformed/oversized body, body with no bullets, deb/rpm accessors
+prefer the x86_64 build, no asset → `None`). Suite 203 → 208.
+
+### H2 — App: update-control (commit `ade5487`)
+
+**What changed.** New Slint `UpdateNoticeDialog` (heading +
+highlights + full-notes link + «Update now» / «Later», modelled on
+`WhatsNewDialog`); `handle_available()` shows it before any download,
+for automatic checks on all platforms and for the Linux manual check —
+nothing is downloaded before an explicit Update now. About shows the
+running package: line 1 "Version 1.1.1 (AppImage)" / "(.deb)" /
+"(.rpm)" / "(Flatpak)" / "(Windows setup)" / "(portable copy)", line 2
+the full executable path (`package_short_label()`). Every update
+string names the package through the single helper `package_label()`.
+Managed (.deb/.rpm): «Update now» downloads the matching asset into
+`~/Downloads`, hash-verified against the release sums, then opens the
+folder and tells the user the path; the app never runs the package
+manager. AppImage: the second "Replace now?" ask is dropped after
+«Update now», the wait-for-running-downloads stays. Once-per-launch
+reminder (Q37/Q38/Q48): «Later» marks the version in the in-memory
+per-run `LATER` flag — no durable state, next launch re-offers, a
+newer version re-offers at once, manual checks bypass the
+suppression. Upstream #49 (disable auto-update) verified, not built:
+the setting already exists; recorded as resolved in
+`docs/OPEN-QUESTIONS.md`.
+
+**Tests.** 10 new tests (9 `#[test]` + 1 `#[tokio::test]`):
+`later_suppresses_the_notice_until_a_newer_version`,
+`declined_versions_suppress_the_notice_too`,
+`auto_checks_follow_the_setting`,
+`handle_available_is_done_when_the_notice_is_suppressed`,
+`notice_and_about_dialogs_open_as_their_own_windows` (DISPLAY-gated).
+Suite 208 → 218.
+
+**Xvfb smoke.** Release binary launches, main window maps, `/ping` =
+1.1.1; Help > About opens as its own floating window showing
+"Version 1.1.1 (…)" + the executable path (screenshots
+`~/workspace/ezoo/v111-hotfix/logs/h2-smoke-*.png`). The notice
+itself cannot be triggered in the real app here: the checker talks to
+api.github.com and 1.1.1 is the latest release, so there is no newer
+version to offer; the gate logic is covered by the unit tests above.
+
+**Not verified here:** real-machine AppImage replace / .deb download
+(owner step, plan §10).
+
+### H3 — Categories (commit `b3a8976`)
+
+**What changed.** `delete_category()` allows builtin categories and
+keeps only General protected (message reworded to say only General is
+protected); the sidebar `TreeMenu` "Delete category" gate is now
+`enabled: root.target != "General"` (`builtin` keeps its rename-lock
+meaning in `CategoryDialog`); new `categories_seeded: bool` Settings
+field (serde default `false`, set `true` on first seed) so deleting
+all six builtin categories does not re-seed them on the next launch.
+Six locale files updated for the reworded message. New open question
+Q27 recorded: native confirm/message dialogs are dead on systems with
+zenity 4.x (`rfd` 0.15.4 calls `zenity --no-markup`, removed in
+zenity 4) — pre-existing, NOT fixed in the hotfix; the smoke worked
+around it with a test-only `zenity` shim
+(`~/workspace/ezoo/v111-hotfix/bin/zenity`, smoke-only, not in the
+repo).
+
+**Tests.** 2 new tests (config delete-all round-trip; reloaded
+settings keep `categories_seeded`). Suite 218 → 220.
+
+**Xvfb smoke.** Seeded Completed download in Video; right-click Video
+→ "Delete category" enabled; confirm Yes → Video disappears, the
+download moves to General (sidebar count + `downloads.json`),
+`settings.json` keeps 5 categories with `categories_seeded=true`;
+right-click General → "Delete category" disabled (greyed); quit and
+relaunch with the same home → Video does NOT come back (no re-seed),
+General still holds the download.
+
+### H4 — Playlist (commit `0d77719`)
+
+**What changed.** `PlaylistDialog` gains "Number from the oldest
+video" (`reverse-number`, enabled only when numbering is on) and
+"Skip videos already downloaded" (`skip-downloaded`, default on)
+checkboxes. Reverse numbering re-maps the shown numbers (`total - i`)
+at fetch and live on toggle; list order is unchanged, oldest row is
+#1, filenames use the new numbers. Download skips rows whose exact
+computed target file (sanitize + optional zero-padded number + ext)
+already exists in the folder and reports the skipped count in the
+dialog message; added rows are unchecked so a second Download only
+re-checks the skipped ones. New open question Q28 recorded: the tool
+updater downloads yt-dlp without the executable bit on Linux
+(pre-existing, NOT fixed in the hotfix; the smoke worked around it by
+placing an executable copy in `tools/` for the run).
+
+**Tests.** 9 new playlist tests (numbering forward/reverse/single,
+filename padding/sanitize/unnumbered, skip present/absent,
+numbering+skip agreement). Suite 220 → 229.
+
+**Xvfb smoke.** Against a real YouTube playlist (eCampusOntario, 11
+videos): dialog renders both checkboxes; fetch → 11 rows, forward
+numbering 1..11; reverse ON → download into `revtest/` gives
+"11 - Arriving …mp4" … "01 - Reflecting …mp4" (asserted on
+`downloads.json`); reverse OFF, folder `skiptest/` holding a pre-made
+"03 - Relating …mp4" → Download adds the other 10 only, dialog stays
+open with "Added 10 videos — 1 already downloaded, skipped", added
+rows unchecked; Download again (only Relating checked) → all skipped,
+"1 videos already downloaded — skipped", still 21 downloads total
+(no duplicate queue, no re-add).
+
+### H5 — Video panel (extension) (commit `027dc63`)
+
+**What changed.** All three gaps in plan §2.4, extension only (no
+app-side change): `swiftget-open-panel` is gated on a fresh config
+fetch + `panelAllowed()` before creating/opening the bubble; the panel
+config is re-fetched periodically (throttled, inside the existing
+700 ms `place()` loop) so toggling the setting in Options hides panels
+on already-open pages without reload; when the app is unreachable the
+fallback is the last-known panel setting persisted in
+`chrome.storage.local` (written on every successful `/config` fetch)
+instead of hardcoded `{ enabled: true }` — in both `background.js`
+(`swiftget-config` fallback) and `content.js:12` (initial value).
+
+**Tests.** No Rust change: `cargo test` unchanged at 229/0/1.
+Extension sims extended (`content.sim.js`, `background.sim.js`):
+panel disabled → no bubble on any path (place/update/open-panel);
+setting toggled mid-page → bubble hidden within the refresh interval;
+app unreachable → last-known setting wins. All sims exit 0.
+
+**Not verified here:** real-browser behaviour (no browser binary in
+the VM) — owner step (plan §10).
+
+### H6 — Release prep (this phase)
+
+Docs only: `docs/UPDATE-CHECKER.md` §13 (notice flow, once-per-launch
+reminder, Managed download-to-Downloads, About package info);
+`docs/PRIVACY.md` one line (release-notes body shown in the notice;
+no new outbound request); `docs/OPEN-QUESTIONS.md` decided entries
+Q36–Q48; this hotfix section; hotfix release-notes text in
+`docs/RELEASE-NOTES-HOTFIX.md` (short bilingual section to prepend to
+the release body — the notice parser takes the first bullets, so the
+hotfix section must come first; the release-body edit itself is H8
+work, not H6). Site + READMEs: **no change** — all download links are
+versioned `1.1.1` (`releases/latest/download/<versioned asset name>`)
+and stay valid after the re-publish, since the re-published assets
+keep the same names; spot-checked in H6 — every download link in
+`docs/index.html` and both READMEs is a versioned `1.1.1` asset name
+under `releases/latest/download/`, and no link names a version that
+changes. Gates re-run in H6: `cargo fmt --check` clean; `cargo clippy
+--all-targets -- -D warnings` exit 0; `cargo test` 229/0/1; extension
+sims exit 0; Xvfb smoke re-run of the H2–H4 dialogs (About,
+UpdateNoticeDialog, PlaylistDialog — all separate floating windows).
+
+### Still unverified after the hotfix (owner steps, plan §10)
+
+Real-machine AppImage replace end-to-end; real-machine .deb download;
+relaunch re-offer after «Later»; real YouTube playlist (yt-dlp,
+network); real-browser panel behaviour; Windows install path (CI is
+the proof in H7, plus Tensi's real-machine test). Pre-existing,
+recorded, not fixed in the hotfix: zenity 4.x native dialogs (Q27),
+tool-updater yt-dlp without +x on Linux (Q28).
