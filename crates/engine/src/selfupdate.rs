@@ -439,6 +439,10 @@ async fn read_capped(resp: reqwest::Response, max_bytes: usize) -> anyhow::Resul
 
 const MAX_API_BYTES: usize = 1 << 20;
 
+/// How much of the release body is kept in `CheckedRelease.notes`
+/// (Q36 option A): display-only text for the update notice, 4 KiB.
+pub const MAX_NOTES_BYTES: usize = 4 << 10;
+
 /// A `Retry-After` in seconds, or the seconds until `X-RateLimit-Reset`
 /// (an epoch time), when the answer carries one.
 fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
@@ -514,6 +518,8 @@ struct GithubPayload {
     #[serde(default)]
     html_url: String,
     #[serde(default)]
+    body: String,
+    #[serde(default)]
     assets: Vec<GithubAsset>,
 }
 
@@ -538,6 +544,11 @@ pub struct CheckedRelease {
     pub sums_signature_verified: bool,
     /// Every asset of the release: (file name, download URL).
     pub assets: Vec<(String, String)>,
+    /// The release body (release notes) from the API response, capped
+    /// at [`MAX_NOTES_BYTES`]. Display-only, unsigned: the notice shows
+    /// it as plain text and never acts on it (Q36 option A). The offer
+    /// itself is still gated by the signed manifest + signed sums.
+    pub notes: String,
 }
 
 impl CheckedRelease {
@@ -561,6 +572,153 @@ impl CheckedRelease {
             .or_else(|| self.assets.iter().find(|(n, _)| n.ends_with(".AppImage")))
             .cloned()
     }
+
+    /// The .deb asset of this release, if any: prefer the amd64 build,
+    /// else the first `.deb` asset.
+    pub fn deb_asset(&self) -> Option<(String, String)> {
+        self.assets
+            .iter()
+            .find(|(n, _)| n.ends_with(".deb") && n.contains("amd64"))
+            .or_else(|| self.assets.iter().find(|(n, _)| n.ends_with(".deb")))
+            .cloned()
+    }
+
+    /// The .rpm asset of this release, if any: prefer the x86_64 build,
+    /// else the first `.rpm` asset.
+    pub fn rpm_asset(&self) -> Option<(String, String)> {
+        self.assets
+            .iter()
+            .find(|(n, _)| n.ends_with(".rpm") && n.contains("x86_64"))
+            .or_else(|| self.assets.iter().find(|(n, _)| n.ends_with(".rpm")))
+            .cloned()
+    }
+}
+
+/// Cap release-notes text at [`MAX_NOTES_BYTES`], on a char boundary.
+/// Never panics on a short or non-ASCII body.
+fn truncate_notes(body: &str) -> String {
+    if body.len() <= MAX_NOTES_BYTES {
+        return body.to_string();
+    }
+    let mut end = MAX_NOTES_BYTES;
+    while end > 0 && !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    body[..end].to_string()
+}
+
+/// How many highlight lines the update notice shows at most.
+pub const MAX_HIGHLIGHTS: usize = 5;
+
+/// Longest single highlight line shown in the notice, in characters.
+pub const MAX_HIGHLIGHT_CHARS: usize = 200;
+
+fn is_arabic_char(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0600..=0x06FF | 0x0750..=0x077F | 0x08A0..=0x08FF | 0xFB50..=0xFDFF | 0xFE70..=0xFEFF
+    )
+}
+
+fn has_arabic(text: &str) -> bool {
+    text.chars().any(is_arabic_char)
+}
+
+/// Strip a leading bullet marker from one line, returning the bullet
+/// text. Markers: `-`, `*`, `•`, `–`, `—`, a numbered `1.` / `1)`, or a
+/// leading emoji run (the v1.1.1 release body uses `🎯…` lines with no
+/// dash). Returns `None` when the line is not a bullet.
+fn strip_bullet(line: &str) -> Option<&str> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    // dash / star / dot markers
+    if let Some(rest) = line
+        .strip_prefix(['-', '*', '•', '–', '—'])
+        .map(str::trim_start)
+    {
+        return if rest.is_empty() { None } else { Some(rest) };
+    }
+    // numbered bullet: "1. text" / "1) text"
+    let digits: usize = line.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits > 0 {
+        if let Some(rest) = line[digits..].strip_prefix(['.', ')']).map(str::trim_start) {
+            if !rest.is_empty() {
+                return Some(rest);
+            }
+        }
+    }
+    // emoji bullet: first char is neither a letter/digit nor ASCII
+    // punctuation, and the line carries real text after it
+    let first = line.chars().next()?;
+    if !first.is_alphanumeric()
+        && !first.is_ascii_punctuation()
+        && line.chars().any(|c| c.is_alphanumeric())
+    {
+        return Some(line);
+    }
+    None
+}
+
+fn truncate_line(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let mut s: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    s.push('…');
+    s
+}
+
+/// Extract the highlight lines of a release body for the update notice
+/// (Q36 option A, hotfix §5). Display-only: the returned text is plain
+/// text, no links are executed and no markup is interpreted beyond
+/// bullet splitting.
+///
+/// * At most [`MAX_HIGHLIGHTS`] lines, each capped at
+///   [`MAX_HIGHLIGHT_CHARS`] characters.
+/// * `arabic` picks the Arabic bullets when the body has any (the
+///   v1.1.1 body leads with Arabic `🎯…` lines), else whatever bullets
+///   exist; a non-Arabic UI picks the non-Arabic bullets, and an
+///   Arabic-only body falls through to the English paragraph below
+///   instead of showing Arabic bullets to an English UI.
+/// * A body with no usable bullets degrades to its first paragraph
+///   lines (headings, blank lines and bullet lines skipped), never to
+///   a crash. A body with no text at all yields an empty list — the
+///   caller then shows the generic "see the release page" line instead.
+pub fn release_highlights(notes: &str, arabic: bool) -> Vec<String> {
+    let bullets: Vec<&str> = notes
+        .lines()
+        .filter_map(strip_bullet)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect();
+    let picked: Vec<&str> = if arabic {
+        let arabic_bullets: Vec<&str> = bullets.iter().copied().filter(|b| has_arabic(b)).collect();
+        if arabic_bullets.is_empty() {
+            bullets
+        } else {
+            arabic_bullets
+        }
+    } else {
+        bullets.iter().copied().filter(|b| !has_arabic(b)).collect()
+    };
+    let mut out: Vec<String> = picked
+        .into_iter()
+        .take(MAX_HIGHLIGHTS)
+        .map(|b| truncate_line(b, MAX_HIGHLIGHT_CHARS))
+        .collect();
+    if out.is_empty() {
+        // no usable bullets: fall back to the first paragraph lines
+        out = notes
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#') && strip_bullet(l).is_none())
+            .take(MAX_HIGHLIGHTS)
+            .map(|l| truncate_line(l, MAX_HIGHLIGHT_CHARS))
+            .collect();
+    }
+    out
 }
 
 /// The outcome of one check. `SilentFail` means: say nothing, retry later
@@ -792,6 +950,7 @@ pub async fn check_latest_with_keys(
             .into_iter()
             .map(|a| (a.name, a.browser_download_url))
             .collect(),
+        notes: truncate_notes(&payload.body),
     }))
 }
 
@@ -1526,5 +1685,179 @@ mod tests {
         assert!(install_appimage(&new, &current, &sha).is_err());
         assert_eq!(std::fs::read(&current).unwrap(), b"new-bytes");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- H1: release notes + deb/rpm asset accessors (hotfix §5, §7). ---
+
+    #[test]
+    fn notes_capped_at_4kib_on_a_char_boundary() {
+        assert_eq!(MAX_NOTES_BYTES, 4096);
+        assert_eq!(truncate_notes("short"), "short");
+        assert_eq!(truncate_notes(""), "");
+        let exact = "a".repeat(MAX_NOTES_BYTES);
+        assert_eq!(truncate_notes(&exact).len(), MAX_NOTES_BYTES);
+        // multi-byte body: the cap never splits a character
+        let oversized = "🎯 اختيار الجودة أصبح يؤثر فعلًا. ".repeat(300);
+        assert!(oversized.len() > MAX_NOTES_BYTES);
+        let capped = truncate_notes(&oversized);
+        assert!(capped.len() <= MAX_NOTES_BYTES);
+        assert!(capped.is_char_boundary(capped.len()));
+        assert!(std::str::from_utf8(capped.as_bytes()).is_ok());
+    }
+
+    /// The v1.1.1 release-body shape (RELEASE-NOTES-111.md): Arabic
+    /// emoji bullets first, then one long English paragraph.
+    fn real_shaped_body() -> String {
+        [
+            "## Ezoo Download 1.1.1 — الجودة تتحكم بالتنزيل",
+            "",
+            "🎯 اختيار الجودة في نافذة الالتقاط أصبح يؤثر فعلًا.",
+            "🖱️ صفوف نافذة الالتقاط تعرض اسم كل رابط وحجمه.",
+            "🔗 تحديث الرابط: إعادة حلّ الروابط المنتهية دون فقدان التقدم.",
+            "🌐 حدود اتصالات لكل موقع.",
+            "⚡ سرقة العمل بتقسيم النصف.",
+            "🧩 إضافة المتصفح تعترض الآن روابط الملفات والتورنت أيضًا.",
+            "🔐 مجاميع SHA-256 موقّعة لكل ملفات الإصدار.",
+            "",
+            "Quality choice in the capture window now steers the download, falling back to the best quality when the picked variant is unavailable. Capture rows show each link's name and size with Preview and Copy-link buttons.",
+            "",
+            "التثبيت / Install: راجع دليل لينكس الكامل.",
+        ]
+        .join("\n")
+    }
+
+    #[test]
+    fn highlights_from_release_body_are_language_matched() {
+        let body = real_shaped_body();
+        // Arabic UI: the first five Arabic emoji bullets, emoji kept
+        let ar = release_highlights(&body, true);
+        assert_eq!(ar.len(), 5);
+        assert!(ar[0].starts_with("🎯 اختيار الجودة"));
+        assert!(ar[4].starts_with("⚡ سرقة العمل"));
+        // English UI: no English bullets exist, so the English paragraph
+        // (plus the trailing install line) is the fallback
+        let en = release_highlights(&body, false);
+        assert_eq!(en.len(), 2);
+        assert!(en[0].starts_with("Quality choice in the capture window"));
+        // dash / star / numbered bullets, mixed languages
+        let mixed =
+            "- Fix the crash on exit\n- إصلاح التعطل عند الخروج\n* Faster retries\n1. Signed sums\n";
+        assert_eq!(
+            release_highlights(mixed, false),
+            vec!["Fix the crash on exit", "Faster retries", "Signed sums"]
+        );
+        assert_eq!(
+            release_highlights(mixed, true),
+            vec!["إصلاح التعطل عند الخروج"]
+        );
+        // an English-only body with dash bullets works for an Arabic UI
+        // too (fallback: whatever bullets exist)
+        assert_eq!(
+            release_highlights("- One\n- Two\n", true),
+            vec!["One", "Two"]
+        );
+    }
+
+    #[test]
+    fn highlights_degrade_gracefully_without_bullets() {
+        // no bullets at all: the first paragraph lines, headings skipped
+        let plain = "# Release 1.1.1\n\nFirst paragraph line.\nSecond line.\n";
+        assert_eq!(
+            release_highlights(plain, false),
+            vec!["First paragraph line.", "Second line."]
+        );
+        // malformed bodies: only markup, only blanks, only a lone emoji
+        for bad in [
+            "",
+            "   \n\n  ",
+            "# Heading\n## Sub\n",
+            "🎯\n🔗\n",
+            "```\ncode\n```\n",
+        ] {
+            let out = release_highlights(bad, false);
+            assert!(out.len() <= MAX_HIGHLIGHTS, "{bad:?} -> {out:?}");
+            assert!(out.iter().all(|l| !l.is_empty()));
+        }
+        // a body with no text at all yields nothing: the caller shows
+        // the generic "see the release page" line instead
+        assert!(release_highlights("", false).is_empty());
+        assert!(release_highlights("   \n", true).is_empty());
+        // links are never executed, markup is never interpreted: the
+        // text comes back verbatim (minus the bullet marker)
+        let tricky =
+            "- See [the page](https://example.invalid) **now** <script>alert(1)</script>\n";
+        assert_eq!(
+            release_highlights(tricky, false),
+            vec!["See [the page](https://example.invalid) **now** <script>alert(1)</script>"]
+        );
+    }
+
+    #[test]
+    fn highlights_cap_count_and_line_length() {
+        // more than five bullets: only the first five survive
+        let many = (1..=9)
+            .map(|i| format!("- Bullet number {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let out = release_highlights(&many, false);
+        assert_eq!(out.len(), MAX_HIGHLIGHTS);
+        assert_eq!(out[0], "Bullet number 1");
+        assert_eq!(out[4], "Bullet number 5");
+        // an oversized line is truncated on a char boundary, with an ellipsis
+        let long = format!("- {}", "🎯".repeat(300));
+        let out = release_highlights(&long, true);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].chars().count(), MAX_HIGHLIGHT_CHARS);
+        assert!(out[0].ends_with('…'));
+        // an oversized body still yields at most five capped lines
+        let huge = format!("{}\n{}", "x".repeat(10_000), many);
+        let out = release_highlights(&truncate_notes(&huge), false);
+        assert!(out.len() <= MAX_HIGHLIGHTS);
+        assert!(out.iter().all(|l| l.chars().count() <= MAX_HIGHLIGHT_CHARS));
+    }
+
+    #[test]
+    fn deb_and_rpm_asset_accessors_prefer_the_x86_64_build() {
+        let rel = CheckedRelease {
+            version: "1.1.1".into(),
+            tag: "v1.1.1".into(),
+            release_url: String::new(),
+            manifest: Release {
+                version: "1.1.1".into(),
+                url: String::new(),
+                sha256: String::new(),
+                sig: String::new(),
+            },
+            sums_text: String::new(),
+            sums_signature_verified: false,
+            assets: vec![
+                ("EzooDownload-1.1.1-i386.deb".into(), "u1".into()),
+                ("EzooDownload-1.1.1-amd64.deb".into(), "u2".into()),
+                ("EzooDownload-1.1.1.aarch64.rpm".into(), "u3".into()),
+                ("EzooDownload-1.1.1.x86_64.rpm".into(), "u4".into()),
+                ("EzooDownload-1.1.1-x86_64.AppImage".into(), "u5".into()),
+            ],
+            notes: String::new(),
+        };
+        assert_eq!(
+            rel.deb_asset(),
+            Some(("EzooDownload-1.1.1-amd64.deb".into(), "u2".into()))
+        );
+        assert_eq!(
+            rel.rpm_asset(),
+            Some(("EzooDownload-1.1.1.x86_64.rpm".into(), "u4".into()))
+        );
+        assert_eq!(
+            rel.appimage_asset(),
+            Some(("EzooDownload-1.1.1-x86_64.AppImage".into(), "u5".into()))
+        );
+        // no matching asset: None, never a wrong-kind asset
+        let bare = CheckedRelease {
+            assets: vec![("EzooDownload-Setup.exe".into(), "u".into())],
+            ..rel.clone()
+        };
+        assert_eq!(bare.deb_asset(), None);
+        assert_eq!(bare.rpm_asset(), None);
+        assert_eq!(bare.appimage_asset(), None);
     }
 }

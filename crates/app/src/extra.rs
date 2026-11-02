@@ -167,11 +167,11 @@ fn save_category(ui: &Ui) {
 
 pub(crate) fn delete_category(ui: &Ui, name: &str) {
     let mut s = ui.ctx.mgr.settings();
-    let Some(c) = s.categories.iter().find(|c| c.name == name) else {
+    if !s.categories.iter().any(|c| c.name == name) {
         return;
-    };
-    if c.builtin || name == "General" {
-        message(&t("This category comes with Ezoo Download and can't be deleted (you can change its file types in Properties)."));
+    }
+    if name == "General" {
+        message(&t("The General category can't be deleted."));
         return;
     }
     if !ask(&tf("Delete the category “{}”?\nIts files stay where they are and move to their file type's category.", &[&name])) {

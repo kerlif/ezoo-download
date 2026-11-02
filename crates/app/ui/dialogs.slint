@@ -3399,10 +3399,13 @@ export component PlaylistDialog inherits ThemedWindow {
     in-out property <string> folder;
     in-out property <int> parallel: 2;
     in-out property <bool> numbered: true;
+    in-out property <bool> reverse-number: false;
+    in-out property <bool> skip-downloaded: true;
     in-out property <bool> start-now: true;
     in property <string> checked-text;
     in property <string> message;
     callback fetch();
+    callback renumber();
     callback toggle(int);
     callback check-all(bool);
     callback browse();
@@ -3609,6 +3612,21 @@ export component PlaylistDialog inherits ThemedWindow {
                         root.browse();
                     }
                 }
+            }
+        }
+        HRow {
+            spacing: 10px;
+            CheckBox {
+                text: @tr("Number from the oldest video");
+                checked <=> root.reverse-number;
+                enabled: root.numbered;
+                toggled => {
+                    root.renumber();
+                }
+            }
+            CheckBox {
+                text: @tr("Skip videos already downloaded");
+                checked <=> root.skip-downloaded;
             }
         }
         HRow {
@@ -3831,6 +3849,11 @@ export component AboutDialog inherits ThemedWindow {
     title: @tr("About Ezoo Download");
     preferred-width: 420px;
     in property <string> version;
+    // the running copy: "AppImage" / ".deb" / ".rpm" / "Flatpak" /
+    // "Windows setup" / "portable copy" (hotfix H2: About names the copy)
+    in property <string> package;
+    // the running executable's full path
+    in property <string> path;
     callback close-window();
     VerticalLayout {
         padding: 22px;
@@ -3851,9 +3874,16 @@ export component AboutDialog inherits ThemedWindow {
             color: Theme.text;
         }
         Text {
-            text: @tr("Version {}", root.version);
+            text: @tr("Version {}", root.version) + " (" + root.package + ")";
             horizontal-alignment: center;
             color: Theme.muted;
+        }
+        if root.path != "": Text {
+            text: root.path;
+            horizontal-alignment: center;
+            font-size: 12px * Theme.font-scale;
+            color: Theme.muted;
+            wrap: word-wrap;
         }
         Text {
             text: @tr("Coded by Ahmed Ezzat");
@@ -3962,6 +3992,118 @@ export component WhatsNewDialog inherits ThemedWindow {
                 text: @tr("OK");
                 clicked => {
                     root.close-window();
+                }
+            }
+        }
+    }
+}
+
+// A newer version is available: what changed, then «Update now» /
+// «Later» (hotfix H2). Modelled on WhatsNewDialog, which stays untouched:
+// that one describes the version already installed, this one the version
+// on offer. Highlights are display-only release-notes text; the link
+// opens the full release notes in the browser.
+export component UpdateNoticeDialog inherits ThemedWindow {
+    in property <bool> front;
+    always-on-top: root.front;
+    title: @tr("Update available");
+    preferred-width: 560px;
+    preferred-height: 480px;
+    min-width: 440px;
+    min-height: 360px;
+    in property <string> heading;
+    in property <[string]> items;
+    in property <bool> rtl;
+    in property <string> link;
+    callback close-window();
+    callback update-now();
+    callback later();
+    callback open-link();
+    property <TextHorizontalAlignment> side: root.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+    VerticalLayout {
+        padding: 18px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: root.rtl ? end : start;
+            if !root.rtl: Image {
+                source: @image-url("icon.png");
+                width: 40px;
+                height: 40px;
+            }
+            Text {
+                text: root.heading;
+                font-size: 15px * Theme.font-scale;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-alignment: root.side;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+            if root.rtl: Image {
+                source: @image-url("icon.png");
+                width: 40px;
+                height: 40px;
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.line;
+            border-radius: 4px;
+            ScrollView {
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    alignment: start;
+                    for line in root.items: GridLayout {
+                        // the dot on the side where the reading starts
+                        spacing: 8px;
+                        Text {
+                            col: root.rtl ? 1 : 0;
+                            row: 0;
+                            text: "•";
+                            color: Theme.accent;
+                            font-weight: 700;
+                        }
+                        Text {
+                            col: root.rtl ? 0 : 1;
+                            row: 0;
+                            text: line;
+                            color: Theme.text;
+                            wrap: word-wrap;
+                            horizontal-alignment: root.side;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+            }
+        }
+        HRow {
+            alignment: start;
+            Button {
+                text: @tr("See the full release notes");
+                clicked => {
+                    root.open-link();
+                }
+            }
+        }
+        HRow {
+            alignment: end;
+            spacing: 8px;
+            Button {
+                text: @tr("Later");
+                clicked => {
+                    root.later();
+                }
+            }
+            Button {
+                text: @tr("Update now");
+                primary: true;
+                clicked => {
+                    root.update-now();
                 }
             }
         }

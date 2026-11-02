@@ -1447,6 +1447,15 @@ fn ensure_about() -> Option<AboutDialog> {
 fn about() {
     if let Some(d) = ensure_about() {
         d.set_version(env!("CARGO_PKG_VERSION").into());
+        // hotfix H2: name the running copy and where it lives, so the
+        // version on screen can never be mistaken for another install
+        d.set_package(update::package_short_label().into());
+        d.set_path(
+            std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+                .into(),
+        );
         open_window!(d);
     }
 }

@@ -227,8 +227,8 @@ const AR: &[(&str, &str)] = &[
     ("Give the category a name", "اكتب اسماً للتصنيف"),
     ("A category with this name already exists", "يوجد تصنيف بهذا الاسم بالفعل"),
     (
-        "This category comes with Ezoo Download and can't be deleted (you can change its file types in Properties).",
-        "هذا التصنيف أساسي في Ezoo Download ولا يمكن حذفه (يمكنك تغيير أنواع ملفاته من الخصائص).",
+        "The General category can't be deleted.",
+        "لا يمكن حذف التصنيف General.",
     ),
     (
         "Delete the category “{}”?\nIts files stay where they are and move to their file type's category.",
