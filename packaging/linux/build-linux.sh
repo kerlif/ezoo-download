@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Ezoo Download — Linux build (deb + AppImage + rpm)
 # Usage:  ./packaging/linux/build-linux.sh [deb|appimage|rpm|all]
-# Result: dist/EzooDownload_1.1.0_amd64.deb
-#         dist/EzooDownload-1.1.0-x86_64.AppImage
-#         dist/ezoo-download-1.1.0-1.x86_64.rpm
+# Result: dist/EzooDownload_<version>_amd64.deb
+#         dist/EzooDownload-<version>-x86_64.AppImage
+#         dist/ezoo-download-<version>-1.x86_64.rpm
+# (the version is read from Cargo.toml at build time)
 #
 # Environment:
 #   SKIP_CARGO_BUILD=1  reuse target/release/EzooDownload, do not rebuild
@@ -16,6 +17,10 @@
 # build is downloaded at packaging time, checksum-checked, and staged
 # into the package only — it never enters the source tree.
 set -euo pipefail
+# Packaging must not depend on the caller's umask: directories the script
+# creates (DEBIAN, the staged tree) need the standard 0755, or dpkg-deb
+# refuses the control directory and the .rpm would carry 0770 dirs.
+umask 022
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -57,7 +62,7 @@ cp -r "$ROOT/extension" "$STAGE/root/usr/share/ezoo-download/extension-firefox"
 mv "$STAGE/root/usr/share/ezoo-download/extension-firefox/manifest.firefox.json" \
    "$STAGE/root/usr/share/ezoo-download/extension-firefox/manifest.json"
 rm -rf "$STAGE/root/usr/share/ezoo-download/extension-firefox/test"
-cp "$HERE/ezoo-download.desktop" "$STAGE/root/usr/share/applications/"
+cp "$HERE/io.github.kerlif.EzooDownload.desktop" "$STAGE/root/usr/share/applications/"
 cp -r "$HERE/hicolor" "$STAGE/root/usr/share/icons/hicolor" 2>/dev/null || {
     mkdir -p "$STAGE/root/usr/share/icons"; cp -r "$HERE/hicolor" "$STAGE/root/usr/share/icons/hicolor"; }
 cp "$ROOT/README.md" "$STAGE/root/usr/share/doc/ezoo-download/"
@@ -67,7 +72,15 @@ for ofl in OFL-Carlito.txt OFL-NotoSansArabic.txt OFL-LiberationSerif.txt; do
     cp "$ROOT/crates/app/ui/fonts/$ofl" "$STAGE/root/usr/share/doc/ezoo-download/" 2>/dev/null || true
 done
 mkdir -p "$STAGE/root/usr/share/metainfo"
-cp "$HERE/io.github.ahmedezo686.ezoo-download.metainfo.xml" "$STAGE/root/usr/share/metainfo/"
+cp "$HERE/io.github.kerlif.EzooDownload.metainfo.xml" "$STAGE/root/usr/share/metainfo/"
+# Files copied out of the source tree keep the tree's modes, and a tree
+# checked out under a restrictive umask (0640/0660) would ship files
+# other users cannot read — normalise the whole staged tree to
+# world-readable (directories and already-executable files keep +x)
+# and strip setuid/setgid bits inherited from setgid parent
+# directories (the workspace directories carry setgid; dpkg-deb
+# refuses a control directory with mode 2755).
+chmod -R a+rX,a-s "$STAGE/root"
 
 # The bundled ffmpeg, for the .deb/.rpm layout: /usr/lib/ezoo-download.
 # The AppImage stages its own copy next to the program (see build_appimage).
@@ -80,14 +93,32 @@ stage_ffmpeg_libdir() {
     cp "$STAGE/ffmpeg-bin/ffmpeg-LICENSE.txt" "$dest/usr/share/doc/ezoo-download/ffmpeg-LICENSE.txt"
 }
 
+# The bundled UI fonts, for the .deb/.rpm layout: /usr/share/fonts.
+# They are the same OFL-1.1 files the program embeds (Carlito, Noto Sans
+# Arabic, Liberation Serif), installed so fontconfig sees at least one
+# font even on a system with no fonts at all — without them, fontique
+# 0.11.1 panics in SystemFonts::new (see docs/OPEN-QUESTIONS.md Q5).
+# The AppImage does not get them: fontconfig on the host cannot see
+# inside an AppImage, and a host that runs AppImages has its own fonts.
+stage_fonts() {
+    local dest="$1"
+    mkdir -p "$dest/usr/share/fonts/truetype/ezoo-download"
+    cp "$ROOT/crates/app/ui/fonts/"*.ttf "$dest/usr/share/fonts/truetype/ezoo-download/"
+}
+
 # ------------------------------------------------------------------------ deb
 build_deb() {
     echo "==> Building .deb…"
     local debdir="$STAGE/deb"
     cp -r "$STAGE/root" "$debdir"
     stage_ffmpeg_libdir "$debdir"
+    stage_fonts "$debdir"
+    # files staged after the shared tree (the fonts) carry the source
+    # tree's modes too — normalise again before packaging
+    chmod -R a+rX,a-s "$debdir"
     mkdir -p "$debdir/DEBIAN"
-    sed "s/^Installed-Size: 1/Installed-Size: $(du -sk --exclude=DEBIAN "$debdir" | cut -f1)/" \
+    sed -e "s/^Version: .*/Version: $VERSION/" \
+        -e "s/^Installed-Size: 1/Installed-Size: $(du -sk --exclude=DEBIAN "$debdir" | cut -f1)/" \
         "$HERE/debian/control" > "$debdir/DEBIAN/control"
     install -m 755 "$HERE/debian/postinst" "$debdir/DEBIAN/postinst"
     mkdir -p "$DIST"
@@ -102,6 +133,10 @@ build_rpm() {
     local rpmdir="$STAGE/rpm" root="$STAGE/rpm-root"
     cp -r "$STAGE/root" "$root"
     stage_ffmpeg_libdir "$root"
+    stage_fonts "$root"
+    # files staged after the shared tree (the fonts) carry the source
+    # tree's modes too — normalise again before packaging
+    chmod -R a+rX,a-s "$root"
     mkdir -p "$rpmdir"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
     (cd "$root" && tar -czf "$rpmdir/SOURCES/root.tar.gz" .)
     sed "s/^Version: .*/Version: $VERSION/" "$HERE/rpm/ezoo-download.spec" > "$rpmdir/SPECS/ezoo-download.spec"
@@ -124,7 +159,7 @@ build_appimage() {
         cp "$STAGE/ffmpeg-bin/ffmpeg-version.txt" "$appdir/usr/share/doc/ezoo-download/ffmpeg-version.txt"
         cp "$STAGE/ffmpeg-bin/ffmpeg-LICENSE.txt" "$appdir/usr/share/doc/ezoo-download/ffmpeg-LICENSE.txt"
     fi
-    cp "$HERE/ezoo-download.desktop" "$appdir/"
+    cp "$HERE/io.github.kerlif.EzooDownload.desktop" "$appdir/"
     cp "$HERE/hicolor/512x512/apps/ezoo-download.png" "$appdir/ezoo-download.png"
     cp "$HERE/hicolor/scalable/apps/ezoo-download.svg" "$appdir/ezoo-download.svg"
     ln -sf ezoo-download.svg "$appdir/.DirIcon"
@@ -136,6 +171,11 @@ export PATH="$HERE/usr/bin:$PATH"
 exec "$HERE/usr/bin/EzooDownload" "$@"
 EOF
     chmod +x "$appdir/AppRun"
+    # the desktop file and icons copied below carry the source tree's
+    # modes — normalise the whole AppDir before linuxdeploy/appimagetool
+    # (appimagetool refuses an AppDir whose desktop file or icon is not
+    # world-readable)
+    chmod -R a+rX,a-s "$appdir"
     mkdir -p "$DIST"
 
     # linuxdeploy bundles the shared libraries the binary needs
@@ -147,7 +187,7 @@ EOF
     if "$ldep" --appimage-extract-and-run \
         --appdir "$appdir" \
         --executable "$appdir/usr/bin/EzooDownload" \
-        --desktop-file "$appdir/ezoo-download.desktop" \
+        --desktop-file "$appdir/io.github.kerlif.EzooDownload.desktop" \
         --icon-file "$appdir/ezoo-download.png" \
         >"$STAGE/linuxdeploy.log" 2>&1; then
         :

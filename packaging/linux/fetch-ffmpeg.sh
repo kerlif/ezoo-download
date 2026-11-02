@@ -40,13 +40,28 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "==> Downloading the pinned static ffmpeg build…"
-curl -sSfL -o "$WORK/ffmpeg-release-amd64-static.tar.xz" "$URL"
+# Resume in a loop, not with curl's --retry: the sandbox proxy cuts
+# this ~40 MB transfer short at ~36 MB (curl error 18) on most
+# attempts, and curl's internal retry restarts each attempt from the
+# beginning, so it never finishes; a fresh curl process with -C -
+# resumes from the partial file and completes it in seconds (verified
+# 2026-11-01). A resumed file that still fails the MD5 check below is
+# rejected as before — resume never weakens the pin.
+tries=0
+until curl -sSfL -C - -o "$WORK/ffmpeg-release-amd64-static.tar.xz" "$URL"; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 4 ]; then
+        echo "fetch-ffmpeg.sh: download failed after $tries attempts" >&2
+        exit 1
+    fi
+    echo "    download interrupted, resuming (attempt $((tries + 1)) of 4)…" >&2
+done
 echo "$EXPECTED_MD5  $WORK/ffmpeg-release-amd64-static.tar.xz" | md5sum -c - \
     || { echo "fetch-ffmpeg.sh: MD5 mismatch — the published build changed; refresh the pin deliberately, do not ship an unchecked binary" >&2; exit 1; }
 echo "    MD5 OK. SHA-256 of the tarball (for the record):"
 sha256sum "$WORK/ffmpeg-release-amd64-static.tar.xz" | sed 's/^/    /'
 
-tar -xJf "$WORK/ffmpeg-release-amd64-static.tar.xz" -C "$WORK"
+tar -xJf "$WORK/ffmpeg-release-amd64-static.tar.xz" -C "$WORK" --no-same-owner
 TOP="$(echo "$WORK"/ffmpeg-*-amd64-static)"
 [ -d "$TOP" ] || { echo "fetch-ffmpeg.sh: unexpected tarball layout (no ffmpeg-*-amd64-static dir)" >&2; exit 1; }
 [ -x "$TOP/ffmpeg" ] || { echo "fetch-ffmpeg.sh: no ffmpeg binary in the tarball" >&2; exit 1; }

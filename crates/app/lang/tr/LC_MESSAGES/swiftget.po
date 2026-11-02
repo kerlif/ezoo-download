@@ -49,6 +49,12 @@ msgstr "Bir oynatma listesinin videolarının hepsini ya da bir kısmını indir
 msgid "Download a .torrent file or a magnet link."
 msgstr "Bir .torrent dosyası ya da magnet bağlantısı indirin."
 
+msgid "Move to queue"
+msgstr "Kuyruğa taşı"
+
+msgid "Delete from queue"
+msgstr "Kuyruktan çıkar"
+
 msgid "{} downloads selected"
 msgstr "{} indirme seçildi"
 
@@ -81,12 +87,6 @@ msgstr "İndirme adresini yenile…"
 
 msgid "Move / Rename…"
 msgstr "Taşı / Yeniden adlandır…"
-
-msgid "Move to queue"
-msgstr "Kuyruğa taşı"
-
-msgid "Delete from queue"
-msgstr "Kuyruktan çıkar"
 
 msgid "Copy address"
 msgstr "Adresi kopyala"
@@ -604,6 +604,9 @@ msgstr "<< Ayrıntıları gizle"
 msgid "Show details >>"
 msgstr "Ayrıntıları göster >>"
 
+msgid "Next to the clock"
+msgstr "Saatin yanına"
+
 msgid "Pause"
 msgstr "Duraklat"
 
@@ -627,9 +630,6 @@ msgstr "No."
 
 msgid "Info"
 msgstr "Bilgi"
-
-msgid "Hide next to the clock"
-msgstr "Saatin yanına gizle"
 
 msgid "Download complete"
 msgstr "İndirme tamamlandı"
@@ -747,6 +747,12 @@ msgstr "Bittiyse göster, bitmediyse sürdür"
 
 msgid "Remember my choice (Options > Downloads)"
 msgstr "Seçimimi hatırla (Seçenekler > İndirmeler)"
+
+msgid "Delete the downloaded files from the disk too (be careful)"
+msgstr "İndirilen dosyaları diskten de sil (dikkat)"
+
+msgid "Don't show this question again"
+msgstr "Bu soruyu bir daha gösterme"
 
 msgid "All downloads are finished."
 msgstr "Tüm indirmeler bitti."
@@ -934,6 +940,12 @@ msgstr "Tüm işaretleri kaldır"
 msgid "Link text"
 msgstr "Bağlantı metni"
 
+msgid "Preview"
+msgstr "Önizleme"
+
+msgid "Copy link"
+msgstr "Bağlantıyı kopyala"
+
 msgid "No links on this page."
 msgstr "Bu sayfada bağlantı yok."
 
@@ -1051,6 +1063,9 @@ msgstr "Panoyu indirme bağlantıları için izle"
 msgid "Automatically start downloading links placed in the clipboard"
 msgstr "Panoya konan bağlantıları otomatik indirmeye başla"
 
+msgid "Draw the windows with the graphics card (uses more memory; after a restart)"
+msgstr "Pencereleri ekran kartıyla çiz (daha çok bellek; yeniden başlatınca)"
+
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Başlangıçta \"Günün ipucu\"nu göster"
 
@@ -1144,6 +1159,15 @@ msgstr "Tarayıcıdan gelen indirmeler için \"Dosya bilgileri\" penceresini gö
 msgid "Start downloading immediately while showing \"Download File Info\""
 msgstr "\"Dosya bilgileri\" gösterilirken hemen indirmeye başla"
 
+msgid "Ask before removing downloads from the list"
+msgstr "İndirmeleri listeden kaldırmadan önce sor"
+
+msgid "Quality of MP3 files"
+msgstr "MP3 dosyalarının kalitesi"
+
+msgid "Download the subtitles of videos too, in these languages:"
+msgstr "Videoların altyazılarını da bu dillerde indir:"
+
 msgid "Show the download progress window"
 msgstr "İndirme ilerleme penceresini göster"
 
@@ -1218,6 +1242,9 @@ msgstr "İstisnalar: kendi bağlantı sayısı olan sunucular"
 
 msgid "Server"
 msgstr "Sunucu"
+
+msgid "Max downloads"
+msgstr "Max downloads"
 
 msgid "example.com"
 msgstr "example.com"

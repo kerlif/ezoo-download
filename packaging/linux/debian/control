@@ -7,7 +7,7 @@ Depends: libc6 (>= 2.34), libssl3 (>= 3.0.0), libfontconfig1, libfreetype6, libx
 Recommends: xdg-desktop-portal, libayatana-appindicator3-1
 Installed-Size: 1
 Maintainer: Ahmed Ezzat <ezoo@ezoo-tech.com>
-Homepage: https://github.com/AhmedEzo686/ezoo-download
+Homepage: https://github.com/kerlif/ezoo-download
 Description: Download manager with multi-connection segmented downloads
  Ezoo Download is a desktop download manager written in Rust (Slint UI).
  It splits files over up to 32 simultaneous connections, resumes

@@ -773,6 +773,8 @@ export component DuplicateDialog inherits ThemedWindow {
             text: @tr("This address is already in the download list:");
         }
         Text {
+            // a long name is cut ("…"), it never makes the window wider
+            min-width: 0px;
             horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
             text: root.file-name + "  (" + root.existing-status + ")";
             font-weight: 600;
@@ -839,6 +841,10 @@ export component ConfirmDialog inherits ThemedWindow {
     in property <bool> front;
     in property <string> heading;
     in property <string> text;
+    // removing downloads: "delete the files too" and "don't ask again"
+    in property <bool> removing;
+    in-out property <bool> delete-files;
+    in-out property <bool> dont-ask;
     callback answered(bool);
     forward-focus: keys;
     keys := FocusScope {
@@ -859,6 +865,17 @@ export component ConfirmDialog inherits ThemedWindow {
             Label {
                 text: root.text;
                 wrap: word-wrap;
+            }
+            if root.removing: VerticalLayout {
+                spacing: 6px;
+                CheckBox {
+                    text: @tr("Delete the downloaded files from the disk too (be careful)");
+                    checked <=> root.delete-files;
+                }
+                CheckBox {
+                    text: @tr("Don't show this question again");
+                    checked <=> root.dont-ask;
+                }
             }
             HRow {
                 alignment: end;
@@ -1425,6 +1442,10 @@ export component GrabberDialog inherits ThemedWindow {
     callback browse();
     callback download();
     callback close-window();
+    // one row's buttons (the row index, as in `toggle`): open the link
+    // in the browser, or copy its address to the clipboard
+    callback preview(int);
+    callback copy-link(int);
 
     VerticalLayout {
         padding: 12px;
@@ -1516,6 +1537,8 @@ export component GrabberDialog inherits ThemedWindow {
                     }
                 }
                 Text {
+                    // a long name is cut ("…"), it never makes the window wider
+                    min-width: 0px;
                     horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
                     text: root.progress-text;
                     font-size: 11px * Theme.font-scale;
@@ -1526,6 +1549,14 @@ export component GrabberDialog inherits ThemedWindow {
         }
         HRow {
             spacing: 8px;
+            // the capture icon (Phase 5): this window is the app's
+            // capture surface, same mark as the extension overlay
+            Image {
+                source: @image-url("capture-icon.png");
+                width: 24px;
+                height: 24px;
+                vertical-alignment: center;
+            }
             Label {
                 text: @tr("Show");
             }
@@ -1586,7 +1617,12 @@ export component GrabberDialog inherits ThemedWindow {
                             width: 170px;
                         }
                         HeaderCell {
-                            text: @tr("Address");
+                            text: @tr("Size");
+                            width: 110px;
+                            align: right;
+                        }
+                        HeaderCell {
+                            text: "";
                             horizontal-stretch: 1;
                         }
                     }
@@ -1594,7 +1630,7 @@ export component GrabberDialog inherits ThemedWindow {
                 ListView {
                     vertical-stretch: 1;
                     for l[i] in root.links: Rectangle {
-                        height: 22px;
+                        height: 30px;
                         background: la.has-hover ? Theme.hover : transparent;
                         la := TouchArea {
                             clicked => {
@@ -1648,11 +1684,26 @@ export component GrabberDialog inherits ThemedWindow {
                                 width: 166px;
                                 color: Theme.muted;
                             }
+                            // the size, probed with a HEAD request after the
+                            // crawl ("—" while unknown); the address itself
+                            // is never shown, per the Phase 5 row pattern
                             Cell {
-                                text: l.url;
-                                horizontal-stretch: 1;
-                                color: Theme.accent;
-                                font-size: 11px * Theme.font-scale;
+                                text: l.size;
+                                width: 106px;
+                                color: Theme.muted;
+                                horizontal-alignment: right;
+                            }
+                            Button {
+                                text: @tr("Preview");
+                                clicked => {
+                                    root.preview(i);
+                                }
+                            }
+                            Button {
+                                text: @tr("Copy link");
+                                clicked => {
+                                    root.copy-link(i);
+                                }
                             }
                         }
                     }
@@ -1836,6 +1887,8 @@ export component RefreshDialog inherits ThemedWindow {
         padding: 16px;
         spacing: 10px;
         Text {
+            // a long name is cut ("…"), it never makes the window wider
+            min-width: 0px;
             horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
             text: root.file-name;
             font-weight: 700;
@@ -1849,6 +1902,8 @@ export component RefreshDialog inherits ThemedWindow {
         if root.page != "": HRow {
             spacing: 8px;
             Text {
+                // a long name is cut ("…"), it never makes the window wider
+                min-width: 0px;
                 horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
                 text: root.page;
                 color: Theme.muted;
@@ -1954,6 +2009,7 @@ export component SettingsDialog inherits ThemedWindow {
     callback preview-look();
     in-out property <bool> start-with-windows;
     in-out property <bool> close-to-tray;
+    in-out property <bool> gpu-drawing;
     in-out property <bool> clipboard;
     in-out property <bool> auto-clipboard;
     in-out property <int> double-click;
@@ -1979,6 +2035,11 @@ export component SettingsDialog inherits ThemedWindow {
     in-out property <bool> show-start-dialog;
     in-out property <bool> start-while-info;
     in-out property <bool> complete-dialog;
+    in-out property <bool> ask-remove: true;
+    // 0 128k, 1 192k, 2 256k, 3 320k
+    in-out property <int> mp3-index: 1;
+    in-out property <bool> subtitles;
+    in-out property <string> subtitle-langs;
     in-out property <int> progress-mode;
     in-out property <int> duplicate-action;
     in-out property <bool> set-file-date;
@@ -1995,6 +2056,8 @@ export component SettingsDialog inherits ThemedWindow {
     in-out property <int> server-current: -1;
     in-out property <string> server-host;
     in-out property <int> server-conns: 2;
+    // per-site limit of simultaneous downloads (0 = no limit, Q30)
+    in-out property <int> server-max-dl: 0;
     in-out property <bool> quota-on;
     in-out property <int> quota-mb;
     in-out property <int> quota-hours;
@@ -2231,6 +2294,10 @@ export component SettingsDialog inherits ThemedWindow {
                         text: @tr("Automatically start downloading links placed in the clipboard");
                         checked <=> root.auto-clipboard;
                         enabled: root.clipboard;
+                    }
+                    CheckBox {
+                        text: @tr("Draw the windows with the graphics card (uses more memory; after a restart)");
+                        checked <=> root.gpu-drawing;
                     }
                     CheckBox {
                         text: @tr("Show \"Tip of the day\" at startup");
@@ -2481,6 +2548,40 @@ export component SettingsDialog inherits ThemedWindow {
                         text: @tr("Show the \"Download complete\" window");
                         checked <=> root.complete-dialog;
                     }
+                    CheckBox {
+                        text: @tr("Ask before removing downloads from the list");
+                        checked <=> root.ask-remove;
+                    }
+                    HRow {
+                        spacing: 8px;
+                        Label {
+                            text: @tr("Quality of MP3 files");
+                        }
+                        ComboBox {
+                            width: 160px;
+                            model: ["128 kbps", "192 kbps", "256 kbps", "320 kbps"];
+                            current-index <=> root.mp3-index;
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HRow {
+                        spacing: 8px;
+                        CheckBox {
+                            text: @tr("Download the subtitles of videos too, in these languages:");
+                            checked <=> root.subtitles;
+                        }
+                        LineEdit {
+                            width: 120px;
+                            enabled: root.subtitles;
+                            text <=> root.subtitle-langs;
+                            placeholder-text: "ar en";
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                    }
                     HRow {
                         spacing: 8px;
                         Label {
@@ -2628,6 +2729,8 @@ export component SettingsDialog inherits ThemedWindow {
                         head-a: @tr("Server");
                         head-b: @tr("Connections");
                         width-b: 110px;
+                        head-c: @tr("Max downloads");
+                        width-c: 110px;
                     }
                     HRow {
                         spacing: 6px;
@@ -2641,6 +2744,12 @@ export component SettingsDialog inherits ThemedWindow {
                             minimum: 1;
                             maximum: 32;
                             value <=> root.server-conns;
+                        }
+                        SpinBox {
+                            width: 90px;
+                            minimum: 0;
+                            maximum: 32;
+                            value <=> root.server-max-dl;
                         }
                         Button {
                             text: @tr("Add");
@@ -3082,6 +3191,8 @@ export component TorrentDialog inherits ThemedWindow {
             VerticalLayout {
                 alignment: center;
                 Text {
+                    // a long name is cut ("…"), it never makes the window wider
+                    min-width: 0px;
                     horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
                     text: root.name;
                     font-size: 14px * Theme.font-scale;
@@ -3090,6 +3201,8 @@ export component TorrentDialog inherits ThemedWindow {
                     overflow: elide;
                 }
                 Text {
+                    // a long name is cut ("…"), it never makes the window wider
+                    min-width: 0px;
                     horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
                     text: root.info;
                     font-size: 11px * Theme.font-scale;
@@ -3241,6 +3354,8 @@ export component TorrentDialog inherits ThemedWindow {
                 checked <=> root.start-now;
             }
             Text {
+                // a long name is cut ("…"), it never makes the window wider
+                min-width: 0px;
                 text: root.message != "" ? root.message : root.checked-text;
                 color: root.message != "" ? Theme.err : Theme.muted;
                 vertical-alignment: center;
@@ -3320,6 +3435,8 @@ export component PlaylistDialog inherits ThemedWindow {
             }
         }
         Text {
+            // a long name is cut ("…"), it never makes the window wider
+            min-width: 0px;
             horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
             text: root.status;
             font-size: 11px * Theme.font-scale;
@@ -3327,6 +3444,8 @@ export component PlaylistDialog inherits ThemedWindow {
             overflow: elide;
         }
         if root.playlist-title != "": Text {
+            // a long name is cut ("…"), it never makes the window wider
+            min-width: 0px;
             horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
             text: root.playlist-title;
             font-size: 14px * Theme.font-scale;
@@ -3455,7 +3574,7 @@ export component PlaylistDialog inherits ThemedWindow {
                 spacing: 8px;
                 ComboBox {
                     width: 240px;
-                    model: [@tr("Best quality (MP4)"), @tr("2160p 4K"), @tr("1440p 2K"), @tr("1080p Full HD"), @tr("720p HD"), @tr("480p SD"), @tr("360p SD"), @tr("Audio only (M4A)"), @tr("Audio MP3")];
+                    model: [@tr("Best quality (MP4)"), @tr("2160p 4K"), @tr("1440p 2K"), @tr("1080p Full HD"), @tr("720p HD"), @tr("480p SD"), @tr("360p SD"), "240p", "144p", @tr("Audio only (M4A)"), @tr("Audio MP3")];
                     current-index <=> root.quality;
                 }
                 Label {
@@ -3670,6 +3789,8 @@ export component BrowserDialog inherits ThemedWindow {
         HRow {
             spacing: 8px;
             Text {
+                // a long name is cut ("…"), it never makes the window wider
+                min-width: 0px;
                 horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
                 text: root.folder;
                 font-size: 11px * Theme.font-scale;

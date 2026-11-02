@@ -25,6 +25,9 @@ pub struct Progress {
     pub waiting: AtomicBool,
     /// woken when data flows again, so every waiting part retries at once
     pub back_online: tokio::sync::Notify,
+    /// connections the user wants now (0 = as many as the download began
+    /// with): changed while it runs, it gets more / fewer at once
+    pub want_connections: AtomicU32,
 }
 
 impl Progress {
@@ -38,10 +41,10 @@ impl Progress {
 
 /// The connection broke while receiving (stall, early close).
 #[derive(Debug)]
-pub struct NetDrop(pub &'static str);
+pub struct NetDrop(pub String);
 impl std::fmt::Display for NetDrop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0)
+        f.write_str(&self.0)
     }
 }
 impl std::error::Error for NetDrop {}
@@ -149,6 +152,92 @@ pub fn reconnect_delay(n: u32) -> Duration {
     })
 }
 
+/// A failure of the server or the transfer (busy server, "HTTP 503", a
+/// connection that broke off early) that may well go away by itself: the
+/// download tries again later on its own. Not: a link that expired or a
+/// file that was removed (401/403/404/410), a login, a full disk.
+pub fn is_passing_error(e: &anyhow::Error) -> bool {
+    if is_network_error(e) {
+        return true;
+    }
+    if let Some(s) = http_status_of(e) {
+        return s == 408 || s == 425 || s == 429 || (500..600).contains(&s);
+    }
+    let text = format!("{e:#}").to_ascii_lowercase();
+    let lasting = [
+        "expired",
+        "removed",
+        "login",
+        "age check",
+        "not enough",
+        "no room",
+        "disk",
+        "space",
+        "access is denied",
+        "permission",
+        "bitlocker",
+        "not found",
+        "did not accept the byte range",
+        "web page",
+        "missing",
+        "cannot",
+        "can't",
+        "invalid",
+    ];
+    if lasting.iter().any(|w| text.contains(w)) {
+        return false;
+    }
+    [
+        "closed early",
+        "ended before",
+        "timed out",
+        "reset",
+        "broken pipe",
+        "unexpected eof",
+        "connection",
+    ]
+    .iter()
+    .any(|w| text.contains(w))
+}
+
+/// The server stopped taking the link (401 / 403 / 410, an expired link):
+/// a new link is fetched the way the first one was (the address the
+/// download came from, or the video's page), checked, and the download goes
+/// on with it from where it was.
+pub fn is_link_gone(e: &anyhow::Error) -> bool {
+    if matches!(http_status_of(e), Some(401 | 403 | 410)) {
+        return true;
+    }
+    let text = format!("{e:#}").to_ascii_lowercase();
+    text.contains("link has expired") || text.contains("not the same file")
+}
+
+/// How long to wait before the next try to get a working link: 3 s, 10 s,
+/// 30 s, 1 min, 2 min, 5 min.
+pub fn relink_delay(n: u32) -> Duration {
+    Duration::from_secs(match n {
+        0 | 1 => 3,
+        2 => 10,
+        3 => 30,
+        4 => 60,
+        5 => 120,
+        _ => 300,
+    })
+}
+
+/// How long to wait before the next try after a passing failure:
+/// 15 s, 30 s, 1 min, 2 min, 5 min, then every 10 minutes.
+pub fn retry_delay(n: u32) -> Duration {
+    Duration::from_secs(match n {
+        0 | 1 => 15,
+        2 => 30,
+        3 => 60,
+        4 => 120,
+        5 => 300,
+        _ => 600,
+    })
+}
+
 /// Counts an open connection for as long as it lives.
 pub struct ConnGuard(Arc<Progress>);
 impl ConnGuard {
@@ -211,6 +300,10 @@ impl ProxyConfig {
     }
 }
 
+/// How long a server may take to answer a request (or to send the next
+/// piece of data) before the request is given up and made again.
+pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub fn build_client() -> anyhow::Result<Client> {
     build_client_with(&ProxyConfig {
         mode: 1,
@@ -242,6 +335,11 @@ fn base_builder(proxy: &ProxyConfig) -> anyhow::Result<reqwest::ClientBuilder> {
         .http1_only()
         .tcp_nodelay(true)
         .connect_timeout(Duration::from_secs(20))
+        // a server that takes the connection and then says nothing (no
+        // answer, or the data stops): the request ends instead of waiting
+        // for ever, and the download tries again by itself. Per read, so a
+        // big file is not cut off: each chunk gets the full wait.
+        .read_timeout(ANSWER_TIMEOUT)
         .pool_max_idle_per_host(64);
     match proxy.mode {
         // 1 = system settings: reqwest reads them by itself
@@ -356,6 +454,7 @@ fn fallbacks(h: &RequestHeaders) -> Vec<(bool, RequestHeaders)> {
 struct AnswerHeaders {
     content_type: Option<String>,
     last_modified: Option<chrono::DateTime<chrono::Utc>>,
+    etag: Option<String>,
     disposition: Option<String>,
     accepts_ranges: bool,
 }
@@ -369,6 +468,7 @@ impl AnswerHeaders {
         AnswerHeaders {
             content_type: self.content_type.or(other.content_type),
             last_modified: self.last_modified.or(other.last_modified),
+            etag: self.etag.or(other.etag),
             disposition: self.disposition.or(other.disposition),
             accepts_ranges: self.accepts_ranges || other.accepts_ranges,
         }
@@ -386,6 +486,10 @@ impl AnswerHeaders {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| chrono::DateTime::parse_from_rfc2822(s.trim()).ok())
                 .map(|d| d.with_timezone(&chrono::Utc)),
+            etag: h
+                .get(reqwest::header::ETAG)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.trim().to_string()),
             disposition: h
                 .get(CONTENT_DISPOSITION)
                 .and_then(|v| v.to_str().ok())
@@ -461,6 +565,7 @@ fn finish_probe(
         content_type,
         kind,
         last_modified: info.last_modified,
+        etag: info.etag,
     }
 }
 
@@ -648,5 +753,29 @@ mod refused_tests {
         );
         let used = p.headers_used.expect("it worked only without the cookie");
         assert!(used.cookies.is_none());
+    }
+}
+
+#[cfg(test)]
+mod passing_tests {
+    use super::*;
+    #[test]
+    fn which_failures_pass() {
+        assert!(is_passing_error(&anyhow::Error::new(HttpStatus(503))));
+        assert!(is_passing_error(&anyhow::Error::new(HttpStatus(429))));
+        assert!(!is_passing_error(&anyhow::Error::new(HttpStatus(404))));
+        assert!(!is_passing_error(&anyhow::Error::new(HttpStatus(403))));
+        assert!(is_passing_error(&anyhow::anyhow!(
+            "download ended before all parts were received"
+        )));
+        assert!(!is_passing_error(&anyhow::anyhow!(
+            "not enough room on the disk"
+        )));
+        assert!(!is_passing_error(
+            &anyhow::Error::new(HttpStatus(410))
+                .context("the link has expired or the file was removed")
+        ));
+        assert_eq!(retry_delay(1).as_secs(), 15);
+        assert_eq!(retry_delay(20).as_secs(), 600);
     }
 }

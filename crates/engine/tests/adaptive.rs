@@ -12,9 +12,9 @@ use swiftget_engine::http_download::{self, HttpJob};
 use swiftget_engine::limiter::SpeedLimiter;
 use swiftget_engine::segments;
 use swiftget_engine::RequestHeaders;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+
+mod testserver;
 
 fn test_data(len: usize) -> Arc<Vec<u8>> {
     Arc::new((0..len).map(|i| (i * 31 % 251) as u8).collect())
@@ -65,8 +65,6 @@ struct ServerCfg {
     stall_used: AtomicBool,
     /// connections asking from below this start get this delay per chunk
     slow_below: Option<(u64, Duration)>,
-    peak_concurrent: AtomicU32,
-    concurrent: AtomicU32,
     requests: AtomicU32,
 }
 
@@ -83,121 +81,73 @@ impl ServerCfg {
             stall_after: 0,
             stall_used: AtomicBool::new(false),
             slow_below: None,
-            peak_concurrent: AtomicU32::new(0),
-            concurrent: AtomicU32::new(0),
             requests: AtomicU32::new(0),
         }
     }
 }
 
-async fn serve(cfg: Arc<ServerCfg>) -> (u16, Arc<ServerCfg>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let cfg2 = cfg.clone();
-    tokio::spawn(async move {
-        loop {
-            let Ok((sock, _)) = listener.accept().await else {
-                return;
+async fn serve(cfg: Arc<ServerCfg>) -> (u16, Arc<Mutex<testserver::Stats>>) {
+    testserver::spawn({
+        let cfg = cfg.clone();
+        move |req: &testserver::Request| {
+            let req_no = cfg.requests.fetch_add(1, Ordering::Relaxed);
+            // rate-limit injection
+            if req_no < cfg.fail_429_first.load(Ordering::Relaxed) {
+                return testserver::Action::Respond(
+                    testserver::Response::new(429, Vec::new())
+                        .header("Retry-After", &cfg.retry_after_secs.to_string()),
+                );
+            }
+            let range = req
+                .range()
+                .map(|(a, b)| (a, b.unwrap_or(cfg.data.len() - 1).min(cfg.data.len() - 1)));
+            let (a, b) = match (cfg.support_range, range) {
+                (true, Some((a, b))) => (a, b),
+                _ => (0, cfg.data.len() - 1),
             };
-            let cfg = cfg.clone();
-            tokio::spawn(async move {
-                let cur = cfg.concurrent.fetch_add(1, Ordering::Relaxed) + 1;
-                cfg.peak_concurrent.fetch_max(cur, Ordering::Relaxed);
-                let _guard = ConcurrentGuard(cfg.clone());
-                let (r, mut w) = sock.into_split();
-                let mut r = BufReader::new(r);
-                let mut range: Option<(usize, usize)> = None;
-                loop {
-                    let mut line = String::new();
-                    if r.read_line(&mut line).await.unwrap_or(0) == 0 || line.trim().is_empty() {
-                        break;
-                    }
-                    let l = line.to_ascii_lowercase();
-                    if let Some(v) = l.strip_prefix("range: bytes=") {
-                        if let Some((a, b)) = v.trim().split_once('-') {
-                            let a: usize = a.parse().unwrap_or(0);
-                            let b: usize = if b.is_empty() {
-                                cfg.data.len() - 1
-                            } else {
-                                b.parse().unwrap_or(cfg.data.len() - 1)
-                            };
-                            range = Some((a, b.min(cfg.data.len() - 1)));
-                        }
-                    }
+            let body = &cfg.data[a..=b];
+            // stall injection: first connection from the stall start
+            let stalling =
+                cfg.stall_start == Some(a as u64) && !cfg.stall_used.swap(true, Ordering::Relaxed);
+            let send_len = if stalling {
+                cfg.stall_after.min(body.len())
+            } else if req_no < cfg.drop_first.load(Ordering::Relaxed) {
+                body.len() / 2
+            } else {
+                body.len()
+            };
+            let slow_delay = cfg
+                .slow_below
+                .filter(|(below, _)| (a as u64) < *below)
+                .map(|(_, d)| d);
+            let mut resp = if cfg.support_range && range.is_some() {
+                testserver::StreamResponse::new(206, body[..send_len].to_vec()).header(
+                    "Content-Range",
+                    &format!("bytes {a}-{b}/{}", cfg.data.len()),
+                )
+            } else {
+                testserver::StreamResponse::new(200, body[..send_len].to_vec())
+            };
+            resp = resp.content_length(b - a + 1);
+            let per_conn_bps = cfg.per_conn_bps;
+            resp = resp.chunk_delay_fn(move |_, chunk_len| {
+                let mut delay = Duration::ZERO;
+                if let Some(bps) = per_conn_bps {
+                    delay += Duration::from_secs_f64(chunk_len as f64 / bps as f64);
                 }
-                let req_no = cfg.requests.fetch_add(1, Ordering::Relaxed);
-                // rate-limit injection
-                if req_no < cfg.fail_429_first.load(Ordering::Relaxed) {
-                    let head = format!(
-                        "HTTP/1.1 429 Too Many Requests\r\nRetry-After: {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                        cfg.retry_after_secs
-                    );
-                    let _ = w.write_all(head.as_bytes()).await;
-                    return;
+                if let Some(d) = slow_delay {
+                    delay += d;
                 }
-                let (a, b) = match (cfg.support_range, range) {
-                    (true, Some((a, b))) => (a, b),
-                    _ => (0, cfg.data.len() - 1),
-                };
-                let head = if cfg.support_range && range.is_some() {
-                    format!(
-                        "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {a}-{b}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        cfg.data.len(),
-                        b - a + 1
-                    )
-                } else {
-                    format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        cfg.data.len()
-                    )
-                };
-                if w.write_all(head.as_bytes()).await.is_err() {
-                    return;
-                }
-                let body = &cfg.data[a..=b];
-                // stall injection: first connection from the stall start
-                let stalling = cfg.stall_start == Some(a as u64)
-                    && !cfg.stall_used.swap(true, Ordering::Relaxed);
-                let send_len = if stalling {
-                    cfg.stall_after.min(body.len())
-                } else if req_no < cfg.drop_first.load(Ordering::Relaxed) {
-                    body.len() / 2
-                } else {
-                    body.len()
-                };
-                let slow_delay = cfg
-                    .slow_below
-                    .filter(|(below, _)| (a as u64) < *below)
-                    .map(|(_, d)| d);
-                for chunk in body[..send_len].chunks(8192) {
-                    if w.write_all(chunk).await.is_err() {
-                        return;
-                    }
-                    if let Some(bps) = cfg.per_conn_bps {
-                        let secs = chunk.len() as f64 / bps as f64;
-                        tokio::time::sleep(Duration::from_secs_f64(secs)).await;
-                    }
-                    if let Some(d) = slow_delay {
-                        tokio::time::sleep(d).await;
-                    }
-                }
-                if stalling {
-                    // stop sending, hold the socket: the client must
-                    // rescue this segment from another connection
-                    tokio::time::sleep(Duration::from_secs(120)).await;
-                }
-                // dropping the connection: the client retries from `pos`
+                delay
             });
+            if stalling {
+                // stop sending, hold the socket: the client must
+                // rescue this segment from another connection
+                resp = resp.hold_after(Duration::from_secs(120));
+            }
+            testserver::Action::Stream(resp)
         }
-    });
-    (port, cfg2)
-}
-
-struct ConcurrentGuard(Arc<ServerCfg>);
-impl Drop for ConcurrentGuard {
-    fn drop(&mut self) {
-        self.0.concurrent.fetch_sub(1, Ordering::Relaxed);
-    }
+    })
 }
 
 fn make_job(
@@ -451,12 +401,12 @@ async fn no_range_support_uses_one_connection() {
     // wait for the cancelled connection to close server-side, so the
     // peak-concurrency check below measures only live connections
     for _ in 0..100 {
-        if server.concurrent.load(Ordering::Relaxed) == 0 {
+        if server.lock().unwrap().current_connections == 0 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert_eq!(server.concurrent.load(Ordering::Relaxed), 0);
+    assert_eq!(server.lock().unwrap().current_connections, 0);
     let segs = Arc::new(Mutex::new(Vec::new()));
     http_download::run(
         shared,
@@ -470,7 +420,7 @@ async fn no_range_support_uses_one_connection() {
     let out = std::fs::read(&part).unwrap();
     assert_eq!(sha256_hex(&out), sha256_hex(&data));
     assert_eq!(
-        server.peak_concurrent.load(Ordering::Relaxed),
+        server.lock().unwrap().peak_connections,
         1,
         "without Range support exactly one connection may be used"
     );

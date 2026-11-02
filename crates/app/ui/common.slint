@@ -68,6 +68,8 @@ export struct PairRow {
 }
 
 // a file found by the site grabber / "download all links"
+// (the playlist and torrent dialogs reuse this row: they keep `url`;
+// the grabber shows the size instead of the address)
 export struct LinkRow {
     checked: bool,
     name: string,
@@ -75,6 +77,7 @@ export struct LinkRow {
     ext: string,
     text: string,
     url: string,
+    size: string,
 }
 
 export struct QueueRow {
@@ -894,8 +897,10 @@ export component ToolBtn inherits Rectangle {
     callback clicked();
     // 52 px: all 15 toolbar buttons plus the filter box fit a 960 px
     // wide window with nothing clipped (small buttons: 34 px as before)
-    width: root.small ? 34px : 52px;
-    height: root.small ? 34px : 56px;
+    // -- and the buttons still grow when the text gets bigger (Options >
+    // Appearance), like upstream
+    width: root.small ? 34px : max(52px, 52px * Theme.font-scale);
+    height: root.small ? 34px : max(56px, 30px + 26px * Theme.font-scale);
     // a name that is still too long never covers the next button
     clip: true;
     border-radius: 3px;
@@ -1100,6 +1105,8 @@ export component TreeItem inherits Rectangle {
             }
         }
         Text {
+            // a long name is cut ("…"), it never makes the window wider
+            min-width: 0px;
             horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
             text: root.text;
             vertical-alignment: center;
@@ -1217,6 +1224,8 @@ export component HeaderCell inherits Rectangle {
 }
 
 export component Cell inherits Text {
+    // cut with "…" in its column, never wider than the column
+    min-width: 0px;
     vertical-alignment: center;
     horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
     font-size: 12px * Theme.font-scale;
@@ -1258,6 +1267,8 @@ export component MenuEntry inherits Rectangle {
             }
         }
         Text {
+            // a long name is cut ("…"), it never makes the window wider
+            min-width: 0px;
             horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
             text: root.text;
             color: Theme.text;

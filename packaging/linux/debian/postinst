@@ -10,3 +10,9 @@ fi
 if command -v update-icon-cache >/dev/null 2>&1; then
     update-icon-cache -q /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
+# refresh the font cache so fontconfig sees the bundled fonts right away
+# (best effort: fc-cache lives in the fontconfig package, which the .deb
+# does not require; fontconfig also rebuilds its cache lazily)
+if command -v fc-cache >/dev/null 2>&1; then
+    fc-cache -f /usr/share/fonts >/dev/null 2>&1 || true
+fi

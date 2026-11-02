@@ -116,12 +116,6 @@ fn mark_seen(slot: &std::sync::Mutex<Option<String>>, version: &str) {
     }
 }
 
-/// Start the installer and close the program (downloads resume next time).
-#[cfg(windows)]
-fn apply(setup: PathBuf, sha256: String) {
-    apply_as(setup, sha256, false)
-}
-
 #[cfg(windows)]
 fn apply_as(setup: PathBuf, sha256: String, visible: bool) {
     match selfupdate::run_installer(&setup, &sha256, visible) {
@@ -156,6 +150,13 @@ pub fn spawn(ctx: &Ctx) {
             {
                 let _ = std::fs::remove_file(e.path());
             }
+        }
+    }
+    if let Ok(t) = std::fs::read_to_string(update_dir().join("tries.txt")) {
+        let v = t.split(' ').next().unwrap_or_default().to_string();
+        if !selfupdate::is_newer(&v, selfupdate::current()) {
+            // that version (or a newer one) is what runs now
+            let _ = std::fs::remove_file(update_dir().join("tries.txt"));
         }
     }
     #[cfg(windows)]
@@ -197,6 +198,27 @@ pub fn spawn(ctx: &Ctx) {
     });
 }
 
+/// How many times the setup of `version` was started already (it closes
+/// the program and should open the new version again; when the program
+/// opens as the old version again, that setup did not get through).
+/// Windows-only: the only caller is `windows_available`.
+#[cfg(windows)]
+fn tries_of(version: &str) -> u32 {
+    std::fs::read_to_string(update_dir().join("tries.txt"))
+        .ok()
+        .and_then(|t| {
+            let (v, n) = t.trim().split_once(' ')?;
+            (v == version).then(|| n.parse().ok()).flatten()
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(windows)]
+fn count_try(version: &str) {
+    let n = tries_of(version) + 1;
+    let _ = std::fs::create_dir_all(update_dir());
+    let _ = std::fs::write(update_dir().join("tries.txt"), format!("{version} {n}"));
+}
 /// One automatic check. Silent throughout: nothing here shows a dialog
 /// except the ask / notify flows of a verified update (see below).
 async fn round(mgr: &Arc<Manager>) -> RoundOutcome {
@@ -299,7 +321,22 @@ async fn windows_available(
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
         let sha = rel.manifest.sha256.clone();
-        let _ = slint::invoke_from_event_loop(move || apply(setup, sha));
+        // upstream 1.0.8: a setup started twice that still did not get
+        // through is not started a third time by itself; Help > Check
+        // for updates installs it in front of the user instead (its
+        // own window, check_now_windows, does not go through here)
+        let tries = tries_of(&rel.version);
+        if tries >= 2 {
+            crate::note(&format!(
+                "update {} did not install after {tries} tries; waiting for the user",
+                rel.version
+            ));
+            return RoundOutcome::Done;
+        }
+        count_try(&rel.version);
+        // visible: the setup runs with its own progress window
+        // (upstream 1.0.8: silent closing looked like a crash)
+        let _ = slint::invoke_from_event_loop(move || apply_as(setup, sha, true));
         RoundOutcome::Done
     }
 }

@@ -35,14 +35,99 @@ async function fetchWithTimeout(url, opts = {}, ms = 1500) {
   }
 }
 
+// ---------------------------------------------------------------- local token (Q29)
+// The app hands the add-in a per-install secret through /config; every
+// POST to the app proves it is ours by sending it back. A web page cannot
+// read /config (its answer is opaque to it), so the token is what keeps a
+// malicious page from driving the app. /ping and /config stay token-free:
+// liveness, and the bootstrap that fetches the token itself.
+let localToken = null;
+async function getLocalToken(port) {
+  if (localToken) return localToken;
+  const stored = await chrome.storage.local.get("localToken");
+  if (stored.localToken) {
+    localToken = stored.localToken;
+    return localToken;
+  }
+  // a failed /config, or an answer that is no JSON, must not throw: the
+  // POSTs below simply go without a token then
+  try {
+    const r = await fetchWithTimeout(apiUrl(port, "/config"), { headers: { "X-SwiftGet": "1" } }, 1000);
+    if (r.ok && typeof r.json === "function") {
+      const cfg = await r.json().catch(() => ({}));
+      if (cfg.localToken) {
+        localToken = cfg.localToken;
+        await chrome.storage.local.set({ localToken });
+      }
+    }
+  } catch {
+    /* the app is down: no token yet */
+  }
+  return localToken;
+}
+
+/** Every POST to the app goes through here: the token proves it is ours. */
+async function apiFetch(port, path, opts = {}, ms = 1500) {
+  const token = await getLocalToken(port);
+  const headers = Object.assign({ "X-SwiftGet": "1" }, opts.headers || {});
+  if (token) headers["X-SwiftGet-Token"] = token;
+  return fetchWithTimeout(apiUrl(port, path), Object.assign({}, opts, { headers }), ms);
+}
+
 // ---------------------------------------------------------------- self update
 // The add-in is loaded from the program's own folder. When the program
 // updates itself it brings newer add-in files along; the browser only reads
 // them after a reload, so the add-in reloads itself once per new version.
+//
+// The version alone is not enough (a new setup of the same version brings
+// changed files too): the files on the disk are compared with the files the
+// browser loaded, and when they differ the add-in reloads (once for them).
+const OWN_FILES = ["manifest.json", "background.js", "content.js", "yt-core.js", "popup.html", "popup.js", "options.html", "options.js"];
+
+async function filesStamp() {
+  let all = "";
+  for (const name of OWN_FILES) {
+    try {
+      const r = await fetch(chrome.runtime.getURL(name), { cache: "no-store" });
+      all += `${name}\n${await r.text()}\n`;
+    } catch {
+      all += `${name}\n-\n`;
+    }
+  }
+  const sum = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(all));
+  return [...new Uint8Array(sum)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// what the browser loaded: the files as they are when it (re)loads the add-in
+async function rememberLoadedFiles() {
+  try {
+    await chrome.storage.local.set({ loadedStamp: await filesStamp() });
+  } catch {
+    /* nothing to compare with: the version check still works */
+  }
+}
+chrome.runtime.onInstalled.addListener(rememberLoadedFiles);
+chrome.runtime.onStartup.addListener(rememberLoadedFiles);
+
+async function followOwnFiles() {
+  const { loadedStamp, reloadedForStamp } = await chrome.storage.local.get(["loadedStamp", "reloadedForStamp"]);
+  if (!loadedStamp) return false;
+  const now = await filesStamp();
+  if (now === loadedStamp || now === reloadedForStamp) return false;
+  await chrome.storage.local.set({ reloadedForStamp: now });
+  chrome.runtime.reload();
+  return true;
+}
+
 async function followAppVersion() {
   const last = (await chrome.storage.session.get("versionCheckAt")).versionCheckAt || 0;
   if (Date.now() - last < 60000) return;
   await chrome.storage.session.set({ versionCheckAt: Date.now() });
+  try {
+    if (await followOwnFiles()) return;
+  } catch {
+    /* fetch / crypto missing: the version check below */
+  }
   const { port } = await getOpts();
   try {
     const r = await fetchWithTimeout(apiUrl(port, "/ping"), { headers: { "X-SwiftGet": "1" } }, 800);
@@ -107,7 +192,7 @@ function isYoutube(url) {
   }
 }
 
-async function sendToApp({ url, audioUrl, referrer, fileName, headers, sourcePage, sourceKey }) {
+async function sendToApp({ url, audioUrl, referrer, fileName, headers, sourcePage, sourceKey, qualityKey }) {
   const { port } = await getOpts();
   const body = {
     url,
@@ -115,16 +200,18 @@ async function sendToApp({ url, audioUrl, referrer, fileName, headers, sourcePag
     headers: headers || null,
     sourcePage: sourcePage || null,
     sourceKey: sourceKey || null,
+    qualityKey: qualityKey || null,
     referrer: referrer || null,
     cookies: await cookieHeader(url),
     userAgent: navigator.userAgent,
     fileName: fileName || null,
   };
-  const r = await fetchWithTimeout(
-    apiUrl(port, "/add"),
+  const r = await apiFetch(
+    port,
+    "/add",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-SwiftGet": "1" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     },
     3000
@@ -253,9 +340,10 @@ async function sentRecently(url) {
 async function appSaysBrowser(urls) {
   const { port } = await getOpts();
   try {
-    const r = await fetchWithTimeout(
-      apiUrl(port, "/browser"),
-      { method: "POST", headers: { "Content-Type": "application/json", "X-SwiftGet": "1" }, body: JSON.stringify({ urls }) },
+    const r = await apiFetch(
+      port,
+      "/browser",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls }) },
       800
     );
     if (!r.ok || typeof r.json !== "function") return false;
@@ -283,6 +371,8 @@ async function shouldTake(item) {
   if (!url || !/^https?:/i.test(url)) return false; // blob:, data:, file: stay in the browser
   if (!isNewDownload(item)) return false;
   if (await takeBypass(url)) return false;
+  // already handed to the app by the click on its link: the browser's copy goes
+  if ((await justTaken(item.url)) || (await justTaken(url))) return true;
   if (opts.minSizeKB > 0 && item.totalBytes > 0 && item.totalBytes < opts.minSizeKB * 1024) return false;
   if (!(await appAlive())) return false; // app not running: let the browser handle it
   const cfg = await getConfig();
@@ -311,6 +401,32 @@ async function takeOver(item) {
     await addBypass(url);
     chrome.downloads.download({ url });
   }
+}
+
+/** A file link the page caught a click on: to the app, or back to the page. */
+async function takeLink(url, referrer) {
+  if (!/^https?:/i.test(url || "")) throw new Error("not a web address");
+  const opts = await getOpts();
+  if (!opts.enabled || !opts.intercept) throw new Error("sending is off");
+  if (!(await appAlive())) throw new Error("Ezoo Download is not running");
+  if (await appSaysBrowser([url])) throw new Error("the browser keeps it");
+  // the same link clicked twice in a row: once is enough
+  if (!(await sentRecently(url))) await sendToApp({ url, referrer });
+  // the browser may still start it (a second handler of the page): not again
+  await addBypassTaken(url);
+  return true;
+}
+
+// links just handed over from a click: if the browser starts them anyway, they are dropped
+const TAKEN_KEY = "takenLinks";
+async function addBypassTaken(url) {
+  const list = (await chrome.storage.session.get(TAKEN_KEY))[TAKEN_KEY] || [];
+  list.push({ url, at: Date.now() });
+  await chrome.storage.session.set({ [TAKEN_KEY]: list.slice(-50) });
+}
+async function justTaken(url) {
+  const list = (await chrome.storage.session.get(TAKEN_KEY))[TAKEN_KEY] || [];
+  return list.some((l) => l.url === url && Date.now() - l.at < 15000);
 }
 
 // Chrome, Edge, Brave, Opera: decided before the browser asks where to
@@ -383,7 +499,14 @@ async function itemsForTab(tabId) {
     } else if (res.resolving) {
       items.push({ label: "Getting video qualities…", sub: "This takes a few seconds", disabled: true });
     } else if (res.resolveError && !media.length) {
-      items.push({ label: "Can't get this video", sub: res.resolveError, disabled: true });
+      // the page itself is no video page the app knows: the streams the
+      // player opens show up here as soon as it plays
+      const unknown = /unsupported url|no video formats|unable to extract/i.test(res.resolveError);
+      items.push(
+        unknown
+          ? { label: "Play the video for a moment", sub: "Its qualities appear here as soon as it plays", disabled: true }
+          : { label: "Can't get this video", sub: res.resolveError, disabled: true }
+      );
     }
   }
   if (yt) {
@@ -392,7 +515,8 @@ async function itemsForTab(tabId) {
       items.push(...optionItems(yt.resolved, `https://www.youtube.com/watch?v=${yt.videoId}`));
     } else {
       // fallback: streams captured from the player itself
-      for (const o of buildOptions(yt.streams)) items.push({ label: o.label, sub: o.sub, yt: o });
+      for (const o of buildOptions(yt.streams, appConfig && appConfig.mp3Kbps))
+        items.push({ label: o.label, sub: o.sub, yt: { ...o, source: `https://www.youtube.com/watch?v=${yt.videoId}` } });
       if (!items.length) {
         if (yt.resolving) {
           items.push({ label: "Getting video qualities…", sub: "This takes a few seconds", disabled: true });
@@ -409,22 +533,72 @@ async function itemsForTab(tabId) {
     }
   }
   const resolvedFound = items.some((i) => i.yt);
+  let hlsAsked = false;
   for (const m of media) {
     // when the app already found the real qualities, raw streams are noise
     if (resolvedFound && /HLS|DASH|video/i.test(m.type)) continue;
     if (m.dash) {
       // its qualities are read by the app when it is clicked
-      items.push({ label: "Video stream (DASH) · choose a quality", sub: m.url, resolve: m.url, ext: "mp4" });
+      items.push({ label: "Video stream (DASH) · choose a quality", sub: "", resolve: m.url, ext: "mp4" });
       continue;
     }
+    if (m.type === "HLS stream") {
+      // a quality list of a stream whose qualities are listed already
+      if (m.child) continue;
+      if (m.master && !m.master.separateAudio) {
+        // every quality of the stream, read from its playlist
+        for (const v of m.master.variants) {
+          items.push({
+            label: `${hlsLabel(v)} · MP4 · stream`,
+            sub: "",
+            url: v.url,
+            ext: "ts",
+            quality: v.height ? `${v.height}p` : "",
+            qualityKey: hlsLabel(v),
+          });
+        }
+        continue;
+      }
+      if (m.master) {
+        // picture and sound come in separate lists: the app puts them together
+        items.push({
+          label: `${m.master.variants.map(hlsLabel).slice(0, 4).join(" / ")} · choose a quality`,
+          sub: "",
+          resolve: m.url,
+          ext: "mp4",
+        });
+        continue;
+      }
+      // saved as an MP4 file; the quality first when the address tells it
+      items.push({ label: `${qualityOf(m.url) || "Video"} · MP4 · stream`, sub: "", url: m.url, ext: "ts" });
+      if (!hlsAsked && !m.media) {
+        hlsAsked = true;
+        items.push({ label: "Other qualities of this stream…", sub: "", resolve: m.url, ext: "mp4" });
+      }
+      continue;
+    }
+    const q = qualityOf(m.url);
     items.push({
-      label: `${m.type}${m.size ? " · " + fmtSize(m.size) : ""}`,
-      sub: m.url,
+      label: `${q ? q + " · " : ""}${(m.ext || "").toUpperCase() || m.type}`,
+      sub: "",
       url: m.url,
       ext: m.ext,
+      size: m.size || 0,
     });
   }
   return items;
+}
+
+/** "720p" when a stream's address says which quality it is. */
+function qualityOf(url) {
+  let path = "";
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return "";
+  }
+  const m = /(?:^|[^0-9])(4320|2160|1440|1080|720|576|540|480|360|240|144)p?(?=[^0-9]|$)/i.exec(path);
+  return m ? `${m[1]}p` : "";
 }
 
 async function pushToTab(tabId) {
@@ -469,6 +643,88 @@ async function addMedia(tabId, item) {
   while (current.length > 15) current.shift();
   await chrome.storage.session.set({ [key]: current });
   pushToTab(tabId);
+  if (item.type === "HLS stream") readHls(tabId, item.url).catch(() => {});
+}
+
+/**
+ * An HLS stream: its playlist says which qualities it has (a "master" list
+ * of one list per quality). Read once, so the button shows "1080p", "720p"...
+ * instead of anonymous streams.
+ */
+function parseHlsMaster(text, base) {
+  if (!/#EXT-X-STREAM-INF/i.test(text)) return null;
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  const variants = [];
+  // separate sound lists: a quality list alone would be without sound
+  const separateAudio = lines.some((l) => /^#EXT-X-MEDIA:.*TYPE=AUDIO.*URI=/i.test(l));
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^#EXT-X-STREAM-INF:/i.test(lines[i])) continue;
+    let uri = "";
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j] && !lines[j].startsWith("#")) {
+        uri = lines[j];
+        break;
+      }
+    }
+    if (!uri) continue;
+    let url = "";
+    try {
+      url = new URL(uri, base).toString();
+    } catch {
+      continue;
+    }
+    const res = /RESOLUTION=(\d+)x(\d+)/i.exec(lines[i]);
+    const bw = /[^-]BANDWIDTH=(\d+)/i.exec("," + lines[i]);
+    variants.push({ url, height: res ? Number(res[2]) : 0, width: res ? Number(res[1]) : 0, bw: bw ? Number(bw[1]) : 0 });
+  }
+  if (!variants.length) return null;
+  // one entry per quality, the best first
+  variants.sort((a, b) => b.height - a.height || b.bw - a.bw);
+  const seen = new Set();
+  const unique = variants.filter((v) => {
+    const k = v.height ? `h${v.height}` : `b${v.bw}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return { variants: unique, separateAudio };
+}
+
+async function readHls(tabId, url) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  let text = "";
+  try {
+    const r = await fetch(url, { credentials: "include", signal: ctl.signal });
+    if (!r.ok) return;
+    text = (await r.text()).slice(0, 512 * 1024);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!/^\s*#EXTM3U/.test(text)) return;
+  const master = parseHlsMaster(text, url);
+  const key = `media_${tabId}`;
+  const current = (await chrome.storage.session.get(key))[key] || [];
+  const me = current.find((m) => m.url === url);
+  if (!me) return;
+  if (master) {
+    me.master = master;
+    // the quality lists the player opened by itself: shown under the master
+    const inside = new Set(master.variants.map((v) => v.url));
+    for (const m of current) if (m !== me && inside.has(m.url)) m.child = true;
+  } else {
+    me.media = true;
+    if (current.some((m) => m.master && m.master.variants.some((v) => v.url === url))) me.child = true;
+  }
+  await chrome.storage.session.set({ [key]: current });
+  pushToTab(tabId);
+}
+
+/** "1080p" (or the bit rate when the list does not say the size). */
+function hlsLabel(v) {
+  if (v.height) return `${v.height}p`;
+  if (v.bw) return `${Math.round(v.bw / 1000)} kbps`;
+  return "Video";
 }
 
 chrome.webRequest.onHeadersReceived.addListener(
@@ -573,9 +829,10 @@ async function downloadVideo(option, pageTitle, pageUrl) {
 async function sendPlaylist(url) {
   if (!/^https?:/i.test(url || "")) throw new Error("bad address");
   const { port } = await getOpts();
-  const r = await fetchWithTimeout(
-    apiUrl(port, "/playlist"),
-    { method: "POST", headers: { "Content-Type": "application/json", "X-SwiftGet": "1" }, body: JSON.stringify({ url }) },
+  const r = await apiFetch(
+    port,
+    "/playlist",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) },
     5000
   );
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -593,11 +850,12 @@ const resolving = new Map(); // tabId -> page being resolved
 
 async function askApp(page, referer) {
   const { port } = await getOpts();
-  const r = await fetchWithTimeout(
-    apiUrl(port, "/resolve"),
+  const r = await apiFetch(
+    port,
+    "/resolve",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-SwiftGet": "1" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: page, cookieList: await cookieList(referer || page), referer: referer || null }),
     },
     90000
@@ -698,20 +956,35 @@ async function resolveOneVideo(msg, tab) {
     if (found.length) return { items: found };
   }
   const items = [];
+  if (msg.feed && !msg.page) {
+    // Facebook feed and no link next to this video: the page's own streams,
+    // else how to get the video's own page
+    const found = tab ? (await itemsForTab(tab.id)).filter((i) => !i.disabled && !i.yt) : [];
+    if (found.length) return { items: found };
+    return { error: "Open the video first (click the time next to the name above the video), then press the button again." };
+  }
   if (msg.src && /^https?:/i.test(msg.src)) {
     items.push({ label: "Video file", sub: msg.src, url: msg.src, ext: (/\.(\w{2,4})(\?|$)/.exec(msg.src) || [])[1] || "mp4" });
   }
   const page = msg.page || (msg.src && !msg.frame ? "" : tab && tab.url);
+  let problem = "";
   if (page && /^https?:/i.test(page)) {
     try {
       const r = await askApp(page);
       if (r.resolved && r.resolved.options.length) items.unshift(...optionItems(r.resolved, page));
-      else if (!items.length) return { error: r.resolveError || "Can't get this video" };
+      else problem = r.resolveError || "Can't get this video";
     } catch (e) {
-      if (!items.length) return { error: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download is not running" };
+      if (!(await appAlive())) return { error: "Ezoo Download is not running" };
+      problem = String((e && e.message) || e);
     }
   }
-  return items.length ? { items } : { error: "Can't get this video" };
+  if (items.length) return { items };
+  // the page is nothing the app knows (a player of its own): the streams the
+  // player opened are this video
+  const found = tab ? (await itemsForTab(tab.id)).filter((i) => !i.disabled && !i.yt) : [];
+  if (found.length) return { items: found };
+  if (/unsupported url/i.test(problem)) return { error: "Play the video for a moment, then press the button again." };
+  return { error: problem || "Can't get this video" };
 }
 
 // ---------------------------------------------------------------- tab lifecycle
@@ -768,11 +1041,12 @@ async function sendAllLinks(tab, selection) {
   const res = await chrome.tabs.sendMessage(tab.id, { type: "swiftget-collect-links", selection }).catch(() => null);
   if (!res || !res.links || !res.links.length) return;
   const { port } = await getOpts();
-  await fetchWithTimeout(
-    apiUrl(port, "/links"),
+  await apiFetch(
+    port,
+    "/links",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-SwiftGet": "1" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         page: res.page || tab.url,
         links: res.links,
@@ -819,7 +1093,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // a video inside a frame (embedded player): that frame's page
       const referrer = sender.frameId && msg.referrer ? msg.referrer : sender.tab ? sender.tab.url : msg.referrer;
       if (item.yt) return reply(downloadVideo(item.yt, msg.title, referrer), sendResponse);
-      return reply(sendToApp({ url: item.url, referrer, fileName: msg.fileName }), sendResponse);
+      return reply(sendToApp({ url: item.url, referrer, fileName: msg.fileName, qualityKey: item.qualityKey || null }), sendResponse);
     }
     case "swiftget-get-media":
       itemsForTab(msg.tabId).then(sendResponse);
@@ -835,13 +1109,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       getOpts().then((o) => {
         if (!o.enabled) return;
         if (isYoutube(sender.tab.url)) resolveYoutube(sender.tab.id, sender.tab.url);
-        else resolvePage(sender.tab.id, msg.page || sender.tab.url, !!msg.frame);
+        // a Facebook feed: its address is no video (the video's own post
+        // link is looked up when its button is clicked)
+        else if (!msg.feed) resolvePage(sender.tab.id, msg.page || sender.tab.url, !!msg.frame);
       });
       return false;
     case "swiftget-resolve-video":
       // one of several videos on the page: its own file, or its own link
       resolveOneVideo(msg, sender.tab).then(sendResponse);
       return true;
+    case "swiftget-link-rules":
+      // what a click on a file link in the page should do (decided in the
+      // page at once, so the browser never starts its own download)
+      Promise.all([getOpts(), getConfig()]).then(([o, cfg]) => {
+        if (!o.enabled || !o.intercept || !cfg) return sendResponse(null);
+        sendResponse({
+          exts: cfg.captureExts || [],
+          skipSites: cfg.skipSites || [],
+          skipAddresses: cfg.skipAddresses || [],
+          skipKey: cfg.skipKey || "none",
+          forceKey: cfg.forceKey || "none",
+        });
+      });
+      return true;
+    case "swiftget-link":
+      // a file link clicked in a page: straight to the app
+      return reply(takeLink(msg.url, sender.tab ? sender.tab.url : ""), sendResponse);
     case "swiftget-magnet":
       // a torrent's magnet link clicked on a page
       return reply(

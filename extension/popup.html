@@ -17,6 +17,12 @@
   .media { background: #fff; border-radius: 8px; margin: 8px 0; padding: 10px 12px; display: flex; gap: 8px; align-items: center; }
   .media div { flex: 1; min-width: 0; }
   .media small { display: block; color: #6b7686; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .media .sz { font-weight: 700; }
+  .media .est { font-size: 10px; font-weight: 700; color: #57606e; background: #eef1f5; border-radius: 3px; padding: 0 4px; margin-left: 4px; }
+  .media .acts { display: flex; gap: 4px; align-items: center; flex: none; }
+  .media .mini { background: #eef1f5; color: #1d63d6; border: 1px solid #d5dbe4; padding: 5px 8px; font-size: 12.5px; font-weight: 600; }
+  .media .mini:hover { background: #e8f0fe; }
+  button:focus-visible { outline: 2px solid #1d63d6; outline-offset: 1px; }
   button { background: #1f6feb; color: #fff; border: 0; border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; }
   button:hover { background: #1a5fcc; }
   .empty { color: #6b7686; }
@@ -37,6 +43,9 @@
   .size output { min-width: 40px; text-align: right; color: #1f2733; font-variant-numeric: tabular-nums; }
   .size .reset { background: none; color: #1f6feb; padding: 0 2px; font-size: 12px; }
   .size .reset:hover { background: none; text-decoration: underline; }
+  .check { display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #e6eaf0; font-size: 13px; color: #6b7686; cursor: pointer; }
+  .check input { accent-color: #1f6feb; margin: 0; }
+  body.off .check { opacity: .45; pointer-events: none; }
   .media .all { background: #e8f0fe; color: #1f6feb; }
   .media .all:hover { background: #d6e4fd; }
   .open { margin-top: 8px; }
@@ -68,6 +77,7 @@
   <div class="size">
     <span>Button style</span>
     <select id="look" aria-label="Button style">
+      <option value="compact">Small (arrow + ✕)</option>
       <option value="blue">Blue</option>
       <option value="dark">Dark</option>
       <option value="light">Light</option>
@@ -75,6 +85,15 @@
       <option value="icon">Icon only</option>
     </select>
   </div>
+  <div class="size">
+    <span>Button see-through</span>
+    <input type="range" id="solid" min="20" max="100" step="5" value="90" aria-label="How solid the download button is">
+    <output id="solidText">90%</output>
+  </div>
+  <label class="check">
+    <input type="checkbox" id="fullscreen" />
+    <span>Show the video button in full screen too</span>
+  </label>
   <section>
     <h3>Media on this page</h3>
     <div id="media"><div class="empty">Nothing detected yet. Start playing the video.</div></div>

@@ -78,6 +78,17 @@ pub fn update_user_agent() -> String {
 pub const UPDATE_PUBLIC_KEY: &str =
     "a495ab88edacdf8d333ccef4e45cd8c4fc142fc3fb98792f16914098b9b640fc";
 
+/// Public half of the offline emergency signing key (Ed25519, 32 bytes,
+/// hex). Generated in Phase 9 (Q33); the private half is held offline
+/// outside the repository (see `docs/UPDATE-CHECKER.md` §5). A release
+/// signed with it is accepted exactly like one signed with the primary
+/// key, so a compromised or lost primary key does not strand installed
+/// copies: the emergency key signs the next release and the updater
+/// accepts it with no code change. It is never used by CI until the
+/// owner provisions it as a repository secret (see the Phase 9 report).
+pub const UPDATE_PUBLIC_KEY_EMERGENCY: &str =
+    "6081969eeccdcc04903fc280a095f0e721ccc18deef693b6cf6ba0735ce93e44";
+
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Release {
     pub version: String,
@@ -121,6 +132,44 @@ pub fn signature_ok(r: &Release, public_hex: &str) -> bool {
     UnparsedPublicKey::new(&ED25519, key)
         .verify(signed_message(&r.version, &r.sha256).as_bytes(), &sig)
         .is_ok()
+}
+
+/// The signature of `r` was made with any of the keys in `keys`
+/// (primary or offline emergency, Q33).
+pub fn signature_ok_any(r: &Release, keys: &[&str]) -> bool {
+    keys.iter().any(|k| signature_ok(r, k))
+}
+
+/// The SHA256SUMS file's signature verifies. The signature covers
+/// `signed_message(version, sha256(sums_text))` — the same construction
+/// as the release manifest — so the workflow can produce it with the
+/// existing `sign_update` example: `sign_update <version>
+/// <sha256-of-the-sums-file>`. Verified against the primary key or the
+/// offline emergency key.
+pub fn sums_signature_ok(version: &str, sums_text: &str, sig_hex: &str) -> bool {
+    sums_signature_ok_with(
+        version,
+        sums_text,
+        sig_hex,
+        &[UPDATE_PUBLIC_KEY, UPDATE_PUBLIC_KEY_EMERGENCY],
+    )
+}
+
+/// `sums_signature_ok`, verifying against `keys` instead of the built-in
+/// ones, so tests can sign fixtures with throwaway keys.
+pub fn sums_signature_ok_with(
+    version: &str,
+    sums_text: &str,
+    sig_hex: &str,
+    keys: &[&str],
+) -> bool {
+    let probe = Release {
+        version: version.to_string(),
+        url: String::new(),
+        sha256: sha256_hex(sums_text.as_bytes()),
+        sig: sig_hex.trim().to_string(),
+    };
+    signature_ok_any(&probe, keys)
 }
 
 impl Release {
@@ -482,6 +531,11 @@ pub struct CheckedRelease {
     pub manifest: Release,
     /// The release's SHA256SUMS text, for the artifact cross-check.
     pub sums_text: String,
+    /// Whether the release carried a `<sums>.sig` asset whose signature
+    /// verified (Q12/Q33, v1.1.1+). False for releases without the
+    /// asset (e.g. v1.1.0), where only the signed manifest gates the
+    /// offer and the sums file is cross-checked, not verified.
+    pub sums_signature_verified: bool,
     /// Every asset of the release: (file name, download URL).
     pub assets: Vec<(String, String)>,
 }
@@ -515,7 +569,10 @@ impl CheckedRelease {
 #[derive(Debug)]
 pub enum CheckOutcome {
     UpToDate,
-    Available(CheckedRelease),
+    // Boxed: CheckedRelease is ~224 bytes (manifest + sums text +
+    // assets); without the box clippy's large_enum_variant fires
+    // against the 17-byte SilentFail arm.
+    Available(Box<CheckedRelease>),
     SilentFail {
         rate_limited: bool,
         retry_after_secs: Option<u64>,
@@ -552,24 +609,36 @@ pub async fn check_latest(
     cache_path: &Path,
     current_version: &str,
 ) -> CheckOutcome {
-    check_latest_with_key(
+    check_latest_with_keys(
         client,
         api_url,
         cache_path,
         current_version,
-        UPDATE_PUBLIC_KEY,
+        &[UPDATE_PUBLIC_KEY, UPDATE_PUBLIC_KEY_EMERGENCY],
     )
     .await
 }
 
 /// `check_latest`, verifying against `public_key` instead of the built-in
-/// one, so tests can sign fixtures with throwaway keys.
+/// ones, so tests can sign fixtures with throwaway keys.
 pub async fn check_latest_with_key(
     client: &reqwest::Client,
     api_url: &str,
     cache_path: &Path,
     current_version: &str,
     public_key: &str,
+) -> CheckOutcome {
+    check_latest_with_keys(client, api_url, cache_path, current_version, &[public_key]).await
+}
+
+/// `check_latest`, verifying against any of `keys` (primary or offline
+/// emergency key, Q33).
+pub async fn check_latest_with_keys(
+    client: &reqwest::Client,
+    api_url: &str,
+    cache_path: &Path,
+    current_version: &str,
+    keys: &[&str],
 ) -> CheckOutcome {
     let mut cache = CheckerCache::load(cache_path);
     let mut headers: Vec<(reqwest::header::HeaderName, String)> = vec![
@@ -650,7 +719,7 @@ pub async fn check_latest_with_key(
         Ok(m) => m,
         Err(_) => return silent(),
     };
-    if !signature_ok(&manifest, public_key) {
+    if !signature_ok_any(&manifest, keys) {
         return silent();
     }
     if parse_semver(&manifest.version).is_none()
@@ -661,6 +730,7 @@ pub async fn check_latest_with_key(
     // the checksum file the artifact is cross-checked against: also part
     // of the same release, also required
     let mut sums_text = None;
+    let mut sums_name = "";
     for name in ["SHA256SUMS.txt", "SHA256SUMS-windows.txt"] {
         let Some(sums_url) = payload
             .assets
@@ -673,6 +743,7 @@ pub async fn check_latest_with_key(
         match fetch_text(client, &sums_url, &[]).await {
             Ok((sstatus, _, stext)) if sstatus.is_success() => {
                 sums_text = Some(stext);
+                sums_name = name;
                 break;
             }
             Ok((sstatus, _, _)) if sstatus == reqwest::StatusCode::NOT_FOUND => continue,
@@ -682,7 +753,30 @@ pub async fn check_latest_with_key(
     let Some(sums_text) = sums_text else {
         return silent();
     };
-    CheckOutcome::Available(CheckedRelease {
+    // The sums file itself is signed since v1.1.1 (Q12/Q33): when the
+    // release carries a `<name>.sig` asset, its signature must verify
+    // (primary or emergency key) or nothing is offered. A release
+    // without the asset (e.g. v1.1.0) keeps the old behaviour — the
+    // signed manifest gates the offer and the sums file is only
+    // cross-checked — so old releases still update.
+    let mut sums_signature_verified = false;
+    if let Some(sig_url) = payload
+        .assets
+        .iter()
+        .find(|a| a.name == format!("{sums_name}.sig"))
+        .map(|a| a.browser_download_url.clone())
+    {
+        let Ok((sig_status, _, sig_text)) = fetch_text(client, &sig_url, &[]).await else {
+            return silent();
+        };
+        if !sig_status.is_success()
+            || !sums_signature_ok(&manifest.version, &sums_text, sig_text.trim())
+        {
+            return silent();
+        }
+        sums_signature_verified = true;
+    }
+    CheckOutcome::Available(Box::new(CheckedRelease {
         version: manifest.version.clone(),
         tag: payload.tag_name.clone(),
         release_url: if payload.html_url.is_empty() {
@@ -692,12 +786,13 @@ pub async fn check_latest_with_key(
         },
         manifest,
         sums_text,
+        sums_signature_verified,
         assets: payload
             .assets
             .into_iter()
             .map(|a| (a.name, a.browser_download_url))
             .collect(),
-    })
+    }))
 }
 
 /// How long to wait after a failed check before trying again.
@@ -1155,8 +1250,12 @@ mod tests {
     }
 
     fn signed(version: &str, sha: &str) -> (String, String) {
+        signed_with(7, version, sha)
+    }
+
+    fn signed_with(seed_byte: u8, version: &str, sha: &str) -> (String, String) {
         use ring::signature::{Ed25519KeyPair, KeyPair};
-        let kp = Ed25519KeyPair::from_seed_unchecked(&[7u8; 32]).unwrap();
+        let kp = Ed25519KeyPair::from_seed_unchecked(&[seed_byte; 32]).unwrap();
         let public: String = kp
             .public_key()
             .as_ref()
@@ -1217,6 +1316,57 @@ mod tests {
         let text = format!("{{\"version\":\"1.0.5\",\"sha256\":\"{sha}\",\"sig\":\"{sig}\"}}");
         assert!(parse_signed(&text).is_err());
         assert_eq!(UPDATE_PUBLIC_KEY.len(), 64);
+    }
+
+    #[test]
+    fn sums_signature_and_emergency_key() {
+        // The sums signature covers signed_message(version,
+        // sha256(sums_text)); it verifies with any trusted key.
+        let sums = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  EzooDownload-Setup.exe\n";
+        let (pub_a, sig_a) = signed("1.1.1", &sha256_hex(sums.as_bytes()));
+        let (pub_b, _sig_b) = signed_with(9, "1.1.1", &sha256_hex(b"other"));
+        assert!(sums_signature_ok_with("1.1.1", sums, &sig_a, &[&pub_a]));
+        assert!(sums_signature_ok_with(
+            "1.1.1",
+            sums,
+            &sig_a,
+            &[&pub_b, &pub_a]
+        ));
+        // wrong key, wrong version, wrong sums, bad sig: all refused
+        assert!(!sums_signature_ok_with("1.1.1", sums, &sig_a, &[&pub_b]));
+        assert!(!sums_signature_ok_with("1.1.2", sums, &sig_a, &[&pub_a]));
+        assert!(!sums_signature_ok_with(
+            "1.1.1",
+            "tampered sums\n",
+            &sig_a,
+            &[&pub_a]
+        ));
+        assert!(!sums_signature_ok_with(
+            "1.1.1",
+            sums,
+            "00".repeat(64).as_str(),
+            &[&pub_a]
+        ));
+        assert!(!sums_signature_ok_with("1.1.1", sums, "", &[&pub_a]));
+        // signature_ok_any is the same OR over a Release
+        let release = Release {
+            version: "1.1.1".into(),
+            url: String::new(),
+            sha256: sha256_hex(sums.as_bytes()),
+            sig: sig_a.clone(),
+        };
+        assert!(signature_ok_any(&release, &[&pub_a, &pub_b]));
+        assert!(signature_ok_any(&release, &[&pub_b, &pub_a]));
+        assert!(!signature_ok_any(&release, &[&pub_b]));
+        assert!(!signature_ok_any(&release, &[]));
+        // the built-in emergency key is a well-formed, distinct key
+        assert_eq!(UPDATE_PUBLIC_KEY_EMERGENCY.len(), 64);
+        assert!(UPDATE_PUBLIC_KEY_EMERGENCY
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(UPDATE_PUBLIC_KEY_EMERGENCY, UPDATE_PUBLIC_KEY);
+        // and the built-in wrapper refuses a sig made by an unknown key
+        assert!(!sums_signature_ok("1.1.1", sums, &sig_a));
     }
 
     #[test]

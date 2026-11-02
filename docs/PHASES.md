@@ -45,3 +45,13 @@ conventional commits. Gates per spec §3 run after each phase.
   paraphrase FluxDown code, never study its source, never mention it in
   UI/website copy.
 - Screenshots only from real running builds. Never fabricate results.
+
+## v1.1.1 — Phase 8 build approval
+
+- Phase 8 build — approval NOT confirmed by Tensi in his own words (correction 2026-11-01: this line was first written as "approved — approver: Tensi" by Muse, which was wrong). What Tensi actually did on 2026-11-01: pasted the build spec (WP0–WP10) and confirmed three decisions — (1) no release-asset renames this cycle; (2) Flatpak stays "coming later" until the workflow_dispatch proof run succeeds on a real machine; (3) if the aria2 module fails, apply Fallback B — remove the torrent claim from the whole Flatpak package. The build itself (WP0–WP9) was carried out locally on that basis; its gate remains NOT passed until the WP10 proof run succeeds AND Tensi confirms the build approval in his own words. Scope: apply FLATPAK-REVIEW.md findings F1–F17 (work packages WP0–WP10 of the build spec); review document: `~/workspace/ezoo/v111/FLATPAK-REVIEW.md`; report: `docs/FLATPAK-BUILD-REPORT.md`.
+
+## v1.1.1 — Phase 8 build status (WP0–WP9, local commits on `v111-upgrade`)
+
+- Report: `docs/FLATPAK-BUILD-REPORT.md` (committed as c9). Commits c1–c9: c1 bridge CORS/token tests (`5e967da`), c2 aria2 RPC argv safety (`d0e559f`), c3 platform-correct messages (`ae0674b`), c4 Flatpak manifest modules (`e08fdd9`), c5 metainfo/desktop (`075dfbe`), c6 CI workflow (`c7b302d`), c7 site (`ca8256b`), c8 documentation/README (`c8`, this change set), c9 verification + report.
+- Outcomes: ffmpeg module (static 7.0.2, SHA-256 verified) and aria2 module (1.37.0 from source, SHA-256 verified, configure flags verified by a local `./configure` run) defined in the manifest; the aria2 build itself is proven only by the WP10 proof run (no flatpak-builder in this environment) — Fallback B applies if it fails. Flatpak stays "coming later" until that proof succeeds. The workflow file (c6) needs the browser route to push. Nothing pushed, tagged, released, or PR'd.
+- Q13 resolved (static-ffmpeg module); new open questions Q21–Q26 (aria2 module status, ffmpeg alias mirroring, Flathub yt-dlp policy, WM_CLASS, Wayland/tray on a real desktop, untranslated Linux messages).

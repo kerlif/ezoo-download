@@ -75,6 +75,65 @@ pub fn bundled(name: &str) -> Option<PathBuf> {
         .find(|p| p.exists())
 }
 
+/// Whether this copy runs inside a Flatpak sandbox (Flatpak sets
+/// `FLATPAK_ID` to the app ID; same check as
+/// `selfupdate::detect_package`).
+pub fn in_flatpak() -> bool {
+    std::env::var_os("FLATPAK_ID").is_some()
+}
+
+/// Message to show when `aria2c` cannot be found, or `None` when the
+/// tool is present and no message is needed. Pure: the caller passes
+/// the platform facts in, so every branch is unit-testable.
+/// - Windows: the app fetches aria2 itself (the existing wording).
+/// - Linux outside a Flatpak: the user installs it with the system
+///   package manager.
+/// - Flatpak: torrents are not available in this build when aria2c
+///   is absent (it is bundled only if the Flatpak module ships it).
+pub fn aria2_missing_message(
+    is_windows: bool,
+    is_flatpak: bool,
+    bundled: bool,
+) -> Option<&'static str> {
+    if bundled {
+        return None;
+    }
+    if is_windows {
+        return Some("aria2c.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again");
+    }
+    if is_flatpak {
+        return Some(
+            "Torrents are not available in this Flatpak build: aria2c is not bundled with it.",
+        );
+    }
+    Some("aria2c is missing. Install it with your system package manager (for example: sudo apt install aria2 on Debian/Ubuntu, or sudo dnf install aria2 on Fedora), then try again.")
+}
+
+/// Message to show when `ffmpeg` cannot be found, or `None` when the
+/// tool is present and no message is needed. Pure, same shape as
+/// `aria2_missing_message`.
+/// - Windows: the existing wording (the setup carries ffmpeg; the UI
+///   maps it to its translation — keep the text byte-identical).
+/// - Linux outside a Flatpak: reinstall the package (ffmpeg is bundled
+///   inside) or install the system ffmpeg.
+/// - Flatpak: the bundled ffmpeg is missing from this build.
+pub fn ffmpeg_missing_message(
+    is_windows: bool,
+    is_flatpak: bool,
+    bundled: bool,
+) -> Option<&'static str> {
+    if bundled {
+        return None;
+    }
+    if is_windows {
+        return Some("ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download and could not be downloaded again (no internet, or an antivirus removes it): install Ezoo Download again, or allow ffmpeg.exe in the antivirus");
+    }
+    if is_flatpak {
+        return Some("ffmpeg is missing from this Flatpak build, so video and audio cannot be merged. Reinstall the Flatpak from the release, then try again.");
+    }
+    Some("ffmpeg is missing. Reinstall the Linux package (ffmpeg is bundled inside the .deb, .rpm and AppImage), or install ffmpeg with your system package manager, then try again.")
+}
+
 /// Where new copies go: the install folder's "tools" when we may write
 /// there, else our data folder.
 fn writable_dir(name: &str) -> Option<PathBuf> {
@@ -281,6 +340,34 @@ fn ffmpeg_cleanup() {
     }
 }
 
+/// ffmpeg missing (deleted by mistake or by an antivirus): fetch our
+/// release's copy, but only when its SHA-256 is the one this build was
+/// made with (baked in by the release workflow). Never from anywhere else:
+/// the address comes from our own repository constant. On Linux the
+/// installer already carries ffmpeg, so nothing is fetched there.
+const FFMPEG_SHA256: Option<&str> = option_env!("EZOO_FFMPEG_SHA256");
+pub async fn restore_ffmpeg(client: &reqwest::Client) -> bool {
+    if ours_ffmpeg().is_some() || bundled("ffmpeg").is_some() {
+        return true;
+    }
+    let Some(hash) = FFMPEG_SHA256.filter(|h| h.len() == 64) else {
+        return false;
+    };
+    if !cfg!(windows) {
+        return false; // Linux ships ffmpeg inside the packages
+    }
+    let version = env!("CARGO_PKG_VERSION");
+    let repo = crate::selfupdate::REPO;
+    let url = format!("https://github.com/{repo}/releases/download/v{version}/ffmpeg.exe");
+    let latest = format!("https://github.com/{repo}/releases/latest/download/ffmpeg.exe");
+    let Some(dir) = writable_dir("ffmpeg") else {
+        return false;
+    };
+    let dest = dir.join(exe("ffmpeg"));
+    download(client, &url, &dest, hash).await.is_ok()
+        || download(client, &latest, &dest, hash).await.is_ok()
+}
+
 /// aria2c missing (an older install): get the known build.
 async fn aria2(client: &reqwest::Client) -> anyhow::Result<()> {
     if !cfg!(windows) || bundled("aria2c").is_some() {
@@ -352,6 +439,7 @@ fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
 /// missing). Never shows anything; errors just mean "try again later".
 pub async fn update_all(client: reqwest::Client, data_dir: PathBuf) {
     yt_dlp(&client, &data_dir).await;
+    let _ = restore_ffmpeg(&client).await;
     ffmpeg_cleanup();
     let _ = aria2(&client).await;
     // leftovers of earlier updates
@@ -377,6 +465,43 @@ pub fn spawn_updater(rt: &tokio::runtime::Handle, client: reqwest::Client, data_
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_messages_are_platform_specific() {
+        // bundled: no message on any platform — the tool is there
+        assert_eq!(aria2_missing_message(true, false, true), None);
+        assert_eq!(aria2_missing_message(false, false, true), None);
+        assert_eq!(aria2_missing_message(false, true, true), None);
+        assert_eq!(ffmpeg_missing_message(true, false, true), None);
+        assert_eq!(ffmpeg_missing_message(false, false, true), None);
+        assert_eq!(ffmpeg_missing_message(false, true, true), None);
+        // Windows keeps the fetch wording (aria2) and the exact old
+        // wording (ffmpeg — the UI maps it to its translation)
+        assert_eq!(
+            aria2_missing_message(true, false, false),
+            Some("aria2c.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again")
+        );
+        assert_eq!(
+            ffmpeg_missing_message(true, false, false),
+            Some("ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download and could not be downloaded again (no internet, or an antivirus removes it): install Ezoo Download again, or allow ffmpeg.exe in the antivirus")
+        );
+        // Linux outside a Flatpak: install with the package manager,
+        // never "the app gets it by itself"
+        let m = aria2_missing_message(false, false, false).unwrap();
+        assert!(m.contains("aria2c is missing"));
+        assert!(m.contains("package manager"));
+        assert!(!m.contains("gets it by itself"));
+        let m = ffmpeg_missing_message(false, false, false).unwrap();
+        assert!(m.contains("ffmpeg is missing"));
+        assert!(m.contains("system package manager"));
+        assert!(!m.contains("antivirus"));
+        // Flatpak: the tool is not available in this build
+        let m = aria2_missing_message(false, true, false).unwrap();
+        assert!(m.contains("not available in this Flatpak build"));
+        let m = ffmpeg_missing_message(false, true, false).unwrap();
+        assert!(m.contains("missing from this Flatpak build"));
+        assert!(!m.contains("antivirus"));
+    }
+
     #[test]
     fn replace_and_find() {
         let dir = std::env::temp_dir().join(format!("ezoo-tools-test-{}", std::process::id()));

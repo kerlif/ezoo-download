@@ -290,6 +290,8 @@
  "Type a start page and click \\\"Start exploring\\\".": "Escriba una página de inicio y haga clic en \\\"Empezar a explorar\\\".",
  "Use link texts as descriptions": "Usar el texto de los enlaces como descripción",
  "Download checked": "Descargar marcados",
+ "Preview": "Vista previa",
+ "Copy link": "Copiar enlace",
  "Tip of the day": "Consejo del día",
  "Did you know…": "¿Sabía que…",
  "Show tips at startup": "Mostrar consejos al iniciar",
@@ -477,5 +479,12 @@
  "Receiving data…": "Recibiendo datos…",
  "Waiting": "En espera",
  "Check for updates automatically": "Buscar actualizaciones automáticamente",
- "needs-review": "Stalled; Receiving data…; Waiting; Check for updates automatically"
+ "Ask before removing downloads from the list": "Preguntar antes de quitar descargas de la lista",
+ "Delete the downloaded files from the disk too (be careful)": "Borrar también los archivos descargados del disco (cuidado)",
+ "Don't show this question again": "No volver a mostrar esta pregunta",
+ "Download the subtitles of videos too, in these languages:": "Descargar también los subtítulos de los vídeos, en estos idiomas:",
+ "Quality of MP3 files": "Calidad de los archivos MP3",
+ "Next to the clock": "Junto al reloj",
+ "Draw the windows with the graphics card (uses more memory; after a restart)": "Dibujar las ventanas con la tarjeta gráfica (más memoria; tras reiniciar)",
+ "needs-review": "Stalled; Receiving data…; Waiting; Check for updates automatically; Ask before removing downloads from the list; Delete the downloaded files from the disk too (be careful); Don't show this question again; Download the subtitles of videos too, in these languages:; Quality of MP3 files; Next to the clock; Draw the windows with the graphics card (uses more memory; after a restart)"
 }

@@ -238,6 +238,17 @@ impl Scaler {
     pub fn target(&self) -> u32 {
         self.target
     }
+    pub fn cap(&self) -> u32 {
+        self.cap
+    }
+    /// Set the target directly (the user changed the connection count
+    /// while the download runs): growth probing pauses while the user
+    /// holds the count, and resumes cleanly when they let go.
+    pub fn set_target_external(&mut self, target: u32) {
+        self.set_target(target);
+        self.no_gain = 0;
+        self.stopped = false;
+    }
     pub fn best_target(&self) -> u32 {
         self.best_target
     }
@@ -395,6 +406,26 @@ impl SegmentMonitor {
     /// The segment is finished or abandoned: forget its speed history.
     pub fn finish(&mut self, idx: usize) {
         self.states.remove(&idx);
+    }
+
+    /// Current speed of one segment (bytes/second), for work-stealing: a
+    /// free connection takes half of the segment that will take longest
+    /// to finish, not the biggest one. `None` when the segment is too
+    /// young to judge (under half a second: no measurement exists yet).
+    /// A segment that received nothing for over a second reads as speed
+    /// 0 (stalled) and is split first. The recent window is used when it
+    /// covers a second or more, else the healthy baseline.
+    pub fn speed(&self, idx: usize, pos: u64, now: Instant) -> Option<f64> {
+        let state = self.states.get(&idx)?;
+        if now.duration_since(state.started_at) < Duration::from_millis(500) {
+            return None;
+        }
+        let elapsed = now.duration_since(state.window_started_at).as_secs_f64();
+        if elapsed >= 1.0 {
+            Some((pos.saturating_sub(state.window_pos)) as f64 / elapsed)
+        } else {
+            Some(state.baseline)
+        }
     }
 
     /// Bytes were written: remember the position. The baseline is only

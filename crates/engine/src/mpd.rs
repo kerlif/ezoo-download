@@ -55,6 +55,39 @@ impl Manifest {
         let audio = self.audios.iter().max_by_key(|t| key(t));
         (video, audio)
     }
+
+    /// The video track for a picked quality (Q7 steering, Phase 6): a
+    /// height like "720" or "720p" takes the track of that height; an
+    /// audio-only pick, an unknown height, or no pick takes the best
+    /// track, as before. The audio track is always the best one.
+    pub fn pick(&self, quality_key: Option<&str>) -> (Option<&Track>, Option<&Track>) {
+        let (_, audio) = self.best();
+        let video = match quality_key {
+            Some(key) => {
+                let h = key.trim();
+                let h = h
+                    .strip_suffix('p')
+                    .or_else(|| h.strip_suffix('P'))
+                    .unwrap_or(h);
+                let height: u32 = h.parse().unwrap_or(0);
+                if height > 0 {
+                    self.videos
+                        .iter()
+                        .filter(|t| t.height == height)
+                        .max_by_key(|t| t.bandwidth)
+                        .or_else(|| {
+                            self.videos
+                                .iter()
+                                .max_by_key(|t| (t.bandwidth, (t.width as u64) * (t.height as u64)))
+                        })
+                } else {
+                    self.best().0
+                }
+            }
+            None => self.best().0,
+        };
+        (video, audio)
+    }
 }
 
 // ------------------------------------------------------------------ XML
@@ -907,6 +940,8 @@ pub struct MpdJob {
     pub url: String,
     pub headers: RequestHeaders,
     pub user_agent: String,
+    /// picked quality (a height like "720"); None = the best track
+    pub quality_key: Option<String>,
     /// video output (written as one plain file, fMP4 when the manifest is)
     pub video_out: PathBuf,
     /// audio output when the manifest has an audio track
@@ -1118,7 +1153,7 @@ pub async fn run(
         .await
         .context("could not load the manifest")?;
     let manifest = parse(&job.url, &text)?;
-    let (video, audio) = manifest.best();
+    let (video, audio) = manifest.pick(job.quality_key.as_deref());
     let video = video.ok_or_else(|| anyhow!("the manifest has no video track"))?;
     // the caller decides (by giving an audio path) whether it can merge
     let audio = audio.filter(|_| job.audio_out.is_some());
@@ -1230,6 +1265,24 @@ mod tests {
         assert_eq!(v.segments[0].url, "https://cdn.example/v/0.m4s");
         assert_eq!(v.segments[2].url, "https://cdn.example/v/10.m4s");
         assert_eq!(v.segments[3].url, "https://cdn.example/v/15.m4s");
+    }
+
+    #[test]
+    fn pick_by_height() {
+        // Q7 steering (Phase 6): the picked height wins, anything else
+        // falls back to the best track, audio stays the best one.
+        let m = parse("https://cdn.example/stream.mpd", MPD).unwrap();
+        let (v, a) = m.pick(Some("360"));
+        assert_eq!(v.unwrap().id, "360p");
+        assert_eq!(a.unwrap().id, "a1");
+        let (v, _) = m.pick(Some("360p"));
+        assert_eq!(v.unwrap().id, "360p");
+        let (v, _) = m.pick(Some("720"));
+        assert_eq!(v.unwrap().id, "1080p");
+        let (v, _) = m.pick(Some("audio"));
+        assert_eq!(v.unwrap().id, "1080p");
+        let (v, _) = m.pick(None);
+        assert_eq!(v.unwrap().id, "1080p");
     }
 
     #[test]

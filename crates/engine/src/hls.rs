@@ -9,6 +9,8 @@ use crate::http_download::Cancelled;
 use crate::m3u8::{best_variant, parse_media};
 use crate::model::RequestHeaders;
 use anyhow::{anyhow, bail, Context};
+use reqwest::header::RANGE;
+use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -45,19 +47,44 @@ fn decrypt(key: &[u8], iv: &[u8; 16], data: &mut Vec<u8>) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn fetch_bytes(shared: &Shared, job: &HlsJob, url: &str) -> anyhow::Result<Vec<u8>> {
-    let resp = request(&shared.client(), url, &job.headers, &job.user_agent)
-        .send()
-        .await?;
+/// Fetch a whole file, or one slice of it (start, end): when a slice is
+/// asked for, the server should answer 206; when it answers 200 instead,
+/// the slice is cut out of the whole file. Returns the bytes and the
+/// address they really came from (after redirects).
+async fn fetch_full(
+    shared: &Shared,
+    job: &HlsJob,
+    url: &str,
+    range: Option<(u64, u64)>,
+) -> anyhow::Result<(Vec<u8>, String)> {
+    let mut rb = request(&shared.client(), url, &job.headers, &job.user_agent);
+    if let Some((start, end)) = range {
+        rb = rb.header(RANGE, format!("bytes={start}-{}", end - 1));
+    }
+    let resp = rb.send().await?;
     if !resp.status().is_success() {
         bail!("HTTP {} for {}", resp.status().as_u16(), url);
     }
-    Ok(resp.bytes().await?.to_vec())
+    let status = resp.status();
+    let final_url = resp.url().to_string();
+    let data = resp.bytes().await?.to_vec();
+    if let Some((start, end)) = range {
+        if status == StatusCode::PARTIAL_CONTENT {
+            return Ok((data, final_url));
+        }
+        let start = start as usize;
+        let end = end.min(data.len() as u64) as usize;
+        if data.len() < start {
+            bail!("the server sent fewer bytes than the slice asked for");
+        }
+        return Ok((data[start..end].to_vec(), final_url));
+    }
+    Ok((data, final_url))
 }
 
-async fn fetch_text(shared: &Shared, job: &HlsJob, url: &str) -> anyhow::Result<String> {
-    let b = fetch_bytes(shared, job, url).await?;
-    Ok(String::from_utf8_lossy(&b).into_owned())
+async fn fetch_text(shared: &Shared, job: &HlsJob, url: &str) -> anyhow::Result<(String, String)> {
+    let (b, final_url) = fetch_full(shared, job, url, None).await?;
+    Ok((String::from_utf8_lossy(&b).into_owned(), final_url))
 }
 
 fn part_file(dir: &Path, i: usize) -> PathBuf {
@@ -73,15 +100,16 @@ pub async fn run(
     let job = Arc::new(job);
     // 1. playlist (follow a master playlist to its best quality)
     let mut url = job.url.clone();
-    let mut text = fetch_text(&shared, &job, &url)
+    let (mut text, final_url) = fetch_text(&shared, &job, &url)
         .await
         .context("could not load playlist")?;
+    url = final_url;
     if !text.trim_start().starts_with("#EXTM3U") {
         bail!("not a valid HLS playlist");
     }
     if text.contains("#EXT-X-STREAM-INF") {
         url = best_variant(&url, &text)?.ok_or_else(|| anyhow!("no video variant found"))?;
-        text = fetch_text(&shared, &job, &url).await?;
+        (text, url) = fetch_text(&shared, &job, &url).await?;
     }
     let playlist = parse_media(&url, &text)?;
     if !playlist.ended {
@@ -97,7 +125,7 @@ pub async fn run(
     for p in &playlist.parts {
         if let Some(k) = &p.key {
             if !keys.contains_key(&k.uri) {
-                let bytes = fetch_bytes(&shared, &job, &k.uri)
+                let (bytes, _) = fetch_full(&shared, &job, &k.uri, None)
                     .await
                     .context("could not load key")?;
                 keys.insert(k.uri.clone(), bytes);
@@ -148,7 +176,8 @@ pub async fn run(
                 loop {
                     let fut = async {
                         let _g = ConnGuard::new(&progress);
-                        let mut data = fetch_bytes(&shared, &job, &parts[i].url).await?;
+                        let (mut data, _) =
+                            fetch_full(&shared, &job, &parts[i].url, parts[i].range).await?;
                         shared.limiter.acquire(data.len()).await;
                         job.limiter.acquire(data.len()).await;
                         if let Some(k) = &parts[i].key {
@@ -207,7 +236,7 @@ pub async fn run(
     // 4. join everything into one file
     progress.assembling.store(true, Ordering::Relaxed);
     let init = match &playlist.init_url {
-        Some(u) => Some(fetch_bytes(&shared, &job, u).await?),
+        Some(u) => Some(fetch_full(&shared, &job, u, playlist.init_range).await?.0),
         None => None,
     };
     let temp_dir = job.temp_dir.clone();
@@ -229,4 +258,121 @@ pub async fn run(
     .await??;
     progress.assembling.store(false, Ordering::Relaxed);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::limiter::SpeedLimiter;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const MASTER: &str = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\nhigh.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\nlow.m3u8\n";
+    const HIGH: &str = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\nhigh0.ts\n#EXTINF:10.0,\nhigh1.ts\n#EXT-X-ENDLIST\n";
+    const LOW: &str = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.0,\nlow0.ts\n#EXTINF:10.0,\nlow1.ts\n#EXT-X-ENDLIST\n";
+
+    /// A tiny server for the playlists and parts above.
+    async fn stream_server() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut s, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = s.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+                    let (body, ctype): (Vec<u8>, &str) = match path.as_str() {
+                        "/master.m3u8" => (MASTER.into(), "application/vnd.apple.mpegurl"),
+                        "/high.m3u8" => (HIGH.into(), "application/vnd.apple.mpegurl"),
+                        "/low.m3u8" => (LOW.into(), "application/vnd.apple.mpegurl"),
+                        "/high0.ts" => (b"HIGH-ZERO".to_vec(), "video/mp2t"),
+                        "/high1.ts" => (b"HIGH-ONE".to_vec(), "video/mp2t"),
+                        "/low0.ts" => (b"LOW-ZERO".to_vec(), "video/mp2t"),
+                        "/low1.ts" => (b"LOW-ONE".to_vec(), "video/mp2t"),
+                        _ => (b"not found".to_vec(), "text/plain"),
+                    };
+                    let status = if body == b"not found" {
+                        "404 Not Found"
+                    } else {
+                        "200 OK"
+                    };
+                    let head = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: {ctype}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = s.write_all(head.as_bytes()).await;
+                    let _ = s.write_all(&body).await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    fn shared() -> Arc<Shared> {
+        Arc::new(Shared::new(
+            reqwest::Client::builder().no_proxy().build().unwrap(),
+            SpeedLimiter::new(0),
+        ))
+    }
+
+    /// Q7 steering (Phase 6): a variant's own playlist downloads exactly
+    /// that variant; the master on its own still downloads the best one.
+    #[tokio::test]
+    async fn variant_url_downloads_that_variant_only() {
+        let base = stream_server().await;
+        let dir = std::env::temp_dir().join(format!("ezoo-hls-steer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let shared = shared();
+        // the picked (low) variant's playlist: only its parts land in the file
+        let job = HlsJob {
+            url: format!("{base}/low.m3u8"),
+            headers: RequestHeaders::default(),
+            user_agent: "test".to_string(),
+            output: dir.join("low.bin"),
+            temp_dir: dir.join("low-parts"),
+            connections: 2,
+            retries: 1,
+            limiter: Arc::new(SpeedLimiter::new(0)),
+        };
+        run(
+            shared.clone(),
+            job,
+            Arc::new(Progress::default()),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(dir.join("low.bin")).unwrap(),
+            b"LOW-ZEROLOW-ONE"
+        );
+        // the master on its own: the best variant wins, as before
+        let job = HlsJob {
+            url: format!("{base}/master.m3u8"),
+            headers: RequestHeaders::default(),
+            user_agent: "test".to_string(),
+            output: dir.join("best.bin"),
+            temp_dir: dir.join("best-parts"),
+            connections: 2,
+            retries: 1,
+            limiter: Arc::new(SpeedLimiter::new(0)),
+        };
+        run(
+            shared,
+            job,
+            Arc::new(Progress::default()),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(dir.join("best.bin")).unwrap(),
+            b"HIGH-ZEROHIGH-ONE"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

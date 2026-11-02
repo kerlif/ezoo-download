@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 /// One choice in the "Download this video" menu.
@@ -274,6 +275,24 @@ pub const MP3_KEY: &str = "audio|MP3";
 /// bitrate of the MP3 files we make
 pub const MP3_KBPS: u64 = 192;
 
+/// MP3 bitrate of the moment (the Options setting): 128 / 192 / 256 / 320.
+static MP3_RATE: AtomicU64 = AtomicU64::new(MP3_KBPS);
+
+/// Set the MP3 bitrate for new lookups: snapped to 128 / 192 / 256 / 320.
+pub fn set_mp3_kbps(kbps: u32) {
+    let snapped = [128u64, 192, 256, 320]
+        .iter()
+        .min_by_key(|r| (kbps as u64).abs_diff(**r))
+        .copied()
+        .unwrap_or(MP3_KBPS);
+    MP3_RATE.store(snapped, Ordering::Relaxed);
+}
+
+/// MP3 bitrate for new lookups.
+pub fn mp3_kbps() -> u64 {
+    MP3_RATE.load(Ordering::Relaxed)
+}
+
 /// Plain words for a resolution, so the choice is easy to understand.
 pub fn quality_tag(height: u64) -> &'static str {
     match height {
@@ -462,14 +481,15 @@ pub fn build_options(full: &Value) -> YtInfo {
         if ext != "mp3" {
             // the same sound, turned into an MP3 file after the download
             // (plays on every phone, car radio and old player)
+            let kbps = mp3_kbps();
             let mp3_size = if duration > 0 {
-                duration * MP3_KBPS * 1000 / 8
+                duration * kbps * 1000 / 8
             } else {
                 0
             };
             options.push(YtOption {
                 key: MP3_KEY.into(),
-                label: format!("Audio · MP3 {MP3_KBPS}k"),
+                label: format!("Audio · MP3 {kbps}k"),
                 sub: fmt_size(mp3_size),
                 quality: "mp3".into(),
                 video_url: a.url.clone(),
@@ -481,7 +501,7 @@ pub fn build_options(full: &Value) -> YtInfo {
                 tag: String::new(),
                 codec: String::new(),
                 duration,
-                kbps: MP3_KBPS,
+                kbps,
             });
         }
     }
@@ -1082,6 +1102,46 @@ pub fn update_if_due(data_dir: &Path) {
     if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
         let _ = std::fs::write(&stamp, b"ok");
     }
+}
+
+/// Subtitles of a video, saved next to it: `--write-subs --write-auto-subs
+/// --sub-langs <langs> -o <stem>.%(ext)s` (the page language first).
+/// Only when yt-dlp is present; a failure here never fails the download.
+/// Blocking; call it from a background thread.
+pub fn fetch_subtitles(page_url: &str, dir: &Path, stem: &str, langs: &str) {
+    let langs: String = langs
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(12)
+        .collect();
+    if langs.is_empty() {
+        return;
+    }
+    let Some(tool) = find_tool("yt-dlp") else {
+        return;
+    };
+    let _ = with_cookies(page_url, None, |cookie_file| {
+        let mut cmd = ytdlp_command(&tool);
+        cmd.arg("--skip-download")
+            .arg("--write-subs")
+            .arg("--write-auto-subs")
+            .arg("--sub-langs")
+            .arg(&langs)
+            .arg("-P")
+            .arg(dir)
+            .arg("-o")
+            .arg(format!("{stem}.%(ext)s"))
+            .arg(page_url);
+        if let Some(file) = cookie_file {
+            cmd.arg("--cookies").arg(file);
+        }
+        let out = cmd.output().context("could not start yt-dlp")?;
+        if !out.status.success() {
+            let e = String::from_utf8_lossy(&out.stderr).into_owned();
+            bail!("yt-dlp subtitles failed: {e}");
+        }
+        Ok(())
+    });
 }
 
 #[cfg(test)]

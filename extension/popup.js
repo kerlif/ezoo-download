@@ -9,6 +9,70 @@ const fmtSize = (n) => {
   return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
 };
 
+const fmtLen = (s) => {
+  s = Math.round(Number(s) || 0);
+  if (!s) return "";
+  const two = (n) => String(n).padStart(2, "0");
+  return s >= 3600 ? `${Math.floor(s / 3600)}:${two(Math.floor(s / 60) % 60)}:${two(s % 60)}` : `${Math.floor(s / 60)}:${two(s % 60)}`;
+};
+
+const isUrl = (s) => /^https?:\/\//i.test(s || "");
+const sizeLike = (s) => /^\d+(\.\d+)?\s*(B|KB|MB|GB)$/i.test((s || "").trim());
+
+// the row shows the item's name + size only — never its address. The size
+// is the app's own number when it sent one ("94 MB"), else the byte count;
+// an estimate is marked as such, never shown as exact.
+const sizeOf = (m) => {
+  if (m.sub && sizeLike(m.sub)) return { text: m.sub.trim(), estimated: false };
+  const n = (m.yt && m.yt.size) || m.size || 0;
+  if (!n) return { text: "", estimated: false };
+  const est = !!(m.yt && (m.yt.quality === "mp3" || m.yt.sizeSource === "filesize_approx" || m.yt.sizeSource === "estimated"));
+  return { text: fmtSize(n), estimated: est };
+};
+const subOf = (m) => {
+  const s = m.sub || "";
+  if (s && !isUrl(s) && !sizeLike(s)) return s;
+  if (m.yt && m.yt.duration) return fmtLen(m.yt.duration);
+  return "";
+};
+// where Preview opens / what Copy copies: the direct stream, else the
+// file's own address; a "choose a quality" row has nothing to preview
+const previewUrl = (m) => (m.yt && m.yt.videoUrl) || m.url || "";
+const copyUrl = (m) => (m.yt && m.yt.videoUrl) || m.url || m.resolve || "";
+
+// copy a link to the clipboard, with the old textarea trick as a fallback
+function copyLink(url, btn) {
+  const done = () => {
+    const old = btn.textContent;
+    btn.textContent = "Copied ✔";
+    setTimeout(() => {
+      btn.textContent = old;
+    }, 1500);
+  };
+  const fallback = () => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      done();
+    } catch (_) {
+      /* clipboard unavailable: the button just stays */
+    }
+  };
+  try {
+    const p = navigator.clipboard && navigator.clipboard.writeText(url);
+    if (p && p.then) p.then(done, fallback);
+    else done();
+  } catch (_) {
+    fallback();
+  }
+}
+
 async function init() {
   document.getElementById("settings").addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
@@ -33,8 +97,26 @@ async function init() {
   });
 
   const look = document.getElementById("look");
-  chrome.storage.local.get({ bubbleStyle: "blue" }, (o) => (look.value = o.bubbleStyle || "blue"));
+  chrome.storage.local.get({ bubbleStyle: "compact" }, (o) => (look.value = o.bubbleStyle || "compact"));
   look.addEventListener("change", () => chrome.storage.local.set({ bubbleStyle: look.value }));
+
+  // how solid the button is on the video (the mouse on it: always solid)
+  const solid = document.getElementById("solid");
+  const solidText = document.getElementById("solidText");
+  const showSolid = (v) => {
+    solid.value = String(v);
+    solidText.textContent = `${v}%`;
+  };
+  chrome.storage.local.get({ bubbleOpacity: 0.9 }, (o) => showSolid(Math.round((Number(o.bubbleOpacity) || 0.9) * 100)));
+  solid.addEventListener("input", () => {
+    showSolid(Number(solid.value));
+    chrome.storage.local.set({ bubbleOpacity: Number(solid.value) / 100 });
+  });
+
+  // full screen: the button stays out of the way unless the user wants it
+  const fullscreen = document.getElementById("fullscreen");
+  chrome.storage.local.get({ bubbleFullscreen: false }, (o) => (fullscreen.checked = !!o.bubbleFullscreen));
+  fullscreen.addEventListener("change", () => chrome.storage.local.set({ bubbleFullscreen: fullscreen.checked }));
 
   // size of the "Download this video" button on pages (also in the settings page)
   const scale = document.getElementById("scale");
@@ -94,17 +176,56 @@ async function init() {
       row.append(info, btn);
       box.appendChild(row);
     }
-    items.forEach((m) => {
+    const makeRow = (m) => {
       const row = document.createElement("div");
       row.className = "media";
       const info = document.createElement("div");
-      info.textContent = m.label;
+      const name = document.createElement("span");
+      name.textContent = m.label;
+      info.appendChild(name);
+      const sz = sizeOf(m);
+      if (sz.text) {
+        const size = document.createElement("span");
+        size.className = "sz";
+        size.textContent = " · " + sz.text;
+        info.appendChild(size);
+        if (sz.estimated) {
+          const est = document.createElement("span");
+          est.className = "est";
+          est.textContent = "estimated";
+          info.appendChild(est);
+        }
+      }
       const small = document.createElement("small");
-      small.textContent = m.sub || "";
+      small.textContent = subOf(m);
       info.appendChild(small);
+      if (m.disabled) {
+        // still looking / can't be downloaded: no buttons on this row
+        row.append(info);
+        return row;
+      }
+      const acts = document.createElement("div");
+      acts.className = "acts";
+      const pv = previewUrl(m);
+      if (pv) {
+        const b = document.createElement("button");
+        b.className = "mini";
+        b.textContent = "Preview";
+        b.title = "Preview in a new tab";
+        b.addEventListener("click", () => chrome.tabs.create({ url: pv }));
+        acts.appendChild(b);
+      }
+      const cp = copyUrl(m);
+      if (cp) {
+        const b = document.createElement("button");
+        b.className = "mini";
+        b.textContent = "Copy link";
+        b.title = "Copy download link";
+        b.addEventListener("click", () => copyLink(cp, b));
+        acts.appendChild(b);
+      }
       const btn = document.createElement("button");
       btn.textContent = "Download";
-      btn.disabled = !!m.disabled;
       btn.addEventListener("click", () => {
         if (m.resolve) {
           // a stream: its qualities come from the app, shown in its place
@@ -115,22 +236,7 @@ async function init() {
               btn.textContent = (res && res.error) || "App not running";
               return;
             }
-            const rows = res.items.map((it) => {
-              const r = document.createElement("div");
-              r.className = "media";
-              const inf = document.createElement("div");
-              inf.textContent = it.label;
-              const go = document.createElement("button");
-              go.textContent = "Download";
-              go.addEventListener("click", () =>
-                chrome.runtime.sendMessage({ type: "swiftget-download", item: it, title: tab.title, referrer: tab.url, fileName: `${title}.${it.ext || "mp4"}` }, (r2) => {
-                  go.textContent = r2 && r2.ok ? "Sent ✔" : "App not running";
-                })
-              );
-              r.append(inf, go);
-              return r;
-            });
-            row.replaceWith(...rows);
+            row.replaceWith(...res.items.map((it) => makeRow(it)));
           });
           return;
         }
@@ -141,9 +247,11 @@ async function init() {
           }
         );
       });
-      row.append(info, btn);
-      box.appendChild(row);
-    });
+      acts.appendChild(btn);
+      row.append(info, acts);
+      return row;
+    };
+    items.forEach((m) => box.appendChild(makeRow(m)));
   });
 }
 

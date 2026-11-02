@@ -49,6 +49,12 @@ msgstr "Télécharger toutes les vidéos d'une playlist, ou une partie."
 msgid "Download a .torrent file or a magnet link."
 msgstr "Télécharger un fichier .torrent ou un lien magnet."
 
+msgid "Move to queue"
+msgstr "Déplacer vers la file"
+
+msgid "Delete from queue"
+msgstr "Retirer de la file"
+
 msgid "{} downloads selected"
 msgstr "{} téléchargements sélectionnés"
 
@@ -81,12 +87,6 @@ msgstr "Actualiser l'adresse de téléchargement…"
 
 msgid "Move / Rename…"
 msgstr "Déplacer / Renommer…"
-
-msgid "Move to queue"
-msgstr "Déplacer vers la file"
-
-msgid "Delete from queue"
-msgstr "Retirer de la file"
 
 msgid "Copy address"
 msgstr "Copier l'adresse"
@@ -604,6 +604,9 @@ msgstr "<< Masquer les détails"
 msgid "Show details >>"
 msgstr "Afficher les détails >>"
 
+msgid "Next to the clock"
+msgstr "Près de l'horloge"
+
 msgid "Pause"
 msgstr "Pause"
 
@@ -627,9 +630,6 @@ msgstr "N°"
 
 msgid "Info"
 msgstr "Infos"
-
-msgid "Hide next to the clock"
-msgstr "Masquer près de l'horloge"
 
 msgid "Download complete"
 msgstr "Téléchargement terminé"
@@ -747,6 +747,12 @@ msgstr "S'il est terminé l'afficher, sinon le reprendre"
 
 msgid "Remember my choice (Options > Downloads)"
 msgstr "Mémoriser mon choix (Options > Téléchargements)"
+
+msgid "Delete the downloaded files from the disk too (be careful)"
+msgstr "Supprimer aussi les fichiers téléchargés du disque (attention)"
+
+msgid "Don't show this question again"
+msgstr "Ne plus poser cette question"
 
 msgid "All downloads are finished."
 msgstr "Tous les téléchargements sont terminés."
@@ -934,6 +940,12 @@ msgstr "Tout décocher"
 msgid "Link text"
 msgstr "Texte du lien"
 
+msgid "Preview"
+msgstr "Aperçu"
+
+msgid "Copy link"
+msgstr "Copier le lien"
+
 msgid "No links on this page."
 msgstr "Aucun lien sur cette page."
 
@@ -1051,6 +1063,9 @@ msgstr "Surveiller le presse-papiers pour les liens de téléchargement"
 msgid "Automatically start downloading links placed in the clipboard"
 msgstr "Démarrer automatiquement les liens copiés dans le presse-papiers"
 
+msgid "Draw the windows with the graphics card (uses more memory; after a restart)"
+msgstr "Dessiner les fenêtres avec la carte graphique (plus de mémoire ; après un redémarrage)"
+
 msgid "Show \"Tip of the day\" at startup"
 msgstr "Afficher \"l'Astuce du jour\" au démarrage"
 
@@ -1144,6 +1159,15 @@ msgstr "Afficher la fenêtre \"Informations sur le fichier\" pour les téléchar
 msgid "Start downloading immediately while showing \"Download File Info\""
 msgstr "Démarrer le téléchargement tout de suite en affichant \"Informations sur le fichier\""
 
+msgid "Ask before removing downloads from the list"
+msgstr "Demander avant de retirer des téléchargements de la liste"
+
+msgid "Quality of MP3 files"
+msgstr "Qualité des fichiers MP3"
+
+msgid "Download the subtitles of videos too, in these languages:"
+msgstr "Télécharger aussi les sous-titres des vidéos, dans ces langues :"
+
 msgid "Show the download progress window"
 msgstr "Afficher la fenêtre de progression"
 
@@ -1218,6 +1242,9 @@ msgstr "Exceptions : serveurs avec leur propre nombre de connexions"
 
 msgid "Server"
 msgstr "Serveur"
+
+msgid "Max downloads"
+msgstr "Max downloads"
 
 msgid "example.com"
 msgstr "example.com"

@@ -108,20 +108,15 @@ pub fn split_largest(segs: &mut Vec<Segment>, min_split: u64) -> Option<usize> {
     Some(segs.len() - 1)
 }
 
-/// Split the active segment with the largest remaining range at the
-/// midpoint of what is left, provided at least `min_remaining` bytes
-/// remain. The boundary move and the creation of the new segment happen
-/// in one call, while the caller holds the table lock, so no byte can
-/// be written twice or skipped: the old segment stops at the midpoint
-/// and the new one starts exactly there. The new segment is already in
-/// the table before any worker writes to its range.
-pub fn split_largest_remaining(segs: &mut Vec<Segment>, min_remaining: u64) -> Option<usize> {
-    let (idx, rem) = segs
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.active && !s.is_finished())
-        .map(|(i, s)| (i, s.remaining()))
-        .max_by_key(|(_, r)| *r)?;
+/// Cut one active segment in half at the midpoint of what is left,
+/// provided at least `min_remaining` bytes remain. The boundary move and
+/// the creation of the new segment happen in one call, while the caller
+/// holds the table lock, so no byte can be written twice or skipped: the
+/// old segment stops at the midpoint and the new one starts exactly
+/// there. The new segment is already in the table before any worker
+/// writes to its range.
+fn split_at(segs: &mut Vec<Segment>, idx: usize, min_remaining: u64) -> Option<usize> {
+    let rem = segs[idx].remaining();
     if rem < min_remaining.max(2) {
         return None;
     }
@@ -137,6 +132,61 @@ pub fn split_largest_remaining(segs: &mut Vec<Segment>, min_remaining: u64) -> O
     Some(segs.len() - 1)
 }
 
+/// Split the active segment with the largest remaining range at the
+/// midpoint of what is left, provided at least `min_remaining` bytes
+/// remain.
+pub fn split_largest_remaining(segs: &mut Vec<Segment>, min_remaining: u64) -> Option<usize> {
+    let (idx, _) = segs
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.active && !s.is_finished())
+        .map(|(i, s)| (i, s.remaining()))
+        .max_by_key(|(_, r)| *r)?;
+    split_at(segs, idx, min_remaining)
+}
+
+/// Split the active segment that will take the longest to finish
+/// (remaining bytes divided by its current speed), not the biggest one:
+/// a slow connection's remainder is worth more than a fast connection's.
+/// `speeds` is (segment index, bytes/second) for the segments the speed
+/// monitor can judge; a segment with no speed is too young to judge and
+/// is skipped, and a segment at speed 0 (nothing for over a second) is
+/// split first. When no segment can be judged, the largest remaining
+/// segment is split instead.
+pub fn split_slowest_remaining(
+    segs: &mut Vec<Segment>,
+    min_remaining: u64,
+    speeds: &[(usize, f64)],
+) -> Option<usize> {
+    let mut best: Option<usize> = None;
+    let mut best_eta = 0.0f64;
+    for (i, s) in segs.iter().enumerate() {
+        if !s.active || s.is_finished() {
+            continue;
+        }
+        if s.remaining() < min_remaining.max(2) {
+            continue;
+        }
+        let Some((_, speed)) = speeds.iter().find(|(idx, _)| *idx == i) else {
+            continue; // too young to judge
+        };
+        let eta = if *speed <= 0.0 {
+            f64::INFINITY
+        } else {
+            s.remaining() as f64 / *speed
+        };
+        if eta > best_eta {
+            best_eta = eta;
+            best = Some(i);
+        }
+    }
+    match best {
+        Some(idx) => split_at(segs, idx, min_remaining),
+        // nothing could be judged (all too young): the largest remainder
+        None => split_largest_remaining(segs, min_remaining),
+    }
+}
+
 /// Give a free connection something to do, using the adaptive split
 /// threshold: idle segments first, otherwise the largest active
 /// segment, cut at the midpoint when enough remains.
@@ -146,6 +196,22 @@ pub fn claim_work_split(segs: &mut Vec<Segment>, min_remaining: u64) -> Option<u
         return Some(i);
     }
     split_largest_remaining(segs, min_remaining)
+}
+
+/// Give a free connection something to do, stealing from the segment
+/// that will take the longest to finish: idle segments first, otherwise
+/// the slowest active segment (by remaining bytes over current speed),
+/// cut at the midpoint when enough remains.
+pub fn claim_work_eta(
+    segs: &mut Vec<Segment>,
+    min_remaining: u64,
+    speeds: &[(usize, f64)],
+) -> Option<usize> {
+    if let Some(i) = segs.iter().position(|s| !s.active && !s.is_finished()) {
+        segs[i].active = true;
+        return Some(i);
+    }
+    split_slowest_remaining(segs, min_remaining, speeds)
 }
 
 /// Is this segment table a faithful record of a `total`-byte file?
@@ -362,5 +428,56 @@ mod tests {
         splitter.join().unwrap();
         let t = table.lock().unwrap();
         assert!(validate_segment_map(&t, 8 * 1024 * 1024));
+    }
+
+    #[test]
+    fn work_stealing_takes_slowest_not_largest() {
+        // two active segments: the first is bigger but fast, the second
+        // smaller but slow — the slow one takes longer to finish
+        let mut segs = plan(1000, 2, 10);
+        for s in segs.iter_mut() {
+            s.active = true;
+        }
+        segs[0].pos = 100; // 400 left at 100 B/s -> 4 s
+        segs[1].pos = 700; // 300 left at 10 B/s -> 30 s
+        let speeds = [(0, 100.0), (1, 10.0)];
+        let i = claim_work_eta(&mut segs, 10, &speeds).unwrap();
+        assert_eq!(i, 2);
+        assert_eq!(segs[1].end, 850);
+        assert_eq!(segs[2].start, 850);
+        assert_eq!(segs[2].end, 1000);
+        assert!(validate_segment_map(&segs, 1000));
+    }
+
+    #[test]
+    fn work_stealing_splits_stalled_first() {
+        // the first segment would take 40 s at its speed; the second is
+        // stalled (nothing for over a second) and goes first
+        let mut segs = plan(1000, 2, 10);
+        for s in segs.iter_mut() {
+            s.active = true;
+        }
+        segs[0].pos = 100; // 400 left at 10 B/s -> 40 s
+        segs[1].pos = 700; // 300 left, stalled
+        let speeds = [(0, 10.0), (1, 0.0)];
+        let i = claim_work_eta(&mut segs, 10, &speeds).unwrap();
+        assert_eq!(i, 2);
+        assert_eq!(segs[1].end, 850);
+    }
+
+    #[test]
+    fn work_stealing_falls_back_to_largest_when_nothing_judged() {
+        // no speed known yet (all segments too young): the largest
+        // remainder is split, as before
+        let mut segs = plan(1000, 2, 10);
+        for s in segs.iter_mut() {
+            s.active = true;
+        }
+        segs[0].pos = 100; // 400 left, biggest
+        segs[1].pos = 700; // 300 left
+        let i = claim_work_eta(&mut segs, 10, &[]).unwrap();
+        assert_eq!(i, 2);
+        assert_eq!(segs[0].end, 300);
+        assert_eq!(segs[2].start, 300);
     }
 }

@@ -25,6 +25,11 @@ impl SpeedLimiter {
         self.rate.store(bytes_per_sec, Ordering::Relaxed);
     }
 
+    /// bytes per second now (0 = no limit)
+    pub fn rate(&self) -> u64 {
+        self.rate.load(Ordering::Relaxed)
+    }
+
     /// Account for `n` bytes; sleeps when we are over budget.
     pub async fn acquire(&self, n: usize) {
         let rate = self.rate.load(Ordering::Relaxed);
