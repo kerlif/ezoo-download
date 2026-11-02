@@ -80,6 +80,13 @@ pub(crate) fn package_label() -> &'static str {
     }
 }
 
+/// Unix-only helpers below are compiled on Windows too, but only for
+/// tests: they are dead in the Windows production build (every call
+/// site is `#[cfg(not(windows))]`), yet the unit tests that cover them
+/// run on Windows as well. `cfg(any(not(windows), test))` keeps them
+/// for both; the two items with no test callers (`read_os_release`,
+/// `downloads_folder`) are `#[cfg(not(windows))]` only.
+#[cfg(any(not(windows), test))]
 fn package_label_for(kind: selfupdate::PackageKind) -> &'static str {
     match kind {
         selfupdate::PackageKind::AppImage => "AppImage",
@@ -111,6 +118,7 @@ pub(crate) fn package_short_label() -> String {
     }
 }
 
+#[cfg(any(not(windows), test))]
 fn short_label_for(kind: selfupdate::PackageKind, flavour: ManagedFlavour) -> &'static str {
     match kind {
         selfupdate::PackageKind::AppImage => "AppImage",
@@ -125,6 +133,7 @@ fn short_label_for(kind: selfupdate::PackageKind, flavour: ManagedFlavour) -> &'
 
 /// Which system package a Managed install takes (hotfix §3.1c, Q40).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(not(windows), test))]
 pub(crate) enum ManagedFlavour {
     Deb,
     Rpm,
@@ -133,6 +142,7 @@ pub(crate) enum ManagedFlavour {
 /// The flavour from an `/etc/os-release` text: `.deb` on Debian/Ubuntu
 /// likes, `.rpm` on RHEL/Fedora/SUSE likes, `.deb` when unreadable
 /// (the fallback — .deb is the package this project ships first).
+#[cfg(any(not(windows), test))]
 fn managed_flavour(os_release: &str) -> ManagedFlavour {
     let mut tokens: Vec<String> = Vec::new();
     for line in os_release.lines() {
@@ -160,12 +170,14 @@ fn managed_flavour(os_release: &str) -> ManagedFlavour {
 }
 
 /// `/etc/os-release` as text, empty when it cannot be read.
+#[cfg(not(windows))]
 fn read_os_release() -> String {
     std::fs::read_to_string("/etc/os-release").unwrap_or_default()
 }
 
 /// The release asset matching a Managed install's flavour, if the
 /// release published one.
+#[cfg(any(not(windows), test))]
 fn managed_asset(
     rel: &selfupdate::CheckedRelease,
     flavour: ManagedFlavour,
@@ -178,11 +190,13 @@ fn managed_asset(
 
 /// The folder a Managed update is downloaded into: ~/Downloads, or the
 /// download folder from Settings when HOME is not set.
+#[cfg(not(windows))]
 fn downloads_folder(mgr: &Manager) -> PathBuf {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     downloads_folder_for(home.as_deref(), &mgr.settings().download_dir)
 }
 
+#[cfg(any(not(windows), test))]
 fn downloads_folder_for(home: Option<&std::path::Path>, fallback: &std::path::Path) -> PathBuf {
     home.map(|h| h.join("Downloads"))
         .unwrap_or_else(|| fallback.to_path_buf())
