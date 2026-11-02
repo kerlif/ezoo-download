@@ -8,8 +8,17 @@
   const TOP = window.top === window;
 
   let items = [];
-  // Options > File Types > "Download panel for web players"
+  // Options > File Types > "Download panel for web players". The last
+  // setting the app sent us, kept in storage so the panel stays off when
+  // the app is closed; the first /config fetch (or refresh) overwrites it.
   let panel = { enabled: true, skipSites: [] };
+  try {
+    chrome.storage.local.get({ panel: null }, (o) => {
+      if (o && o.panel && typeof o.panel.enabled === "boolean") panel = o.panel;
+    });
+  } catch (_) {
+    /* storage not reachable: the first /config fetch decides */
+  }
   const hostMatches = (host, p) => {
     p = String(p).replace(/^https?:\/\//i, "").split("/")[0].toLowerCase();
     if (!p) return false;
@@ -198,6 +207,18 @@
   function removeAll() {
     for (const b of bubbles.values()) b.host.remove();
     bubbles.clear();
+  }
+  // A fresh panel setting from the app: remember it for when the app is
+  // closed, and hide the bubbles when the panel is off.
+  function applyPanelConfig(res) {
+    if (!res || typeof res.enabled !== "boolean") return;
+    panel = res;
+    try {
+      chrome.storage.local.set({ panel: res });
+    } catch (_) {
+      /* storage not reachable: the setting still applies to this page */
+    }
+    if (!panelAllowed()) removeAll();
   }
   // size of the button: the slider in the add-in's menu (50% - 200%)
   const OLD_SIZES = { small: 0.85, normal: 1, large: 1.25 };
@@ -748,7 +769,20 @@
     b.host.style.top = `${Math.max(4, Math.min(y, innerHeight - h - 4))}px`;
   }
 
+  // How often the panel setting is re-read while the page stays open, so
+  // toggling it in Options hides the panels without a reload (the app
+  // itself is asked at most once a minute — see getConfig in background.js).
+  const PANEL_REFRESH_MS = 30000;
+  let lastPanelFetch = Date.now();
+  function refreshPanelConfig() {
+    lastPanelFetch = Date.now();
+    chrome.runtime.sendMessage({ type: "swiftget-config" }, (res) => {
+      if (!chrome.runtime.lastError && res) applyPanelConfig(res);
+    });
+  }
+
   function place() {
+    if (Date.now() - lastPanelFetch >= PANEL_REFRESH_MS) refreshPanelConfig();
     if (!panelAllowed()) return;
     const vids = allVideos().filter((v) => {
       const r = v.getBoundingClientRect();
@@ -970,24 +1004,27 @@
     if (msg.type === "swiftget-open-panel") {
       const v = biggestVideo();
       if (!v) return false;
-      let b = bubbles.get(v);
-      if (!b) b = makeBubble(v);
-      b.dismissed = false;
-      layer().appendChild(b.host);
-      b.open = true;
-      if (!itemsOf(b).length) lookUp(b);
-      else renderOne(b);
-      placeOne(b);
+      // the panel's own setting decides, like every other show path: a
+      // fresh fetch, so a setting changed since the page loaded applies
+      chrome.runtime.sendMessage({ type: "swiftget-config" }, (res) => {
+        if (!chrome.runtime.lastError && res) applyPanelConfig(res);
+        if (!panelAllowed()) return;
+        let b = bubbles.get(v);
+        if (!b) b = makeBubble(v);
+        b.dismissed = false;
+        layer().appendChild(b.host);
+        b.open = true;
+        if (!itemsOf(b).length) lookUp(b);
+        else renderOne(b);
+        placeOne(b);
+      });
     }
     return false;
   });
   chrome.runtime.sendMessage({ type: "swiftget-config" }, (res) => {
     if (!chrome.runtime.lastError && res) {
-      panel = res;
-      if (!panelAllowed()) {
-        for (const b of bubbles.values()) b.host.remove();
-        bubbles.clear();
-      }
+      lastPanelFetch = Date.now();
+      applyPanelConfig(res);
     }
   });
   if (TOP) {

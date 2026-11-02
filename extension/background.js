@@ -233,6 +233,15 @@ async function getConfig() {
     if (r.ok) {
       appConfig = await r.json();
       configAt = Date.now();
+      // the last panel setting the app sent, so the panel stays off when
+      // the app is closed (content.js reads it from here, not from the app)
+      if (appConfig && appConfig.panel) {
+        try {
+          await chrome.storage.local.set({ panel: appConfig.panel });
+        } catch {
+          /* storage not reachable: the setting still applies while running */
+        }
+      }
     }
   } catch {
     /* app not running or older version: keep the last one */
@@ -1154,8 +1163,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       lastKeys = { alt: !!msg.alt, ctrl: !!msg.ctrl, shift: !!msg.shift, at: Date.now() };
       return false;
     case "swiftget-config":
-      Promise.all([getConfig(), getOpts()]).then(([cfg, o]) => {
-        const panel = (cfg && cfg.panel) || { enabled: true, skipSites: [] };
+      Promise.all([getConfig(), getOpts(), chrome.storage.local.get({ panel: null })]).then(([cfg, o, stored]) => {
+        // the app's live setting first; when it cannot be reached (or is
+        // too old to send one), the last setting it sent; only when there
+        // never was one does the panel default to on
+        const panel = (cfg && cfg.panel) || (stored && stored.panel) || { enabled: true, skipSites: [] };
         sendResponse(o.enabled ? panel : { ...panel, enabled: false });
       });
       return true;
