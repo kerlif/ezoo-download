@@ -333,6 +333,48 @@ the resolution and date.
     (`crates/app/lang/rs/*.json` + `i18n.rs`, needs-review
     markers per the Q6/Q10/Q11 pattern).
 
+27. **Native confirm/message dialogs are dead on systems with
+   zenity 4.x (found 2026-11-02, hotfix H3 smoke).** `rfd` 0.15.4
+   (no `gtk3` feature) runs its Linux message dialogs through
+   `zenity --no-markup …`, but zenity 4.x (Ubuntu 24.04 noble
+   ships 4.0.1) removed `--no-markup`: the call exits at once
+   with "This option is not available", so every `ask()` /
+   `message()` in the app — including the delete-category
+   confirm — silently takes the Cancel/No path and nothing is
+   ever shown. Verified in the VM: the exact rfd command line
+   exits 1 immediately, while the same call without
+   `--no-markup` opens and waits. This is pre-existing (not an
+   H3 regression) and NOT fixed in the hotfix: the H3 smoke
+   worked around it with a test-only `zenity` shim that strips
+   the unsupported flag and delegates to the real zenity 4
+   (see `~/workspace/ezoo/v111-hotfix/bin/zenity`, smoke-only,
+   not in the repo). Default: leave as-is for this release.
+   Resolution needs: Tensi's call — either upgrade/downgrade
+   the rfd backend (a newer rfd without `--no-markup`, or the
+   `gtk3` feature), or ship a dependency note; real-machine
+   impact depends on which zenity the user's distro ships
+   (zenity 3.x works, 4.x does not).
+
+28. **Tool updater downloads yt-dlp without the executable bit on
+   Linux (found 2026-11-02, hotfix H4 smoke; Q49).** On startup
+   `tools::spawn_updater` (`crates/app/src/main.rs:463`) fetches
+   `yt-dlp_linux` into the `tools/` folder next to the binary when
+   `bundled("yt-dlp")` is none (`crates/engine/src/tools.rs:256-263`),
+   but the written file lands `-rw-rw----`: the first playlist /
+   video fetch then fails with "could not start yt-dlp: Permission
+   denied (os error 13)" until something chmods it. Verified in
+   the VM: the updater downloaded a 41 MB `target/release/tools/yt-dlp`
+   at 15:58 with no +x, and the fetch failed until the file was made
+   executable. Pre-existing (not an H4 regression) and NOT fixed in
+   the hotfix — the H4 smoke worked around it by placing an
+   executable copy in `tools/` for the run (see
+   `~/workspace/ezoo/v111-hotfix/smoke-h4.sh`). Default: leave
+   as-is for this release. Resolution needs: Tensi's call — set the
+   executable bit after the Linux download (or after every tool
+   download), in a later fix; note the standalone yt-dlp ELF also
+   cannot verify TLS through a MITM egress proxy, which is a VM-only
+   quirk, not a product issue.
+
 ## Decided for v1.1.1 (2026-10-31, Tensi)
 
 All of Q19–Q34 decided before Phase 0. Phase mapping per
@@ -497,6 +539,98 @@ All of Q19–Q34 decided before Phase 0. Phase mapping per
   release's `firefox-updates.json` exists and the manifest's
   `update_url` can be repointed to the fork's releases.
 
+## Decided for the 1.1.1 hotfix (2026-11-02, Tensi)
+
+All of Q36–Q48 decided with the amended hotfix plan, approved by
+Tensi 2026-11-02 14:34 («أوافق على الخطة المعدلة — ابدأ الكود»).
+Implemented on branch `v111-hotfix`, H1–H5; H6 is docs only.
+
+- **Q36 — Highlights source for the new-version notice: option A —
+  the GitHub release body from the already-fetched `releases/latest`
+  API response.** Implemented in H1: `GithubPayload.body` →
+  `CheckedRelease.notes` (capped at 4 KiB, `truncate_notes`), parsed
+  by `release_highlights()` (first ≤5 bullets, language-matched).
+  No new outbound request, no workflow change, no signature change,
+  no risk to existing clients. Option B (a signed notes field in
+  `version.json`) rejected: it needs a workflow change + a
+  `signed_message` format change, and old 1.1.1 clients would fail
+  to verify the new format — breaking updates for the installs
+  already out there. Trust note: the body is unsigned, so a tampered
+  body could show attacker text in the notice, but it cannot trigger
+  an install (the offer and the artifact stay gated by the signed
+  manifest + signed sums). `docs/PRIVACY.md` gains the one line.
+- **Q37 — Where the "remind me" state lives: no durable state at
+  all.** A per-run in-memory flag `LATER` (`crates/app/src/update.rs:54`),
+  reusing the `DECLINED` / `NOTIFIED` pattern. The notice shows at
+  most once per program run; «Later» sets the flag for the offered
+  version, and the next launch's check re-offers if the update is
+  still pending. The earlier Settings-fields proposal
+  (`update_remind_at` / `update_remind_version`) is dropped with the
+  4h timer.
+- **Q38 — "Later" semantics: suppress the notice until the next
+  launch, for this version only.** A newer version re-offers
+  immediately; manual Help > Check for updates bypasses the
+  suppression (as it bypasses `DECLINED` today). No timer, no
+  wall-clock arithmetic: the re-offer point is simply the next
+  program launch.
+- **Q39 — Notice dialog shape: a new `UpdateNoticeDialog`**
+  (heading + highlights + «Update now» / «Later», modelled on
+  `WhatsNewDialog`). No third "never for this version" button — the
+  existing disable-auto-update setting (upstream #49, already
+  implemented) covers "never".
+- **Q40 — What "Update now" does for Managed (.deb/.rpm):
+  download the matching asset into `~/Downloads`, hash-verified
+  against the release sums, then reveal the file / tell the user
+  where it is.** Flavour from `/etc/os-release` (`ID_LIKE`
+  containing `debian` → `.deb`, `rhel`/`fedora`/`suse` → `.rpm`);
+  `.deb` is the fallback when unreadable. The app never runs the
+  package manager. Implemented in H2 (`deb_asset()` /
+  `rpm_asset()`, `managed_flavour()`, `download_managed()`).
+- **Q41 — Reverse numbering shape: numbering only** (list order
+  unchanged; bottom/oldest row = #1), per the requester's literal
+  wording. Reversing the list order too is rejected: it changes the
+  list the user already reads. Implemented in H4.
+- **Q42 — Skip matching rule: exact computed target filename** in
+  the target folder (same sanitize + number + ext as the add loop).
+  The skipped count is reported. No URL-history matching (no history
+  store exists; `downloads.json` holds only the current list).
+  Implemented in H4 (9 new playlist tests).
+- **Q43 — Panel fix scope: all three gaps** (§2.4 of the hotfix
+  plan): gate `swiftget-open-panel` on a fresh config fetch +
+  `panelAllowed()`, periodic config refresh, last-known-setting
+  fallback in `chrome.storage.local` when the app is unreachable.
+  Implemented in H5 (extension sims green; real-browser behaviour
+  is an owner step).
+- **Q44 — Delete-all re-seed: a `categories_seeded: bool` Settings
+  field** (serde default `false`, set `true` on first seed);
+  defaults are seeded only when `!categories_seeded`. Implemented
+  in H3 (`crates/engine/src/config.rs:318`, `:592`), with a
+  config round-trip test (delete-all stays empty after reload).
+- **Q45 — About dialog wording: line 1 `Version 1.1.1
+  (AppImage)` / `(.deb)` / `(.rpm)` / `(Flatpak)` / `(Windows
+  setup)` / `(portable copy)`, line 2 the full executable path in
+  muted small text.** Implemented in H2 (`package_short_label()`,
+  `crates/app/src/main.rs:1452-1453`).
+- **Q46 — Menu gate for General: `enabled: root.target !=
+  "General"`** on the "Delete category" entry (the row's `target`
+  is the category name); `builtin` keeps its rename-lock meaning
+  in `CategoryDialog`. Implemented in H3.
+- **Q47 — Phase 11 ordering: merge Phase 11 (`v111-upgrade` →
+  main) first, then the hotfix PR (`v111-hotfix` → main).** The tag
+  move (§8 of the hotfix plan) does not wait for either — it points
+  at the hotfix commit wherever it lives. If Tensi prefers one
+  combined PR, the phases still run in the same order; only the PR
+  step merges.
+- **Q48 — Mid-run 24h checks: the notice is shown once at that
+  point too (still at most once per run for that version) — it does
+  not wait for the next launch.** Decided 2026-11-02 14:34 with the
+  amended-plan approval (Tensi tapped the plan-approval option, not
+  launch-only). Implemented in H2 via the `LATER` flag; the
+  `handle_available` gate does not distinguish launch checks from
+  mid-run checks. Tests:
+  `later_suppresses_the_notice_until_a_newer_version`,
+  `handle_available_is_done_when_the_notice_is_suppressed`.
+
 ## Resolved
 
 13. **Flatpak ffmpeg binary presence** (resolved 2026-11-01,
@@ -597,3 +731,17 @@ All of Q19–Q34 decided before Phase 0. Phase mapping per
     `store::tests::written_files_are_owner_only`. The Windows half
     (DPAPI `CryptProtectData`, `dpapi:<hex>`) was already confirmed.
     `docs/PRIVACY.md` now states the Linux mode-0600 fact.
+
+**Disable auto-update checks (upstream #49)** (resolved 2026-11-02,
+hotfix H2 — verify, don't build). The setting ALREADY EXISTS in
+v1.1.1: `Settings.update_check` (`crates/engine/src/config.rs:401`,
+default `true` at :519), checkbox "Check for updates automatically"
+in Options > General (`crates/app/ui/dialogs.slint:2307`, wired in
+`crates/app/src/options.rs:86` / `:205`), and the spawn loop honors
+it (`crates/app/src/update.rs`: off → sleep 300 s and re-check, so no
+automatic round runs; Help > Check for updates never consults the
+flag, so a manual check still works). H2 extracted the loop's guard
+into `auto_checks_enabled()` and covered it with the test
+`update::tests::auto_checks_follow_the_setting` (on → automatic
+rounds run; off → none). No new setting, no new UI, no new behaviour
+was added.

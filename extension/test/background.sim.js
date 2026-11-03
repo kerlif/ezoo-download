@@ -24,10 +24,14 @@ const chrome = {
   cookies: { getAll: async () => [] },
 };
 const ytCalls = []; const browserDl = []; const cancelled = []; const suggested = []; let appDown = false;
+let configResponse = { localToken: "test-token" }; let configFails = false;
 const fetch = async (url, opts = {}) => {
   if (url.endsWith("/ping") && pingExt) return { ok: true, status: 200, json: async () => ({ ext: pingExt }) };
   // the token bootstrap: the app hands the add-in its per-install secret here
-  if (url.endsWith("/config")) return { ok: true, status: 200, json: async () => ({ localToken: "test-token" }) };
+  if (url.endsWith("/config")) {
+    if (configFails) throw new TypeError("Failed to fetch");
+    return { ok: true, status: 200, json: async () => configResponse };
+  }
   if (url.endsWith("/add")) { if (appDown) throw new TypeError("Failed to fetch"); sent.push(JSON.parse(opts.body)); sentHeaders.push(opts.headers || {}); }
   if (url.endsWith("/resolve") && JSON.parse(opts.body).url.includes("unsupported.example")) {
     return { ok: true, status: 200, json: async () => ({ ok: false, error: "Unsupported URL: https://unsupported.example/watch" }) };
@@ -50,6 +54,9 @@ const fetch = async (url, opts = {}) => {
 const ctx = { chrome, fetch, AbortController, setTimeout, clearTimeout, navigator: { userAgent: "TestUA" }, console, URL,
   importScripts: (...f) => f.forEach((x) => vm.runInContext(fs.readFileSync(path.join(dir, x), "utf8"), ctx)) };
 vm.createContext(ctx);
+// a clock the test can move: the 60 s config cache is driven by it
+vm.runInContext("var __now = Date.now(); Date.now = () => __now; globalThis.__advanceNow = (ms) => { __now += ms; };", ctx);
+const advance = (ms) => ctx.__advanceNow(ms);
 vm.runInContext(fs.readFileSync(path.join(dir, "background.js"), "utf8"), ctx);
 
 const gv = (itag, mime, clen, dur, r) => `https://rr1---sn-x.googlevideo.com/videoplayback?expire=9&itag=${itag}&mime=${encodeURIComponent(mime)}&clen=${clen}&dur=${dur}&pot=T&range=${r}&rn=1`;
@@ -276,6 +283,47 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(res2.ok, true);
     assert.strictEqual(sent.length, before + 1, "a second click on the same link is not sent again");
     console.log("file-link click: to the app once, with the token");
+  }
+  // ---- H5: the video panel honours its setting, even when the app is gone
+  // the download tests above already fetched /config once, so the cache
+  // holds { localToken } with no panel; the clock moves it past 60 s
+  const panelCfg = async () => new Promise((r) => listeners.msg({ type: "swiftget-config" }, { tab: { id: 7, url: tabUrl } }, r));
+  {
+    // app unreachable + a stored off-setting: the stored setting wins
+    localStore.panel = { enabled: false, skipSites: [] };
+    configFails = true;
+    advance(61000);
+    const cfg = await panelCfg();
+    assert.strictEqual(cfg.enabled, false, "app down, last-known off: no panel");
+    // the app answers with the panel off: that is what the page is told,
+    // and it is remembered for when the app is closed again
+    configFails = false;
+    configResponse = { localToken: "test-token", panel: { enabled: false, skipSites: ["example.com"] } };
+    advance(61000);
+    const cfg2 = await panelCfg();
+    assert.strictEqual(cfg2.enabled, false, "live setting off: no panel");
+    assert.deepStrictEqual(cfg2.skipSites, ["example.com"]);
+    assert.deepStrictEqual(localStore.panel, { enabled: false, skipSites: ["example.com"] }, "the fetched setting is remembered");
+    // the app answers with the panel on: remembered too
+    configResponse = { localToken: "test-token", panel: { enabled: true, skipSites: [] } };
+    advance(61000);
+    const cfg3 = await panelCfg();
+    assert.strictEqual(cfg3.enabled, true, "live setting on: panel");
+    assert.strictEqual(localStore.panel.enabled, true, "the on-setting is remembered");
+    // an old app that sends no panel at all: the last-known setting wins
+    localStore.panel = { enabled: false, skipSites: [] };
+    configResponse = { localToken: "test-token" };
+    advance(61000);
+    const cfg4 = await panelCfg();
+    assert.strictEqual(cfg4.enabled, false, "no panel in the config: last-known off wins");
+    // nothing ever stored and no panel anywhere: the panel defaults to on
+    delete localStore.panel;
+    configFails = true;
+    advance(61000);
+    const cfg5 = await panelCfg();
+    assert.strictEqual(cfg5.enabled, true, "never configured: the panel defaults to on");
+    configFails = false;
+    console.log("panel setting: live config wins, last-known wins when the app is gone");
   }
   console.log("background simulation: all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });

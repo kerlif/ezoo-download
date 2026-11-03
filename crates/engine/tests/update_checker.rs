@@ -54,6 +54,10 @@ fn sign(kp: &Ed25519KeyPair, version: &str, sha: &str) -> String {
 }
 
 fn payload(base: &str, tag: &str, assets: &[(&str, &str)]) -> String {
+    payload_with_body(base, tag, assets, "")
+}
+
+fn payload_with_body(base: &str, tag: &str, assets: &[(&str, &str)], body: &str) -> String {
     let assets: Vec<_> = assets
         .iter()
         .map(|(name, path)| json!({"name": name, "browser_download_url": format!("{base}{path}")}))
@@ -61,6 +65,7 @@ fn payload(base: &str, tag: &str, assets: &[(&str, &str)]) -> String {
     json!({
         "tag_name": tag,
         "html_url": format!("{base}/releases"),
+        "body": body,
         "assets": assets,
     })
     .to_string()
@@ -202,14 +207,18 @@ async fn newer_release_with_valid_signature_is_offered() {
                     "/latest" => Response {
                         status: 200,
                         headers: vec![("ETag".into(), "\"v99\"".into())],
-                        body: payload(
+                        body: payload_with_body(
                             &base,
                             "v99.0.0",
                             &[
                                 ("version.json", "/version.json"),
                                 ("SHA256SUMS.txt", "/sums.txt"),
                                 ("EzooDownload-Setup.exe", "/setup.exe"),
+                                ("EzooDownload-99.0.0-amd64.deb", "/pkg.deb"),
+                                ("EzooDownload-99.0.0.x86_64.rpm", "/pkg.rpm"),
+                                ("EzooDownload-99.0.0-x86_64.AppImage", "/pkg.AppImage"),
                             ],
+                            "🎯 اختيار الجودة أصبح يؤثر فعلًا.\n\nQuality choice now steers the download.",
                         )
                         .into_bytes(),
                     },
@@ -252,6 +261,34 @@ async fn newer_release_with_valid_signature_is_offered() {
     assert_eq!(rel.tag, "v99.0.0");
     assert_eq!(rel.manifest.sha256, rel_sums_sha(&rel.sums_text));
     assert!(rel.setup_asset_url().ends_with("/setup.exe"));
+    // H1: the release body is carried into `notes`, and the Linux asset
+    // accessors find the matching packages
+    assert_eq!(
+        rel.notes,
+        "🎯 اختيار الجودة أصبح يؤثر فعلًا.\n\nQuality choice now steers the download."
+    );
+    let base = format!("http://127.0.0.1:{port}");
+    assert_eq!(
+        rel.deb_asset(),
+        Some((
+            "EzooDownload-99.0.0-amd64.deb".to_string(),
+            format!("{base}/pkg.deb")
+        ))
+    );
+    assert_eq!(
+        rel.rpm_asset(),
+        Some((
+            "EzooDownload-99.0.0.x86_64.rpm".to_string(),
+            format!("{base}/pkg.rpm")
+        ))
+    );
+    assert_eq!(
+        rel.appimage_asset(),
+        Some((
+            "EzooDownload-99.0.0-x86_64.AppImage".to_string(),
+            format!("{base}/pkg.AppImage")
+        ))
+    );
     let headers = stats
         .lock()
         .unwrap()

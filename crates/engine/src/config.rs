@@ -312,6 +312,10 @@ pub struct Settings {
     // ---- v4: everything of the classic Options window
     /// sidebar categories (General is implicit, always last)
     pub categories: Vec<CategoryDef>,
+    /// the builtin categories were seeded once; without this, deleting
+    /// every category would silently restore them on the next launch
+    #[serde(default)]
+    pub categories_seeded: bool,
     /// start downloading links copied to the clipboard without asking
     pub auto_start_clipboard: bool,
     /// double click on a download: 0 open file / progress, 1 properties
@@ -467,6 +471,7 @@ impl Default for Settings {
             autostart_set: false,
             queues: vec![QueueDef::new(MAIN_QUEUE, "Main download queue", 1, None)],
             categories: default_categories(),
+            categories_seeded: true,
             auto_start_clipboard: false,
             double_click: 0,
             limiter_on_startup: false,
@@ -584,8 +589,14 @@ impl Settings {
             s.queues
                 .insert(0, QueueDef::new(MAIN_QUEUE, "Main download queue", 1, None));
         }
-        if s.categories.is_empty() {
-            s.categories = default_categories();
+        if !s.categories_seeded {
+            // First load of a file written before the flag existed (or a
+            // fresh file): seed the builtin categories once, then remember
+            // it, so a user who deletes them all is not re-seeded.
+            if s.categories.is_empty() {
+                s.categories = default_categories();
+            }
+            s.categories_seeded = true;
         }
         if s.columns.is_empty() {
             s.columns = DEFAULT_COLUMNS.iter().map(|c| c.to_string()).collect();
@@ -962,6 +973,54 @@ mod tests {
         // old settings files without the field still load
         let s2: Settings = serde_json::from_str("{\"version\":4}").unwrap();
         assert!(s2.host_learning.is_empty());
+    }
+
+    #[test]
+    fn delete_all_categories_stays_empty_after_reload() {
+        let dir = std::env::temp_dir().join(format!("ezoo-cats-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        // a fresh load seeds the six builtin categories exactly once
+        let mut s = Settings::load(&path);
+        assert_eq!(s.categories.len(), 6);
+        assert!(s.categories_seeded);
+        // deleting all of them, then saving and reloading, stays empty
+        s.categories.clear();
+        s.save(&path).unwrap();
+        let reloaded = Settings::load(&path);
+        assert!(reloaded.categories.is_empty());
+        assert!(reloaded.categories_seeded);
+        // a file written before the flag existed still seeds once
+        std::fs::write(&path, "{\"version\":5,\"categories\":[]}").unwrap();
+        let old = Settings::load(&path);
+        assert_eq!(old.categories.len(), 6);
+        assert!(old.categories_seeded);
+        // ... and loading the same untouched old file again seeds the
+        // same six, deterministically (nothing saved the flag in between)
+        let old2 = Settings::load(&path);
+        assert_eq!(old2.categories.len(), 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleted_builtin_category_falls_back_to_general() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.category_of("movie.mp4", "https://example.com/movie.mp4"),
+            "Video"
+        );
+        // deleting the Video category (what delete_category() now allows)
+        // sends its files to General, the recategorize() fallback
+        s.categories.retain(|c| c.name != "Video");
+        assert_eq!(
+            s.category_of("movie.mp4", "https://example.com/movie.mp4"),
+            "General"
+        );
+        // other builtin categories are unaffected
+        assert_eq!(
+            s.category_of("song.mp3", "https://example.com/song.mp3"),
+            "Music"
+        );
     }
 
     #[test]

@@ -15,24 +15,24 @@
 //!
 //! Linux: an AppImage is replaced the same way (ask, then replace the
 //! file; the new version starts on the next launch). A .deb/.rpm install
-//! or a Flatpak is notify-only, with a link to the release page; a
-//! Flatpak offer has a button that opens the page. An install whose kind
-//! cannot be told is notify-only too, which is always safe.
+//! downloads the matching package into ~/Downloads, hash-verified, and
+//! shows where the file is; a Flatpak is notify-only, with a link to the
+//! release page; an install whose kind cannot be told is notify-only too,
+//! which is always safe.
 
-use crate::i18n::t;
-use crate::i18n::tf;
+use crate::i18n::{is_arabic, t, tf};
 use crate::message;
-#[cfg(windows)]
 use crate::open_window;
-use crate::{Ctx, Ui};
 #[cfg(windows)]
-use crate::{Theme, UpdateDialog};
-#[cfg(windows)]
-use slint::ComponentHandle;
+use crate::UpdateDialog;
+use crate::{Ctx, Look, Theme, Ui, UpdateNoticeDialog};
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use swiftget_engine::config::Settings;
 use swiftget_engine::http::{self, ProxyConfig};
 use swiftget_engine::selfupdate;
 use swiftget_engine::{Manager, Status};
@@ -46,6 +46,169 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 static DECLINED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 #[cfg(not(windows))]
 static NOTIFIED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Versions the user put off with «Later» in the update notice, this
+/// run: the notice is shown at most once per run for a given version
+/// (hotfix §6, Q48 — including when a mid-run 24h check finds the
+/// update). No durable state: the next launch re-offers if the update
+/// is still pending, and a newer version re-offers at once.
+static LATER: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The notice is shown unless this run already saw this version declined
+/// or put off with Later. A manual check always shows it, as it bypasses
+/// DECLINED today.
+fn notice_suppressed(version: &str, manual: bool) -> bool {
+    !manual && (already_seen(&DECLINED, version) || already_seen(&LATER, version))
+}
+
+/// The running copy, named for a sentence: every update string uses this
+/// one helper, so no message can offer the wrong package again (hotfix
+/// §3.1b). The pure core is `package_label_for`, so tests can cover
+/// every kind without faking the process environment.
+pub(crate) fn package_label() -> &'static str {
+    #[cfg(windows)]
+    {
+        if selfupdate::installed() {
+            "the Windows setup"
+        } else {
+            "this copy"
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        package_label_for(selfupdate::detect_package_current())
+    }
+}
+
+/// Unix-only helpers below are compiled on Windows too, but only for
+/// tests: they are dead in the Windows production build (every call
+/// site is `#[cfg(not(windows))]`), yet the unit tests that cover them
+/// run on Windows as well. `cfg(any(not(windows), test))` keeps them
+/// for both; the two items with no test callers (`read_os_release`,
+/// `downloads_folder`) are `#[cfg(not(windows))]` only.
+#[cfg(any(not(windows), test))]
+fn package_label_for(kind: selfupdate::PackageKind) -> &'static str {
+    match kind {
+        selfupdate::PackageKind::AppImage => "AppImage",
+        selfupdate::PackageKind::Flatpak => "the Flatpak",
+        selfupdate::PackageKind::Managed => "the .deb/.rpm package",
+        selfupdate::PackageKind::Unknown => "this copy",
+    }
+}
+
+/// The running copy, named for the About dialog's first line (hotfix
+/// §3.1a, Q45): "Version 1.1.1 (AppImage)" / "(.deb)" / "(.rpm)" /
+/// "(Flatpak)" / "(Windows setup)" / "(portable copy)".
+pub(crate) fn package_short_label() -> String {
+    #[cfg(windows)]
+    {
+        if selfupdate::installed() {
+            "Windows setup".to_string()
+        } else {
+            "portable copy".to_string()
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        short_label_for(
+            selfupdate::detect_package_current(),
+            managed_flavour(&read_os_release()),
+        )
+        .to_string()
+    }
+}
+
+#[cfg(any(not(windows), test))]
+fn short_label_for(kind: selfupdate::PackageKind, flavour: ManagedFlavour) -> &'static str {
+    match kind {
+        selfupdate::PackageKind::AppImage => "AppImage",
+        selfupdate::PackageKind::Flatpak => "Flatpak",
+        selfupdate::PackageKind::Managed => match flavour {
+            ManagedFlavour::Deb => ".deb",
+            ManagedFlavour::Rpm => ".rpm",
+        },
+        selfupdate::PackageKind::Unknown => "portable copy",
+    }
+}
+
+/// Which system package a Managed install takes (hotfix §3.1c, Q40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(not(windows), test))]
+pub(crate) enum ManagedFlavour {
+    Deb,
+    Rpm,
+}
+
+/// The flavour from an `/etc/os-release` text: `.deb` on Debian/Ubuntu
+/// likes, `.rpm` on RHEL/Fedora/SUSE likes, `.deb` when unreadable
+/// (the fallback — .deb is the package this project ships first).
+#[cfg(any(not(windows), test))]
+fn managed_flavour(os_release: &str) -> ManagedFlavour {
+    let mut tokens: Vec<String> = Vec::new();
+    for line in os_release.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim() == "ID" || key.trim() == "ID_LIKE" {
+            tokens.extend(
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .split_whitespace()
+                    .map(|t| t.to_ascii_lowercase()),
+            );
+        }
+    }
+    if tokens
+        .iter()
+        .any(|t| t == "rhel" || t == "fedora" || t == "suse" || t == "opensuse")
+    {
+        ManagedFlavour::Rpm
+    } else {
+        ManagedFlavour::Deb
+    }
+}
+
+/// `/etc/os-release` as text, empty when it cannot be read.
+#[cfg(not(windows))]
+fn read_os_release() -> String {
+    std::fs::read_to_string("/etc/os-release").unwrap_or_default()
+}
+
+/// The release asset matching a Managed install's flavour, if the
+/// release published one.
+#[cfg(any(not(windows), test))]
+fn managed_asset(
+    rel: &selfupdate::CheckedRelease,
+    flavour: ManagedFlavour,
+) -> Option<(String, String)> {
+    match flavour {
+        ManagedFlavour::Deb => rel.deb_asset(),
+        ManagedFlavour::Rpm => rel.rpm_asset(),
+    }
+}
+
+/// The folder a Managed update is downloaded into: ~/Downloads, or the
+/// download folder from Settings when HOME is not set.
+#[cfg(not(windows))]
+fn downloads_folder(mgr: &Manager) -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    downloads_folder_for(home.as_deref(), &mgr.settings().download_dir)
+}
+
+#[cfg(any(not(windows), test))]
+fn downloads_folder_for(home: Option<&std::path::Path>, fallback: &std::path::Path) -> PathBuf {
+    home.map(|h| h.join("Downloads"))
+        .unwrap_or_else(|| fallback.to_path_buf())
+}
+
+/// Automatic rounds run only when the user left them on (upstream #49):
+/// `Settings.update_check`, Options > General. Help > Check for updates
+/// never consults this flag, so a manual check still works with the
+/// setting off.
+pub(crate) fn auto_checks_enabled(settings: &Settings) -> bool {
+    settings.update_check
+}
 
 fn update_dir() -> PathBuf {
     swiftget_engine::default_data_dir().join("update")
@@ -171,9 +334,10 @@ pub fn spawn(ctx: &Ctx) {
         tokio::time::sleep(Duration::from_secs(3)).await;
         let mut failures: u32 = 0;
         loop {
-            if !mgr.settings().update_check {
-                // off in Options: look again in a while, in case it is
-                // turned back on; Help > Check for updates still works
+            if !auto_checks_enabled(&mgr.settings()) {
+                // off in Options (upstream #49): look again in a while,
+                // in case it is turned back on; Help > Check for updates
+                // still works
                 tokio::time::sleep(Duration::from_secs(300)).await;
                 continue;
             }
@@ -245,33 +409,174 @@ async fn round(mgr: &Arc<Manager>) -> RoundOutcome {
     }
 }
 
-/// A verified newer release: download, verify, then ask / notify, per
-/// platform. `manual` is Help > Check for updates (Linux): it bypasses
-/// the declined/notified memory and reports failures to the user, who
-/// asked. Returns how the automatic loop should schedule the next check.
+/// A verified newer release: the notice first (highlights + «Update
+/// now» / «Later»), then the platform arm — nothing is downloaded
+/// before the user says Update now. `manual` is Help > Check for
+/// updates (Linux): it bypasses the declined/notified memory and reports
+/// failures to the user, who asked. Returns how the automatic loop
+/// should schedule the next check.
 async fn handle_available(
     mgr: &Arc<Manager>,
     client: &reqwest::Client,
     rel: &selfupdate::CheckedRelease,
     manual: bool,
 ) -> RoundOutcome {
+    if notice_suppressed(&rel.version, manual) {
+        return RoundOutcome::Done;
+    }
+    match ask_notice(rel).await {
+        NoticeChoice::Later => {
+            mark_seen(&LATER, &rel.version);
+            return RoundOutcome::Done;
+        }
+        NoticeChoice::UpdateNow => {}
+    }
     #[cfg(windows)]
     {
-        return windows_available(mgr, client, rel, manual).await;
+        return windows_available(mgr, client, rel, manual, true).await;
     }
     #[cfg(not(windows))]
     {
-        return linux_available(mgr, client, rel, manual).await;
+        return linux_available(mgr, client, rel, manual, true).await;
     }
 }
 
-/// The Windows half of `handle_available`.
+/// What the user answered in the update notice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoticeChoice {
+    UpdateNow,
+    Later,
+}
+
+thread_local! {
+    /// The notice window open now, kept alive while it is shown.
+    static NOTICE_WIN: RefCell<Option<UpdateNoticeDialog>> = const { RefCell::new(None) };
+}
+
+/// Show the update notice and wait for the answer. «Update now» /
+/// «Later» come back through a oneshot; closing the window, or a dialog
+/// that cannot be shown at all, counts as Later (nothing is downloaded
+/// without an explicit Update now).
+async fn ask_notice(rel: &selfupdate::CheckedRelease) -> NoticeChoice {
+    let highlights = selfupdate::release_highlights(&rel.notes, is_arabic());
+    let heading = tf("Version {} is available", &[&rel.version]);
+    let link = rel.release_url.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let shared = Arc::new(std::sync::Mutex::new(Some(tx)));
+    let posted = slint::invoke_from_event_loop(move || {
+        show_update_notice(heading, highlights, link, shared);
+    });
+    if posted.is_err() {
+        return NoticeChoice::Later;
+    }
+    rx.await.unwrap_or(NoticeChoice::Later)
+}
+
+/// Build the notice window on the UI thread: heading, highlights (or a
+/// generic "see the release page" line when the release body had none),
+/// the full-notes link, and the two buttons. `tx` answers exactly once,
+/// whatever closes the window.
+fn show_update_notice(
+    heading: String,
+    highlights: Vec<String>,
+    link: String,
+    tx: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<NoticeChoice>>>>,
+) {
+    let Ok(d) = UpdateNoticeDialog::new() else {
+        answer_notice(&tx, NoticeChoice::Later);
+        return;
+    };
+    // the saved theme/language, not the Slint defaults, from the start
+    if let Some(ui) = crate::lazy_ui() {
+        crate::set_theme_of(d.global::<Theme>(), &Look::of(&ui.ctx.mgr.settings()));
+    }
+    d.set_heading(heading.into());
+    d.set_rtl(is_arabic());
+    let items: Vec<SharedString> = if highlights.is_empty() {
+        vec![
+            t("See the release notes on the release page for what changed in this version.").into(),
+        ]
+    } else {
+        highlights.into_iter().map(|l| l.into()).collect()
+    };
+    d.set_items(ModelRc::new(VecModel::from(items)));
+    d.set_link(link.clone().into());
+    let answer = move |choice: NoticeChoice| {
+        answer_notice(&tx, choice);
+    };
+    {
+        let (w, answer) = (d.as_weak(), answer.clone());
+        d.on_update_now(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+            answer(NoticeChoice::UpdateNow);
+        });
+    }
+    {
+        let (w, answer) = (d.as_weak(), answer.clone());
+        d.on_later(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+            answer(NoticeChoice::Later);
+        });
+    }
+    {
+        let link = link.clone();
+        d.on_open_link(move || {
+            let _ = open::that(&link);
+        });
+    }
+    {
+        let (w, answer) = (d.as_weak(), answer.clone());
+        d.on_close_window(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+            answer(NoticeChoice::Later);
+        });
+    }
+    {
+        let w = d.as_weak();
+        d.window().on_close_requested(move || {
+            if let Some(d) = w.upgrade() {
+                let _ = d.hide();
+            }
+            answer(NoticeChoice::Later);
+            slint::CloseRequestResponse::HideWindow
+        });
+    }
+    open_window!(d);
+    NOTICE_WIN.with(|x| *x.borrow_mut() = Some(d));
+}
+
+/// Answer the waiting `ask_notice` exactly once, then let the window go.
+fn answer_notice(
+    tx: &Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<NoticeChoice>>>>,
+    choice: NoticeChoice,
+) {
+    if let Ok(mut g) = tx.lock() {
+        if let Some(tx) = g.take() {
+            let _ = tx.send(choice);
+        }
+    }
+    slint::Timer::single_shot(Duration::from_millis(1), || {
+        NOTICE_WIN.with(|x| *x.borrow_mut() = None);
+    });
+}
+
+/// The Windows half of `handle_available`. The notice already asked
+/// («Update now»), so `confirmed` is always true here; the install
+/// question after the download stays — it confirms the install itself,
+/// not the update.
 #[cfg(windows)]
 async fn windows_available(
     mgr: &Arc<Manager>,
     client: &reqwest::Client,
     rel: &selfupdate::CheckedRelease,
     manual: bool,
+    _confirmed: bool,
 ) -> RoundOutcome {
     {
         if !selfupdate::installed() {
@@ -310,8 +615,8 @@ async fn windows_available(
         // the user is asked, and the install waits until no download
         // is running (the manual window is the immediate path instead)
         let question = tf(
-            "Version {} was downloaded and checked. Install it now? Ezoo Download closes and opens again when it is installed.",
-            &[&rel.version],
+            "Version {} was downloaded and checked. Install {} now? Ezoo Download closes and opens again when it is installed.",
+            &[&rel.version, &package_label()],
         );
         if !ask_user(question).await {
             mark_seen(&DECLINED, &rel.version);
@@ -341,24 +646,28 @@ async fn windows_available(
     }
 }
 
-/// The Linux half of `handle_available` (AppImage replace / notify-only).
+/// The Linux half of `handle_available` (AppImage replace / Managed
+/// download / Flatpak notify-only). `confirmed` is the notice's
+/// «Update now»: when true the second ask is dropped, but installing
+/// still waits until no download is running.
 #[cfg(not(windows))]
 async fn linux_available(
     mgr: &Arc<Manager>,
     client: &reqwest::Client,
     rel: &selfupdate::CheckedRelease,
     manual: bool,
+    confirmed: bool,
 ) -> RoundOutcome {
     match selfupdate::detect_package_current() {
         selfupdate::PackageKind::AppImage => {
             let Some(current) = selfupdate::current_appimage_path() else {
-                return notify_only(rel, manual).await;
+                return notify_only(mgr, client, rel, manual).await;
             };
             if !manual && already_seen(&DECLINED, &rel.version) {
                 return RoundOutcome::Done;
             }
             let Some((filename, url)) = rel.appimage_asset() else {
-                return notify_only(rel, manual).await;
+                return notify_only(mgr, client, rel, manual).await;
             };
             let file = match selfupdate::download_artifact(
                 client,
@@ -389,10 +698,13 @@ async fn linux_available(
                 }
             };
             let question = tf(
-                "Version {} was downloaded and checked. Replace the AppImage file now? The new version starts the next time you open Ezoo Download.",
-                &[&rel.version],
+                "Version {} was downloaded and checked. Replace {} now? The new version starts the next time you open Ezoo Download.",
+                &[&rel.version, &package_label()],
             );
-            if !ask_user(question).await {
+            // the notice already asked («Update now»): the second ask is
+            // dropped, but the replace still waits until no download is
+            // running (below)
+            if !confirmed && !ask_user(question).await {
                 mark_seen(&DECLINED, &rel.version);
                 return RoundOutcome::Done;
             }
@@ -421,19 +733,26 @@ async fn linux_available(
                 return RoundOutcome::Done;
             }
             mark_seen(&NOTIFIED, &rel.version);
-            let text = format!(
-                "{}\n\n{}\n{}",
-                tf("Version {} is available", &[&rel.version]),
-                t("Open the release page in the browser?"),
-                rel.release_url
-            );
-            if ask_user(text).await {
+            // «Update now» in the notice is the confirmation: there is
+            // nothing to download here, the release page is where the
+            // update happens (the app never runs the package manager)
+            if confirmed {
                 let _ = open::that(&rel.release_url);
+            } else {
+                let text = format!(
+                    "{}\n\n{}\n{}",
+                    tf("Version {} is available", &[&rel.version]),
+                    t("Open the release page in the browser?"),
+                    rel.release_url
+                );
+                if ask_user(text).await {
+                    let _ = open::that(&rel.release_url);
+                }
             }
             RoundOutcome::Done
         }
         selfupdate::PackageKind::Managed | selfupdate::PackageKind::Unknown => {
-            notify_only(rel, manual).await
+            notify_only(mgr, client, rel, manual).await
         }
     }
 }
@@ -447,22 +766,111 @@ fn appimage_sha(rel: &selfupdate::CheckedRelease, filename: &str) -> String {
     selfupdate::sums_hash(&rel.sums_text, filename).unwrap_or_default()
 }
 
-/// Notify-only: a message with the release-page link, once per version
-/// per run for automatic checks, always for a manual check.
+/// Notify-only: for a Managed install the notice's «Update now»
+/// downloads the matching package into ~/Downloads (see
+/// `download_managed`); anything else keeps the releases-page message.
+/// Once per version per run for automatic checks, always for a manual
+/// check.
 #[cfg(not(windows))]
-async fn notify_only(rel: &selfupdate::CheckedRelease, manual: bool) -> RoundOutcome {
+async fn notify_only(
+    mgr: &Arc<Manager>,
+    client: &reqwest::Client,
+    rel: &selfupdate::CheckedRelease,
+    manual: bool,
+) -> RoundOutcome {
     if !manual && already_seen(&NOTIFIED, &rel.version) {
         return RoundOutcome::Done;
     }
     mark_seen(&NOTIFIED, &rel.version);
-    tell_user(format!(
-        "{}\n\n{}",
-        tf("Version {} is available", &[&rel.version]),
-        tf(
-            "New versions for Linux are published on the GitHub Releases page of the project:\n{}\n\nThe .deb updates with the package manager, the AppImage by downloading the new file.",
-            &[&rel.release_url],
-        ),
-    ));
+    match selfupdate::detect_package_current() {
+        selfupdate::PackageKind::Managed | selfupdate::PackageKind::Unknown => {
+            download_managed(mgr, client, rel, manual).await
+        }
+        _ => {
+            tell_user(format!(
+                "{}\n\n{}",
+                tf("Version {} is available", &[&rel.version]),
+                tf(
+                    "No matching package file was published for this release ({}). See the release page:\n{}",
+                    &[&package_label(), &rel.release_url],
+                ),
+            ));
+            RoundOutcome::Done
+        }
+    }
+}
+
+/// The Managed arm of the update (hotfix §3.1c, Q40): download the
+/// matching asset — `.deb` on Debian/Ubuntu-likes, `.rpm` elsewhere —
+/// hash-verified against the release sums (the same verification the
+/// AppImage arm uses), into ~/Downloads, then open the folder so the
+/// user finds the file. The app never runs the package manager, so the
+/// user installs the file themselves. `download_artifact` wipes every
+/// other file in its target dir, so the asset is staged in the update
+/// dir and only then placed in Downloads.
+#[cfg(not(windows))]
+async fn download_managed(
+    mgr: &Arc<Manager>,
+    client: &reqwest::Client,
+    rel: &selfupdate::CheckedRelease,
+    manual: bool,
+) -> RoundOutcome {
+    let flavour = managed_flavour(&read_os_release());
+    let Some((filename, url)) = managed_asset(rel, flavour) else {
+        tell_user(format!(
+            "{}\n\n{}",
+            tf("Version {} is available", &[&rel.version]),
+            tf(
+                "No matching package file was published for this release ({}). See the release page:\n{}",
+                &[&package_label(), &rel.release_url],
+            ),
+        ));
+        return RoundOutcome::Done;
+    };
+    let staged = match selfupdate::download_artifact(
+        client,
+        &url,
+        &filename,
+        &selfupdate::sums_hash(&rel.sums_text, &filename).unwrap_or_default(),
+        &rel.sums_text,
+        &update_dir(),
+        &|_, _| {},
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            if manual {
+                tell_user(tf("Could not get the update:\n\n{}", &[&format!("{e:#}")]));
+            }
+            return if e.is_verification() {
+                RoundOutcome::Settled
+            } else {
+                RoundOutcome::Retryable {
+                    retry_after_secs: None,
+                }
+            };
+        }
+    };
+    let folder = downloads_folder(mgr);
+    let dest = folder.join(&filename);
+    match std::fs::create_dir_all(&folder).and_then(|()| std::fs::copy(&staged, &dest)) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&staged);
+            // show the user where the file is
+            let _ = open::that_detached(&folder);
+            tell_user(tf(
+                "Version {} was downloaded to:\n{}",
+                &[&rel.version, &dest.display().to_string()],
+            ));
+        }
+        Err(e) => {
+            tell_user(tf(
+                "The update was downloaded, but it could not be placed in {}:\n{}",
+                &[&folder.display().to_string(), &format!("{e:#}")],
+            ));
+        }
+    }
     RoundOutcome::Done
 }
 
@@ -537,8 +945,8 @@ fn check_now_linux(ui: &Ui) {
         .await
         {
             selfupdate::CheckOutcome::UpToDate => finish(tf(
-                "Ezoo Download is up to date (version {}).",
-                &[&selfupdate::current()],
+                "Ezoo Download ({}) is up to date (version {}).",
+                &[&package_label(), &selfupdate::current()],
             )),
             selfupdate::CheckOutcome::SilentFail { .. } => finish(format!(
                 "{}\n\n{}",
@@ -603,7 +1011,10 @@ fn check_now_windows(ui: &Ui) {
     set(
         0,
         t("Checking for updates…"),
-        tf("This is version {}.", &[&selfupdate::current()]),
+        tf(
+            "This is version {} ({}).",
+            &[&selfupdate::current(), &package_label()],
+        ),
     );
     let shared = Arc::new(std::sync::Mutex::new(Shown {
         state: 0,
@@ -659,7 +1070,10 @@ fn check_now_windows(ui: &Ui) {
                 &shared,
                 4,
                 t("Could not check for updates"),
-                tf("This is version {}.", &[&selfupdate::current()]),
+                tf(
+                    "This is version {} ({}).",
+                    &[&selfupdate::current(), &package_label()],
+                ),
                 -1.0,
             );
             return finish(&shared);
@@ -677,7 +1091,10 @@ fn check_now_windows(ui: &Ui) {
                     &shared,
                     4,
                     t("Could not check for updates"),
-                    tf("This is version {}.", &[&selfupdate::current()]),
+                    tf(
+                        "This is version {} ({}).",
+                        &[&selfupdate::current(), &package_label()],
+                    ),
                     -1.0,
                 );
                 return finish(&shared);
@@ -688,8 +1105,8 @@ fn check_now_windows(ui: &Ui) {
                     1,
                     t("Ezoo Download is up to date"),
                     tf(
-                        "Version {} is the newest version.",
-                        &[&selfupdate::current()],
+                        "Version {} ({}) is the newest version.",
+                        &[&selfupdate::current(), &package_label()],
                     ),
                     -1.0,
                 );
@@ -758,4 +1175,245 @@ fn check_now_windows(ui: &Ui) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AboutDialog;
+    use slint::Model;
+    use swiftget_engine::selfupdate::{CheckedRelease, Release};
+
+    /// A release with a .deb, an .rpm and an AppImage asset, for the
+    /// Managed-asset and label tests.
+    fn fake_release(version: &str) -> CheckedRelease {
+        CheckedRelease {
+            version: version.to_string(),
+            tag: format!("v{version}"),
+            release_url: "https://github.com/kerlif/ezoo-download/releases/tag/v9.9.9".to_string(),
+            manifest: Release {
+                version: version.to_string(),
+                url: String::new(),
+                sha256: String::new(),
+                sig: String::new(),
+            },
+            sums_text: String::new(),
+            sums_signature_verified: false,
+            assets: vec![
+                (
+                    "EzooDownload-9.9.9-amd64.deb".into(),
+                    "https://example.invalid/d.deb".into(),
+                ),
+                (
+                    "EzooDownload-9.9.9.x86_64.rpm".into(),
+                    "https://example.invalid/r.rpm".into(),
+                ),
+                (
+                    "EzooDownload-9.9.9-x86_64.AppImage".into(),
+                    "https://example.invalid/a.AppImage".into(),
+                ),
+            ],
+            notes: String::new(),
+        }
+    }
+
+    #[test]
+    fn package_labels_name_the_running_copy() {
+        use swiftget_engine::selfupdate::PackageKind as K;
+        assert_eq!(package_label_for(K::AppImage), "AppImage");
+        assert_eq!(package_label_for(K::Flatpak), "the Flatpak");
+        assert_eq!(package_label_for(K::Managed), "the .deb/.rpm package");
+        assert_eq!(package_label_for(K::Unknown), "this copy");
+        // the live label is always one of the four
+        assert!(matches!(
+            package_label(),
+            "AppImage"
+                | "the Flatpak"
+                | "the .deb/.rpm package"
+                | "this copy"
+                | "the Windows setup"
+        ));
+    }
+
+    #[test]
+    fn short_labels_for_about() {
+        use swiftget_engine::selfupdate::PackageKind as K;
+        assert_eq!(
+            short_label_for(K::AppImage, ManagedFlavour::Deb),
+            "AppImage"
+        );
+        assert_eq!(short_label_for(K::Flatpak, ManagedFlavour::Deb), "Flatpak");
+        assert_eq!(short_label_for(K::Managed, ManagedFlavour::Deb), ".deb");
+        assert_eq!(short_label_for(K::Managed, ManagedFlavour::Rpm), ".rpm");
+        assert_eq!(
+            short_label_for(K::Unknown, ManagedFlavour::Deb),
+            "portable copy"
+        );
+        assert!(!package_short_label().is_empty());
+    }
+
+    #[test]
+    fn managed_flavour_reads_os_release() {
+        let ubuntu = "NAME=\"Ubuntu\"\nID=ubuntu\nID_LIKE=debian\n";
+        assert_eq!(managed_flavour(ubuntu), ManagedFlavour::Deb);
+        let debian = "ID=debian\n";
+        assert_eq!(managed_flavour(debian), ManagedFlavour::Deb);
+        let fedora = "ID=fedora\nID_LIKE=fedora\n";
+        assert_eq!(managed_flavour(fedora), ManagedFlavour::Rpm);
+        let rhel = "ID=\"rhel\"\nID_LIKE=\"fedora\"\n";
+        assert_eq!(managed_flavour(rhel), ManagedFlavour::Rpm);
+        let suse = "ID=\"opensuse-leap\"\nID_LIKE=\"suse opensuse\"\n";
+        assert_eq!(managed_flavour(suse), ManagedFlavour::Rpm);
+        // unreadable or unrecognised: .deb is the fallback
+        assert_eq!(managed_flavour(""), ManagedFlavour::Deb);
+        assert_eq!(managed_flavour("ID=arch\n"), ManagedFlavour::Deb);
+        assert_eq!(
+            managed_flavour("garbage without equals\n"),
+            ManagedFlavour::Deb
+        );
+    }
+
+    #[test]
+    fn managed_asset_picks_the_matching_package() {
+        let rel = fake_release("9.9.9");
+        assert_eq!(
+            managed_asset(&rel, ManagedFlavour::Deb),
+            Some((
+                "EzooDownload-9.9.9-amd64.deb".into(),
+                "https://example.invalid/d.deb".into()
+            ))
+        );
+        assert_eq!(
+            managed_asset(&rel, ManagedFlavour::Rpm),
+            Some((
+                "EzooDownload-9.9.9.x86_64.rpm".into(),
+                "https://example.invalid/r.rpm".into()
+            ))
+        );
+        // no matching asset: None, never a wrong-kind asset
+        let bare = CheckedRelease {
+            assets: vec![("EzooDownload-Setup.exe".into(), "u".into())],
+            ..rel
+        };
+        assert_eq!(managed_asset(&bare, ManagedFlavour::Deb), None);
+        assert_eq!(managed_asset(&bare, ManagedFlavour::Rpm), None);
+    }
+
+    #[test]
+    fn downloads_folder_is_home_downloads() {
+        assert_eq!(
+            downloads_folder_for(
+                Some(std::path::Path::new("/home/tensi")),
+                std::path::Path::new("/fallback")
+            ),
+            PathBuf::from("/home/tensi/Downloads")
+        );
+        assert_eq!(
+            downloads_folder_for(None, std::path::Path::new("/fallback")),
+            PathBuf::from("/fallback")
+        );
+    }
+
+    #[test]
+    fn later_suppresses_the_notice_until_a_newer_version() {
+        // a unique version per test: the gate statics live for the whole
+        // test process, so tests must not share version strings
+        let v = "9.9.9-h2-later";
+        assert!(!notice_suppressed(v, false));
+        mark_seen(&LATER, v);
+        assert!(notice_suppressed(v, false));
+        // a newer version re-offers at once
+        assert!(!notice_suppressed("9.9.10-h2-later", false));
+        // a manual check bypasses the suppression, as it bypasses
+        // DECLINED today
+        assert!(!notice_suppressed(v, true));
+    }
+
+    #[test]
+    fn declined_versions_suppress_the_notice_too() {
+        let v = "9.9.9-h2-declined";
+        assert!(!notice_suppressed(v, false));
+        mark_seen(&DECLINED, v);
+        assert!(notice_suppressed(v, false));
+        assert!(!notice_suppressed(v, true));
+    }
+
+    #[test]
+    fn auto_checks_follow_the_setting() {
+        // upstream #49: the setting already exists; the spawn loop reads
+        // exactly this predicate (see `spawn`)
+        let mut s = Settings::default();
+        assert!(s.update_check);
+        assert!(auto_checks_enabled(&s));
+        s.update_check = false;
+        assert!(!auto_checks_enabled(&s));
+    }
+
+    /// A second `handle_available()` in the same run shows nothing once
+    /// the user pressed Later: the gate returns Done before any dialog
+    /// or network. (The fresh-launch half is by construction: LATER is
+    /// in-memory only, so a new process re-offers.)
+    #[tokio::test]
+    async fn handle_available_is_done_when_the_notice_is_suppressed() {
+        let dir = std::env::temp_dir().join(format!("ezoo-h2-test-{}-handle", std::process::id()));
+        let mgr =
+            Manager::new(tokio::runtime::Handle::current(), dir.clone()).expect("Manager::new");
+        let client = reqwest::Client::new();
+        let version = "9.9.9-h2-handle";
+        mark_seen(&LATER, version);
+        let rel = fake_release(version);
+        let outcome = handle_available(&mgr, &client, &rel, false).await;
+        assert!(matches!(outcome, RoundOutcome::Done));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A display is needed to open a window; headless CI skips these
+    /// (they run under Xvfb in the smoke test instead).
+    fn display_available() -> bool {
+        std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some()
+    }
+
+    /// Both dialogs are opened in this one test, on this one thread:
+    /// the Slint platform is bound to the thread that first initialized
+    /// it, so a second test on another thread cannot create a window
+    /// afterwards ("The Slint platform was initialized in another
+    /// thread"). Headless CI skips this (it runs under Xvfb in the
+    /// smoke test instead).
+    #[test]
+    fn notice_and_about_dialogs_open_as_their_own_windows() {
+        if !display_available() {
+            eprintln!("SKIP: no display, the dialogs cannot open here");
+            return;
+        }
+        let Ok(about) = AboutDialog::new() else {
+            eprintln!("SKIP: no Slint backend");
+            return;
+        };
+        about.set_version("1.1.1".into());
+        about.set_package("AppImage".into());
+        about.set_path("/tmp/EzooDownload".into());
+        assert_eq!(about.get_version(), "1.1.1");
+        assert_eq!(about.get_package(), "AppImage");
+        assert_eq!(about.get_path(), "/tmp/EzooDownload");
+        let _ = about.show();
+        assert!(about.window().is_visible());
+        // About is open, and the notice is a second, separate window,
+        // with highlights and both buttons
+        let notice = UpdateNoticeDialog::new().expect("the notice dialog opens on the same thread");
+        notice.set_heading("Version 9.9.9 is available".into());
+        notice.set_rtl(false);
+        let items: Vec<SharedString> = vec!["First highlight".into(), "Second highlight".into()];
+        notice.set_items(ModelRc::new(VecModel::from(items)));
+        notice.set_link("https://example.invalid/releases".into());
+        assert_eq!(notice.get_heading(), "Version 9.9.9 is available");
+        assert_eq!(notice.get_items().iter().count(), 2);
+        assert_eq!(notice.get_link(), "https://example.invalid/releases");
+        let _ = notice.show();
+        assert!(notice.window().is_visible());
+        // both windows are up at once: two separate floating windows,
+        // not one window re-used
+        assert!(about.window().is_visible());
+        let _ = notice.hide();
+        let _ = about.hide();
+    }
 }

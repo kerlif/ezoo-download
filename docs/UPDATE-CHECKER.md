@@ -341,3 +341,110 @@ Full Flatpak + CI design: `docs/FLATPAK.md`.
   `restore_ffmpeg()` can fetch it from our own release and verify
   it. Without the baked hash the function stays inert.
 
+
+## 13. Hotfix (patch of 1.1.1, 2026-11-02, branch `v111-hotfix`)
+
+The hotfix changes how an already-verified offer is *shown* and what a
+Managed install *does* with it. It adds **no new outbound request** and
+changes nothing about §1–§6: the check, the signed-manifest gate, the
+checksum verification and the cadence are exactly as documented above.
+Decisions Q36–Q48 are recorded in `docs/OPEN-QUESTIONS.md`.
+
+### 13.1 The update notice (Q36, Q39)
+
+`handle_available()` (`crates/app/src/update.rs`) now shows the notice
+**before** any download, for automatic checks on all platforms and for
+the Linux manual check: a new Slint component `UpdateNoticeDialog`
+(`crates/app/ui/dialogs.slint:4006`, modelled on `WhatsNewDialog`) with
+a heading ("Version X is available"), the highlights (§13.2), a
+full-notes link to the release page, and two buttons — «Update now» /
+«Later». There is no third "never for this version" button: the
+existing disable-auto-update setting (Options > General, upstream #49,
+already implemented) covers "never". Closing the window, or a dialog
+that cannot be shown at all, counts as Later — nothing is downloaded
+without an explicit Update now.
+
+«Update now» proceeds into the existing platform arm (§8, as amended
+by §13.4 below). On Windows the install question after the download
+stays (it confirms the install itself, not the update). On Linux
+AppImage the second "Replace now?" ask is dropped when the user already
+said Update now, but the replace still waits until no download is
+running. `WhatsNewDialog` (the post-update flow) is untouched.
+
+### 13.2 Highlights source (Q36, option A)
+
+The highlights come from the release body of the **already-fetched**
+`releases/latest` API response (§1 step 1): `GithubPayload` gained a
+`body` field, carried into `CheckedRelease.notes` (capped at 4 KiB on a
+char boundary, `truncate_notes`), and parsed in the app by
+`release_highlights()` — the first ≤5 bullet lines, language-matched
+(Arabic bullets for an Arabic UI, the English paragraph otherwise).
+Display-only, with a "full notes" link to `release_url`. A body with
+no bullets degrades to a generic "see the release page" line, never to
+an empty dialog or a crash (H1 tests). No new request, no workflow
+change, no signature change, no risk to existing clients (old binaries
+ignore the extra field). Trust note: the body is unsigned — a tampered
+body could show attacker text in the notice, but it cannot trigger an
+install: the offer and the artifact are still gated by the signed
+manifest + signed sums. The parser treats the body as plain text (no
+links executed, no markup interpreted beyond bullet splitting).
+`docs/PRIVACY.md` records the one-line consequence.
+
+### 13.3 Once-per-launch reminder (Q37, Q38, Q48)
+
+Amended 2026-11-02 12:43 by Tensi (4h re-reminder replaced by
+once-per-launch) and decided 2026-11-02 14:34 (Q48): the notice is
+shown **at most once per program run for a given version** — including
+when a mid-run 24h check finds the update; it does not wait for the
+next launch, and it is not launch-only.
+
+**No durable state is added.** «Later» marks the offered version in a
+new in-memory per-run flag `LATER` (`update.rs:54`, same pattern as
+the existing `DECLINED` / `NOTIFIED` statics); the notice does not
+appear again in this run. The next launch runs the check again and
+re-offers if the update is still pending. A newer version re-offers at
+once. Help > Check for updates bypasses the suppression, as it
+bypasses `DECLINED` today. The earlier Settings-fields proposal
+(`update_remind_at` / `update_remind_version`) is dropped. The check
+cadence is unchanged (launch + every 24 h, §7). Covered by the tests
+`later_suppresses_the_notice_until_a_newer_version`,
+`declined_versions_suppress_the_notice_too` and
+`handle_available_is_done_when_the_notice_is_suppressed`.
+
+### 13.4 Managed (.deb/.rpm) download-to-Downloads (Q40)
+
+**This supersedes the Managed row of §8.** A Managed install is no
+longer plain notify-only: when the user says «Update now» in the
+notice, `notify_only()` → `download_managed()` downloads the matching
+asset into `~/Downloads` (or the download folder from Settings when
+`HOME` is not set), hash-verified against the release sums with the
+same `download_artifact` verification the AppImage arm uses (the
+asset is staged in the update dir and only then placed in Downloads),
+then opens the folder so the user finds the file and tells them the
+full path. The app **never runs the package manager** — the user
+installs the file themselves.
+
+The flavour comes from `/etc/os-release` (`ID` / `ID_LIKE`):
+`rhel`/`fedora`/`suse`/`opensuse` → `.rpm`, anything else (including
+unreadable) → `.deb` (`managed_flavour()`); the asset accessors are
+`CheckedRelease.deb_asset()` / `rpm_asset()` (H1, same pattern as
+`appimage_asset()`). If the release published no matching asset, the
+notice falls back to the releases-page message. Flatpak stays
+notify-only as in §8 (its «Update now» opens the release page
+directly); an install whose kind cannot be told (`Unknown`) takes the
+Managed path, which is safe — it only downloads a file.
+
+### 13.5 About shows the running package (Q45)
+
+`about()` fills two new `AboutDialog` properties from
+`detect_package_current()` and `std::env::current_exe()`: line 1
+"Version 1.1.1 (AppImage)" / "(.deb)" / "(.rpm)" / "(Flatpak)" /
+"(Windows setup)" / "(portable copy)", line 2 the full executable
+path in muted small text (`package_short_label()`,
+`crates/app/src/main.rs:1452-1453`). Every update string now names
+the running package through the single helper `package_label()`
+("AppImage" / "the .deb/.rpm package" / "the Flatpak" / "the Windows
+setup" / "this copy"), so no message can offer the wrong package
+again — the defect Tensi found testing 1.1.1 (a .deb install offered
+an AppImage) was that neither message named the package actually
+running.
