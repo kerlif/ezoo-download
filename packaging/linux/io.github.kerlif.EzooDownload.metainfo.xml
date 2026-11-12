@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>io.github.kerlif.EzooDownload</id>
   <launchable type="desktop-id">io.github.kerlif.EzooDownload.desktop</launchable>
-  <name>Ezoo Download</name>
+  <name>Ezoo Download Manager</name>
   <summary>Download manager for HTTP, HLS, DASH, video and torrents</summary>
   <summary xml:lang="ar">مدير تحميلات يدعم HTTP و HLS و DASH والفيديو والتورنت</summary>
   <developer id="io.github.ahmedezo686">
@@ -14,12 +14,12 @@
   <url type="bugtracker">https://github.com/kerlif/ezoo-download/issues</url>
   <description>
     <p>
-      Ezoo Download is a desktop download manager written in Rust. It splits
+      Ezoo Download Manager is a desktop download manager written in Rust. It splits
       files over up to 32 connections, resumes after interruptions, and keeps
       running next to the clock when its window is closed.
     </p>
     <p xml:lang="ar">
-      Ezoo Download مدير تحميلات مكتوب بلغة Rust: يقسّم الملف على عدة اتصالات،
+      Ezoo Download Manager مدير تحميلات مكتوب بلغة Rust: يقسّم الملف على عدة اتصالات،
       يستأنف بعد الانقطاع، ويبقى بجوار الساعة عند إغلاق النافذة.
     </p>
     <p>
@@ -51,6 +51,18 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.1.2" date="2026-11-08" type="stable">
+      <description>
+        <p>Fork release: the browser channel is now HMAC-signed, video
+        clip and partial download, magnet links show the file list
+        first, an adaptive engine for rate limits and slow
+        connections, the new Ezoo Download Manager (EDM) identity,
+        and site passwords and cookies on Linux are kept in the
+        system keyring instead of plain text. Note: the 1.1.1 browser
+        extension stops working with this version — update the
+        extension to 1.1.2 as well.</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-11-02" type="stable">
       <description>
         <p>Fork release: quality choice in the capture window now steers the

@@ -11,6 +11,9 @@ use swiftget_engine::model::RequestHeaders;
 use swiftget_engine::stream_meta::{probe_stream, SizeSource};
 
 const MASTER: &str = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",URI=\"/audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=250000,AVERAGE-BANDWIDTH=200000,RESOLUTION=1280x720,FRAME-RATE=30,CODECS=\"avc1.64001f,mp4a.40.2\",AUDIO=\"aud\"\n/high.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=80000,RESOLUTION=640x360,FRAME-RATE=25,CODECS=\"avc1.42c01e\"\n/low.m3u8\n";
+/// Same shape, but the tag (400000) already holds the audio: the video
+/// segments only sample to 240000, clearly below the tag (Q8).
+const MASTER_TAG_INCLUDES_AUDIO: &str = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",URI=\"/audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=1280x720,FRAME-RATE=30,CODECS=\"avc1.64001f,mp4a.40.2\",AUDIO=\"aud\"\n/high.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=80000,RESOLUTION=640x360,FRAME-RATE=25,CODECS=\"avc1.42c01e\"\n/low.m3u8\n";
 const HIGH: &str = "#EXTM3U\n#EXTINF:4.0,\n/seg-h1.ts\n#EXTINF:4.0,\n/seg-h2.ts\n#EXTINF:2.0,\n/seg-h3.ts\n#EXT-X-ENDLIST\n";
 const LOW: &str = "#EXTM3U\n#EXTINF:5.0,\n/seg-l1.ts\n#EXTINF:5.0,\n/seg-l2.ts\n#EXT-X-ENDLIST\n";
 const AUDIO: &str = "#EXTM3U\n#EXTINF:5.0,\n/seg-a1.ts\n#EXTINF:5.0,\n/seg-a2.ts\n#EXT-X-ENDLIST\n";
@@ -89,7 +92,9 @@ fn handle(mut stream: std::net::TcpStream) {
     );
     let lower = headers.to_ascii_lowercase();
     let has_cookie = lower.contains("cookie: sess=abc");
-    let has_range = lower.contains("range: bytes=0-0");
+    // any byte range counts: the probe asks open-ended (`bytes=0-`),
+    // the sampler asks for one byte (`bytes=0-0`)
+    let has_range = lower.contains("range: bytes=");
 
     // (status, extra headers, body)
     let (status, extra, body): (&str, Vec<String>, Vec<u8>) = match (method, path) {
@@ -176,6 +181,17 @@ fn handle(mut stream: std::net::TcpStream) {
                     "200 OK",
                     vec!["Content-Type: application/vnd.apple.mpegurl".into()],
                     MASTER.as_bytes().to_vec(),
+                )
+            }
+        }
+        ("GET", "/master-tagged.m3u8") => {
+            if !has_cookie {
+                ("403 Forbidden", vec![], vec![])
+            } else {
+                (
+                    "200 OK",
+                    vec!["Content-Type: application/vnd.apple.mpegurl".into()],
+                    MASTER_TAG_INCLUDES_AUDIO.as_bytes().to_vec(),
                 )
             }
         }
@@ -404,6 +420,31 @@ async fn hls_master_and_media_metadata() {
     assert_eq!(low.video_bps, 80_000, "BANDWIDTH fallback");
     assert_eq!(low.audio_bps, 0);
     assert_eq!(low.estimated_size, Some(100_000));
+}
+
+#[tokio::test]
+async fn hls_tag_that_includes_audio_is_not_doubled() {
+    // Q8: the tag (400000) already holds the audio — the video alone
+    // samples to 240000 — so the sampled audio (32000) must NOT be
+    // added on top of it: the estimate is the tag, not tag + audio.
+    let base = serve();
+    let meta = probe_stream(
+        &client(),
+        &format!("{base}/master-tagged.m3u8"),
+        &captured_headers(),
+        "UA",
+    )
+    .await
+    .unwrap();
+    assert!(meta.drm.is_none());
+    assert_eq!(meta.variants.len(), 2);
+    let high = &meta.variants[0];
+    assert_eq!(high.video_bps, 400_000);
+    assert_eq!(
+        high.audio_bps, 0,
+        "the tag already includes the audio: adding it would double-count"
+    );
+    assert_eq!(high.estimated_size, Some(500_000));
 }
 
 #[tokio::test]

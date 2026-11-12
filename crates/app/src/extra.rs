@@ -482,18 +482,19 @@ pub(crate) fn is_web_address(s: &str) -> bool {
 }
 
 /// What the newest version brings (shown once after an automatic update).
-const WHATS_NEW: [&str; 20] = [
-    "A click on a file link in the browser goes straight to Ezoo Download: the browser's own Save As window no longer opens (Brave too).",
+const WHATS_NEW: [&str; 21] = [
+    "Important: the browser extension must also be updated to 1.1.2 — the 1.1.1 extension can no longer capture downloads (its old token is refused); install the new extension from the release page while the stores review it.",
+    "A click on a file link in the browser goes straight to Ezoo Download Manager: the browser's own Save As window no longer opens (Brave too).",
     "Changing the folder or the name in \"Download File Info\" no longer gives a small broken file, and a name typed without its extension keeps it.",
-    "Downloads never wait for ever any more: when a server stops answering, Ezoo Download asks again by itself, so a video or a file no longer stays at 0 KB/s or never starts, and Pause / Resume is not needed.",
-    "Big files keep going by themselves when the server has trouble: Ezoo Download tries again later on its own.",
+    "Downloads never wait for ever any more: when a server stops answering, Ezoo Download Manager asks again by itself, so a video or a file no longer stays at 0 KB/s or never starts, and Pause / Resume is not needed.",
+    "Big files keep going by themselves when the server has trouble: Ezoo Download Manager tries again later on its own.",
     "A link that stops working (expired) is renewed by itself and checked first, then the download goes on from where it was.",
     "The number of connections changes at once, even while a file downloads, and a connection much slower than the others is made again, so the speed stays steady.",
     "The download window has the Windows title bar again, so every button answers the mouse where it is (Windows 10 and 11); its details stay hidden until you show them, and the windows keep the size you gave them.",
     "The windows are drawn without the graphics card: much less memory, and the program no longer closes by itself at start on some computers (Options > General switches it back).",
-    "When Ezoo Download is open but does not answer, opening it again offers to close it and start it fresh; an update shows its small window and never closes the program again and again.",
+    "When Ezoo Download Manager is open but does not answer, opening it again offers to close it and start it fresh; an update shows its small window and never closes the program again and again.",
     "The speed limiter goes on and off with a click in the status bar, and \"Move to queue\" opens in a list of its own.",
-    "Torrents: a .torrent link in the browser opens the torrent window at once, .torrent files and magnet links open with Ezoo Download, and a .torrent file can be dropped on the window.",
+    "Torrents: a .torrent link in the browser opens the torrent window at once, .torrent files and magnet links open with Ezoo Download Manager, and a .torrent file can be dropped on the window.",
     "Removing downloads can delete their files from the disk too (if you tick it), and the question can be turned off.",
     "Ctrl+A, Ctrl+N and the other shortcuts work with the Arabic keyboard too, and files are selected with the mouse in both directions.",
     "The video button: a small style (arrow and ✕) with a see-through slider, videos in the Facebook feed, and the qualities of streams on many more sites instead of an error.",
@@ -520,7 +521,7 @@ pub(crate) fn whats_new(ui: &Ui) {
     d.set_rtl(crate::i18n::is_arabic());
     d.set_heading(
         tf(
-            "Ezoo Download was updated to version {} by itself.",
+            "Ezoo Download Manager was updated to version {} by itself.",
             &[&env!("CARGO_PKG_VERSION")],
         )
         .into(),
@@ -542,9 +543,9 @@ pub(crate) fn whats_new(ui: &Ui) {
 }
 
 const TIPS: [&str; 14] = [
-    "Copy a download link anywhere (Ctrl+C) and Ezoo Download offers to download it.",
+    "Copy a download link anywhere (Ctrl+C) and Ezoo Download Manager offers to download it.",
     "Play a video on a web page and click \"Download this video\" above it to choose the quality.",
-    "Right click a web page in Chrome or Edge and choose \"Download all links with Ezoo Download\" to pick files from the page.",
+    "Right click a web page in Chrome or Edge and choose \"Download all links with Ezoo Download Manager\" to pick files from the page.",
     "Every download uses up to 32 connections. If a server is slow with many, add it to Options > Connection > Exceptions.",
     "Make a queue (Queues > New queue) and set \"1 file at the same time\" to download files one after another.",
     "The Scheduler can start a queue at night and shut down the computer when everything is finished.",
@@ -649,6 +650,78 @@ pub(crate) fn refresh_received(ui: &Ui, id: u64, url: &str, headers: RequestHead
                 Err(_) => {}
             }
         });
+    });
+}
+
+/// A 403 handover came back from the browser: the same address the
+/// program opened there, with the browser's sign-in. Checked as the
+/// same file first (`refresh_link_with_headers` probes with the fresh
+/// headers and swaps the link only when size + validator match — the
+/// same rule as "Refresh download address"), then the download goes on
+/// from where it stopped. A link that fails the check is left to the
+/// browser instead: the user already has the page open there.
+pub(crate) fn relay_received(ui: &Ui, id: u64, url: &str, headers: RequestHeaders) {
+    let mgr = ui.ctx.mgr.clone();
+    let rt = ui.ctx.rt.clone();
+    let url = url.to_string();
+    rt.spawn(async move {
+        let checked = mgr.refresh_link_with_headers(id, &url, headers).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(ui2) = crate::lazy_ui() else {
+                return;
+            };
+            // done either way: a later download of the same address is
+            // an ordinary new download, not a second handover
+            crate::relay_forget(&url);
+            match checked {
+                Ok(()) => {
+                    ui2.ctx.mgr.start(id);
+                    open_progress(&ui2, id);
+                    refresh(&ui2);
+                }
+                Err(_) => {
+                    // refused even with the browser's own request: the
+                    // browser keeps it and downloads it itself
+                    api::leave_to_browser(&url);
+                    note(&t(
+                        "The site refused the download again, so the browser keeps it.",
+                    ));
+                }
+            }
+        });
+    });
+}
+
+/// The first finished video in AV1 (the same picture in a much smaller
+/// file, what the best qualities of some sites are): older players play
+/// its sound but show no picture. Said once, a moment after it
+/// finished. On Linux there is no Store to open: VLC (or the
+/// distribution's AV1 codec package) is the suggestion instead.
+pub(crate) fn av1_tip(ui: &Ui, done: &[u64]) {
+    let s = ui.ctx.mgr.settings();
+    if s.av1_tip_shown {
+        return;
+    }
+    let av1 = done.iter().filter_map(|id| ui.ctx.mgr.get(*id)).any(|v| {
+        v.status == Status::Completed && v.source_key.as_deref().is_some_and(|k| k.contains("AV1"))
+    });
+    if !av1 {
+        return;
+    }
+    let text = t("This video is in AV1 (the same picture in a much smaller file). If your player plays only its sound, without the picture, play it with VLC — or install your distribution's AV1 codec package.");
+    // the flag is set only AFTER the tip actually shows: message()
+    // is a modal box, so it returns once the tip was displayed (and
+    // dismissed). Setting it before the 2 s timer meant quitting
+    // inside those 2 s lost the tip forever.
+    let mgr = ui.ctx.mgr.clone();
+    slint::Timer::single_shot(std::time::Duration::from_secs(2), move || {
+        if mgr.settings().av1_tip_shown {
+            return;
+        }
+        message(&text);
+        let mut s = mgr.settings();
+        s.av1_tip_shown = true;
+        let _ = mgr.set_settings(s);
     });
 }
 

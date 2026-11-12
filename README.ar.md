@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-  <img alt="Ezoo Download: أجزاء التنزيل المتوازية تمتلئ" src="assets/banner-light.svg" width="100%">
+  <img alt="Ezoo Download Manager: أجزاء التنزيل المتوازية تمتلئ" src="assets/banner-light.svg" width="100%">
 </picture>
 
 **تنزيلات متعددة الاتصالات وقابلة للاستئناف لويندوز ولينكس.**<br>
@@ -27,9 +27,11 @@
 
 <br>
 
+**«Ezoo Download Manager (EDM)» فرع مستقل من برنامج «Ezoo Download» للمطوّر أحمد عزت (Ezoo Tech)، يصونه ويطوّره kerlif. شكر خاص لأحمد عزت على البرنامج الأصلي، ولكيرليف على التحسينات الإضافية.**
+
 <div dir="rtl" align="right">
 
-## لماذا Ezoo Download؟
+## لماذا Ezoo Download Manager؟
 
 | | الميزة | ما الذي يفعله |
 |:-:|---|---|
@@ -106,7 +108,7 @@ chmod +x EzooDownload-*-x86_64.AppImage
 
 </div>
 
-حزم `.deb` و`.rpm` وAppImage وFlatpak تتضمن ffmpeg، فدمج الفيديو والصوت يعمل دون تثبيت أي شيء آخر. وحزمة Flatpak تتضمن أيضًا aria2: [`EzooDownload-x86_64.flatpak`](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
+حزم `.deb` و`.rpm` وAppImage تتضمن ffmpeg، فدمج الفيديو والصوت يعمل دون تثبيت أي شيء آخر. استثناء: الـ ffmpeg المدمج يتعطّل على بعض مصادر MPEG-TS — يعيد البرنامج المحاولة تلقائيًا بـ ffmpeg النظام إن وُجد، وإلا ثبّت ffmpeg من مدير الحزم.
 
 للتفاصيل وحل المشكلات، راجع [دليل لينكس](packaging/linux/README-Linux.md).
 
@@ -144,14 +146,14 @@ cargo build --release
 ## الخصوصية والشبكة
 
 - تذهب التنزيلات مباشرة من الخادم الذي اخترته إلى جهازك.
-- طلبان تلقائيان فقط: فحص التحديثات (اسم البرنامج ورقم إصداره فقط، كل 24 ساعة — ويمكنك إيقافه من الإعدادات)، وفحص تحديث الأدوات الذي ينزّل yt-dlp مرة يوميًا على الأكثر ويتحقق من هاشه قبل الاستخدام؛ أما aria2 فيُنزَّل على Windows فقط (على لينكس ثبّته من مدير حزم نظامك، وفي حزمة Flatpak يأتي مدمجًا).
+- طلبان تلقائيان فقط: فحص التحديثات (اسم البرنامج ورقم إصداره فقط، كل 24 ساعة — ويمكنك إيقافه من الإعدادات)، وفحص تحديث الأدوات الذي ينزّل yt-dlp مرة يوميًا على الأكثر ويتحقق من هاشه قبل الاستخدام؛ أما aria2 فيُنزَّل على Windows فقط (على لينكس ثبّته من مدير حزم نظامك).
 - ولا يعمل yt-dlp إلا عندما تطلب ميزات الفيديو أو قوائم التشغيل أو تحديث الأدوات.
 - لا توجد تحليلات ولا تقارير أعطال ترسل تلقائيًا.
 
 ## الاستخدام المسؤول
 
 > [!IMPORTANT]
-> لا ينزّل Ezoo Download المحتوى المحمي بـ DRM، ولا يحاول تجاوز هذه الحماية. نزّل المحتوى الذي تملك حق تنزيله فقط، واتبع شروط كل موقع تستخدمه.
+> لا ينزّل Ezoo Download Manager المحتوى المحمي بـ DRM، ولا يحاول تجاوز هذه الحماية. نزّل المحتوى الذي تملك حق تنزيله فقط، واتبع شروط كل موقع تستخدمه.
 
 ## الأسئلة الشائعة
 
@@ -179,7 +181,7 @@ cargo build --release
 <details>
 <summary><b>هل يعمل على لينكس؟</b></summary>
 
-نعم، عبر حزم `.deb` و`.rpm` وAppImage و[Flatpak](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
+نعم، عبر حزم `.deb` و`.rpm` وAppImage.
 
 </details>
 
@@ -213,10 +215,10 @@ cargo build --release
 
 <br>
 
-<img src="assets/logo.svg" width="56" alt="شعار Ezoo Download">
+<img src="assets/logo.svg" width="56" alt="شعار Ezoo Download Manager">
 
 <br>
 
-<sub><picture><source media="(prefers-color-scheme: dark)" srcset="assets/rust-logo-white-outline.svg"><img src="assets/rust-logo.svg" width="15" height="15" alt="شعار Rust"></picture> مبني بلغة Rust.</sub>
+<sub><picture><source media="(prefers-color-scheme: dark)" srcset="assets/rust-logo-white-outline.svg"><img src="assets/rust-logo.svg" width="15" height="15" alt="شعار Rust"></picture> مبني بلغة Rust. شعار Rust © Rust Foundation، بترخيص <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (من <a href="https://github.com/rust-lang/rust-artwork">rust-lang/rust-artwork</a>).</sub>
 
 </div>

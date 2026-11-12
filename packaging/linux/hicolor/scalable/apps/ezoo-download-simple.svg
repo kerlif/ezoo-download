@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ezoo Download Manager (simplified D-arrow mark)">
+  <!-- Ezoo Download Manager (EDM) — hand-built vector of the supplied
+       logo (2026-11-05). Dark-navy tile, EDM letters: E #4687C7,
+       D #54AB64 with download-arrow stem, M #C2453F. No embedded raster. -->
+  <defs>
+    <linearGradient id="edm-bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#253149"/>
+      <stop offset="0.5" stop-color="#253149"/>
+      <stop offset="0.5" stop-color="#1D283A"/>
+      <stop offset="1" stop-color="#1D283A"/>
+    </linearGradient>
+    <linearGradient id="edm-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".10"/>
+      <stop offset=".38" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- tile: navy gradient, left #253149 -> right #1D283A -->
+  <rect width="512" height="512" rx="82" fill="url(#edm-bg)"/>
+  <rect width="512" height="512" rx="82" fill="url(#edm-sheen)"/>
+  <!-- simplified small-size mark: green D-arrow only (#54AB64) -->
+  <g fill="#54AB64">
+    <rect x="150" y="110" width="44" height="230"/>
+    <polygon points="128,330 216,330 172,386"/>
+    <path fill-rule="evenodd" d="M194 110 H300 Q382 110 382 256 Q382 402 300 402 H194 Z M238 154 H296 Q338 154 338 256 Q338 358 296 358 H238 Z"/>
+  </g>
+</svg>

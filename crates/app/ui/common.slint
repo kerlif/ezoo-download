@@ -1,4 +1,4 @@
-// Ezoo Download – shared look: data types, themes, icons and small widgets.
+// Ezoo Download Manager – shared look: data types, themes, icons and small widgets.
 
 import { Button, LineEdit, SpinBox, CheckBox as StdCheckBox, ComboBox, ListView, TabWidget, TextEdit, Palette } from "std-widgets.slint";
 
@@ -12,6 +12,10 @@ export struct DownloadRow {
     size: string,
     status: string,
     progress: float,
+    // the post-download step ("join", "tomp4", "tomp3", "move", "cut") and
+    // how far it is (0..1); "" when no step is running (P7 second bar)
+    step: string,
+    step-progress: float,
     eta: string,
     speed: string,
     last-try: string,
@@ -127,32 +131,61 @@ export global Theme {
     out property <color> grid: grid-base.transparentize(glass);
     property <color> window-base: [#f0f0f0, #1e1f22, #e8f1fb, #15131d, #eef5ef, #000000, #fbf1ea, #0f1c1e, #fbf0f4][mode];
     property <color> panel-base: [#ffffff, #26282c, #ffffff, #1d1a29, #ffffff, #0b0b0b, #ffffff, #142527, #ffffff][mode];
-    // toolbar gradient stops: the white toolbar labels of the saturated
-    // light themes need dark enough stops (WCAG AA 4.5:1); the old Ocean /
-    // Forest / Sunset / Rose top stops were 3.87 / 3.41 / 2.76 / 3.50:1
-    property <color> toolbar-top-base: [#fdfdfd, #2e3136, #2068d0, #2b2545, #1e7a43, #121212, #b93a1c, #1b3a3d, #b93a68][mode];
-    property <color> toolbar-bottom-base: [#e7ebf0, #24262a, #1b5fc4, #1e1a33, #1f7a43, #050505, #b23a1a, #132b2e, #c23d6e][mode];
+    // toolbar gradient stops: v1.1.2 EDM branding. The light theme keeps
+    // near-white stops because its labels are dark; the dark themes move
+    // toward EDM Navy (#1d283a / #253149) — their tops are kept at
+    // luminance <= 0.021 so every toolbar-icon fill still measures >= 3:1
+    // against the top stop; the saturated themes use the AA-safe dark
+    // variant of their palette hue (Ocean #2f6699 EDM Blue, Forest
+    // #2b7439 EDM Green, Sunset #9f3535 EDM Red, Rose #b03a4e rose-red)
+    // so their white labels stay >= 4.5:1 (see docs/THEMES.md)
+    property <color> toolbar-top-base: [#fdfdfd, #1f2836, #2f6699, #202634, #2b7439, #1d283a, #9f3535, #182830, #b03a4e][mode];
+    property <color> toolbar-bottom-base: [#e4e9f0, #1d283a, #2b5f8f, #1d283a, #235e2e, #0a0f18, #8c2f2f, #16242c, #9c3244][mode];
     out property <color> toolbar-text: [#1b1f24, #e8eaed, #ffffff, #ece9f6, #ffffff, #f2f2f2, #ffffff, #e3f4f3, #ffffff][mode];
     out property <color> toolbar-hover: [#e5f1fb, #3a3e45, #4a92f0, #3a3260, #45b06f, #262626, #f5955f, #26504f, #e97aa1][mode];
     out property <color> line: [#d9dde3, #3a3d42, #c6d8ef, #352f4d, #c9dfcf, #262626, #efd2c2, #24403f, #efcdda][mode];
     property <color> grid-base: [#eef0f3, #2f3237, #eaf2fc, #26223a, #eaf4ec, #141414, #fbeee6, #1a2e30, #fbedf2][mode];
-    property <color> header-top-base: [#ffffff, #2e3136, #f7fbff, #26223a, #f8fcf9, #161616, #fffaf6, #1b3133, #fffafc][mode];
-    property <color> header-bottom-base: [#eef1f5, #282a2e, #e3eefb, #201c31, #e2f0e6, #0e0e0e, #f8e5d9, #16292b, #f8e3eb][mode];
+    // header gradient stops: v1.1.2 EDM branding, pale navy-tinted on the
+    // light themes (their labels are dark text) and navy-shifted on the
+    // dark themes; the saturated themes keep a pale tint of their hue
+    property <color> header-top-base: [#f7f9fb, #28303f, #eaf2fa, #262c40, #f2f8f3, #161d29, #fbf0ec, #1d3238, #fdf3f6][mode];
+    property <color> header-bottom-base: [#edf1f5, #1f2733, #dbe8f5, #1e2233, #e0eee3, #0d1219, #f6e2dc, #15272b, #f9e4ea][mode];
     out property <color> text: [#1b1f24, #e8eaed, #13243a, #ece9f6, #15281b, #f2f2f2, #2e1a12, #e3f4f3, #2e1420][mode];
     // muted/accent values are chosen so normal text meets WCAG AA (4.5:1)
     // on both the window and the panel background of every theme; the
     // measured ratios are recorded in docs/THEMES.md
     out property <color> muted: [#5f6b78, #9aa0a6, #4f6a8a, #a59fc0, #4f7359, #9a9a9a, #8a6352, #8fb3b0, #8a5a6c][mode];
-    out property <color> accent: [#0f56c4, #5b9dff, #1565c0, #a78bfa, #146c43, #4ea1ff, #b23a1a, #2ec4b6, #c23d6e][mode];
-    out property <color> select: [#cce8ff, #264f78, #cfe4ff, #3d3366, #cdebd7, #1f3550, #fbd9c8, #1d4b4b, #f8d3e1][mode];
-    out property <color> select-line: [#99d1ff, #3a6ea5, #8dbcf5, #5b4a99, #8ccaa2, #2f5a8a, #eea98a, #2b7470, #eaa0bb][mode];
-    out property <color> hover: [#e5f3ff, #2c3440, #e3efff, #2a2541, #e2f3e7, #1a1a1a, #fdeadf, #1b3436, #fde6ee][mode];
+    // v1.1.2 EDM branding: one accent for all nine themes, the EDM Blue
+    // family — blue is the download role, so the download colour no longer
+    // changes with the theme (the per-theme accents are gone; the theme
+    // now lives in the window/panel/toolbar backgrounds). Light value
+    // #2f6699 is EDM Blue #4687c7 darkened to 5.29:1 on the Light window;
+    // the first try, #3570a6, passed there (4.58:1) but failed as
+    // accent-coloured text on a selected row (4.13:1), so it was darkened
+    // one step further — #2f6699 reads 4.77:1 on the selection background.
+    // Dark value #5a97dc is EDM Blue lightened to 4.85:1 on the dark panel
+    // while keeping white-on-accent >= 3:1 (the RTL check-box tick)
+    out property <color> accent: [#2f6699, #5a97dc, #2f6699, #5a97dc, #2f6699, #5a97dc, #2f6699, #5a97dc, #2f6699][mode];
+    // v1.1.2 EDM branding: selection is the same EDM Blue family in every
+    // theme (pale blue tint on light themes, deep navy-blue on dark ones),
+    // so a selected row reads the same whatever the theme
+    out property <color> select: [#d6e7f6, #23405f, #d6e7f6, #23405f, #d6e7f6, #23405f, #d6e7f6, #23405f, #d6e7f6][mode];
+    out property <color> select-line: [#93bfe6, #3a6ea5, #93bfe6, #3a6ea5, #93bfe6, #3a6ea5, #93bfe6, #3a6ea5, #93bfe6][mode];
+    out property <color> hover: [#eaf2f9, #1f2c3a, #eaf2f9, #1f2c3a, #eaf2f9, #1f2c3a, #eaf2f9, #1f2c3a, #eaf2f9][mode];
     // semantic status colors: one value per theme, so status text meets
     // WCAG AA (4.5:1) on the light themes too (the old light values were
-    // 3.06:1 for ok, 4.18:1 for err and 2.36:1 for warn); dark values kept
-    out property <color> ok: [#177245, #3fcf7a, #177245, #3fcf7a, #177245, #3fcf7a, #177245, #3fcf7a, #177245][mode];
+    // 3.06:1 for ok, 4.18:1 for err and 2.36:1 for warn); dark values kept.
+    // v1.1.2 EDM branding: ok is the EDM Green family, err the EDM Red
+    // family. Light ok #2b7439 is EDM Green #54ab64 darkened to 5.03:1 on
+    // the Light window (the first try, #2f7d3e, measured 4.47:1 and failed);
+    // dark ok #3fa34f is EDM Green darkened just enough that the white
+    // arrow on the BrowserCard badge reaches 3.20:1. Light err #9f3535 is
+    // the EDM Red dark variant (6.07:1); dark err #e5736b is EDM Red
+    // #c2453f lightened to 4.92:1 on the dark panel. Warn stays amber:
+    // amber is functional, not brand
+    out property <color> ok: [#2b7439, #3fa34f, #2b7439, #3fa34f, #2b7439, #3fa34f, #2b7439, #3fa34f, #2b7439][mode];
     out property <color> warn: [#8a5a00, #e08a00, #8a5a00, #e08a00, #8a5a00, #e08a00, #8a5a00, #e08a00, #8a5a00][mode];
-    out property <color> err: [#b3261e, #ff6b62, #b3261e, #ff6b62, #b3261e, #ff6b62, #b3261e, #ff6b62, #b3261e][mode];
+    out property <color> err: [#9f3535, #e5736b, #9f3535, #e5736b, #9f3535, #e5736b, #9f3535, #e5736b, #9f3535][mode];
     out property <color> bar-bg: dark ? #34373c : #e6e6e6;
     out property <color> input-bg: dark ? #2b2d31 : #ffffff;
 }
@@ -477,14 +510,25 @@ export component P inherits Path {
     viewbox-height: 32;
 }
 
-// Toolbar icons, drawn on a 32x32 grid.
+// Toolbar icons, drawn on a 32x32 grid. Flat fills only, no gradients:
+// the icon language is flat and functional (one hue per meaning, a text
+// label under every toolbar button), so a glossy gradient would add
+// decoration without information. The brand gradient lives only on the
+// application/bubble tiles (logo.svg, capture-icon.svg), never here.
+// v1.1.2 EDM branding: the fills are the logo palette by role — download
+// EDM Blue #4687c7, add/ok EDM Green fill #2e8b47 (EDM Green #54ab64
+// darkened to >= 3.3:1 on both the light and the dark toolbar),
+// stop/delete EDM Red fill #c94b44 (EDM Red #c2453f lightened slightly so
+// it stays >= 3.2:1 on the dark toolbar), warn amber #d97d00 kept.
+// Every fill measures >= 3:1 on both toolbar surfaces (see docs/THEMES.md);
+// the yellow folder keeps its documented exception.
 export component Icon inherits Rectangle {
     in property <string> kind;
     width: 32px;
     height: 32px;
     if root.kind == "add": Rectangle {
         P {
-            fill: @linear-gradient(180deg, #45c06a 0%, #23934a 100%);
+            fill: #2e8b47;
             commands: "M 16 2 A 14 14 0 1 1 15.99 2 Z";
         }
         P {
@@ -506,7 +550,7 @@ export component Icon inherits Rectangle {
             commands: "M 5 8 L 20 8 L 20 28 L 5 28 Z M 8 13 L 17 13 M 8 17 L 17 17 M 8 21 L 14 21";
         }
         P {
-            fill: #2e9e4f;
+            fill: #2e8b47;
             commands: "M 24 17 A 7 7 0 1 1 23.99 17 Z";
         }
         P {
@@ -517,7 +561,7 @@ export component Icon inherits Rectangle {
     if root.kind == "playlist": Rectangle {
         // a green player with a list in front of it
         P {
-            fill: @linear-gradient(180deg, #4cd47a 0%, #1e9e4c 100%);
+            fill: #2e8b47;
             commands: "M 6 4 L 28 4 Q 31 4 31 7 L 31 19 Q 31 22 28 22 L 6 22 Q 3 22 3 19 L 3 7 Q 3 4 6 4 Z";
         }
         P {
@@ -529,7 +573,7 @@ export component Icon inherits Rectangle {
             commands: "M 3 24 L 20 24 L 20 26 L 3 26 Z M 3 28 L 20 28 L 20 30 L 3 30 Z";
         }
         P {
-            fill: #1f6feb;
+            fill: #4687c7;
             commands: "M 25 21 A 6 6 0 1 1 24.99 21 Z";
         }
         P {
@@ -540,7 +584,7 @@ export component Icon inherits Rectangle {
     if root.kind == "torrent": Rectangle {
         // a red magnet with a download arrow
         P {
-            fill: @linear-gradient(180deg, #ff5a7a 0%, #c81e45 100%);
+            fill: #c94b44;
             commands: "M 3 3 L 10 3 L 10 14 A 4 4 0 0 0 18 14 L 18 3 L 25 3 L 25 14 A 11 11 0 0 1 3 14 Z";
         }
         P {
@@ -548,7 +592,7 @@ export component Icon inherits Rectangle {
             commands: "M 3 3 L 10 3 L 10 8 L 3 8 Z M 18 3 L 25 3 L 25 8 L 18 8 Z";
         }
         P {
-            fill: #1f6feb;
+            fill: #4687c7;
             commands: "M 25 18 A 6.5 6.5 0 1 1 24.99 18 Z";
         }
         P {
@@ -559,7 +603,7 @@ export component Icon inherits Rectangle {
     if root.kind == "grabber": Rectangle {
         // a globe with a download arrow
         P {
-            fill: @linear-gradient(180deg, #5aa8ff 0%, #1f6feb 100%);
+            fill: #4687c7;
             commands: "M 14 3 A 11 11 0 1 1 13.99 3 Z";
         }
         P {
@@ -569,7 +613,10 @@ export component Icon inherits Rectangle {
             commands: "M 3 14 L 25 14 M 14 3 C 8 8 8 20 14 25 M 14 3 C 20 8 20 20 14 25 M 5 8 L 23 8 M 5 20 L 23 20";
         }
         P {
-            fill: #2e9e4f;
+            // download badge: EDM Blue #4687c7, like the playlist and
+            // torrent badges (white arrow 3.78:1); green stays reserved
+            // for "add" (Add-URL circle, Add-Batch badge)
+            fill: #4687c7;
             commands: "M 24 17 A 7 7 0 1 1 23.99 17 Z";
         }
         P {
@@ -591,25 +638,25 @@ export component Icon inherits Rectangle {
         }
     }
     if root.kind == "resume": P {
-        fill: @linear-gradient(180deg, #45c06a 0%, #23934a 100%);
+        fill: #2e8b47;
         commands: "M 9 5 L 27 16 L 9 27 Z";
     }
     if root.kind == "stop": P {
-        fill: @linear-gradient(180deg, #f5a623 0%, #d97d00 100%);
+        fill: #d97d00;
         commands: "M 8 6 L 14 6 L 14 26 L 8 26 Z M 18 6 L 24 6 L 24 26 L 18 26 Z";
     }
     if root.kind == "stopall": Rectangle {
         P {
-            fill: #f2a7a2;
+            fill: #f0b3ad;
             commands: "M 11 3 L 29 3 L 29 21 L 11 21 Z";
         }
         P {
-            fill: @linear-gradient(180deg, #ef5a50 0%, #c62f27 100%);
+            fill: #c94b44;
             commands: "M 4 9 L 22 9 L 22 27 L 4 27 Z";
         }
     }
     if root.kind == "delete": P {
-        stroke: #e0443b;
+        stroke: #c94b44;
         stroke-width: 4.5px;
         commands: "M 8 8 L 24 24 M 24 8 L 8 24";
     }
@@ -619,7 +666,7 @@ export component Icon inherits Rectangle {
             commands: "M 7 7 L 25 7 L 25 10 L 7 10 Z M 13 4 L 19 4 L 19 7 L 13 7 Z M 9 11 L 23 11 L 21.5 29 L 10.5 29 Z";
         }
         P {
-            stroke: #3fcf7a;
+            stroke: #2e8b47;
             stroke-width: 3.5px;
             commands: "M 12 19 L 15.5 23 L 22 15";
         }
@@ -631,7 +678,7 @@ export component Icon inherits Rectangle {
             commands: "M 4 9 L 28 9 M 4 16 L 28 16 M 4 23 L 28 23";
         }
         P {
-            fill: #3b82f6;
+            fill: #4687c7;
             stroke: white;
             stroke-width: 1px;
             commands: "M 11 5 A 4 4 0 1 1 10.99 5 Z M 21 12 A 4 4 0 1 1 20.99 12 Z M 14 19 A 4 4 0 1 1 13.99 19 Z";
@@ -640,7 +687,7 @@ export component Icon inherits Rectangle {
     if root.kind == "scheduler": Rectangle {
         P {
             fill: white;
-            stroke: #3b82f6;
+            stroke: #4687c7;
             stroke-width: 3px;
             commands: "M 16 3.5 A 12.5 12.5 0 1 1 15.99 3.5 Z";
         }
@@ -657,7 +704,7 @@ export component Icon inherits Rectangle {
             commands: "M 5 22 A 11 11 0 1 1 27 22";
         }
         P {
-            stroke: #e0443b;
+            stroke: #c94b44;
             stroke-width: 3px;
             commands: "M 16 22 L 22 12";
         }
@@ -673,16 +720,16 @@ export component Icon inherits Rectangle {
             commands: "M 3 7 L 19 7 M 3 13 L 19 13 M 3 19 L 12 19";
         }
         if root.kind == "startqueue": P {
-            fill: #2e9e4f;
+            fill: #2e8b47;
             commands: "M 16 15 L 29 22.5 L 16 30 Z";
         }
         if root.kind == "stopqueue": P {
-            fill: #e0443b;
+            fill: #c94b44;
             commands: "M 16 17 L 28 17 L 28 29 L 16 29 Z";
         }
     }
     if root.kind == "folder": P {
-        fill: @linear-gradient(180deg, #ffd86b 0%, #f2b632 100%);
+        fill: #f2b632;
         stroke: #c99a1e;
         stroke-width: 1.2px;
         commands: "M 3 8 L 12 8 L 15 11 L 29 11 L 29 27 L 3 27 Z";
@@ -696,7 +743,11 @@ export component G inherits Path {
 
 // File-type icon. Every kind has its own shape and color, so they are told
 // apart at a glance: a film strip (video), a round note (music), a zipped
-// box (archives), a page with a folded corner (documents)…
+// box (archives), a page with a folded corner (documents)… Flat fills only,
+// like the toolbar icons above; the fills measure ~3:1 or better against
+// the light and dark panels (the film strip sits at ~3.0 on the dark panel;
+// the yellow folder and the silver disc are lower, and their edges are
+// carried by their strokes).
 export component TypeIcon inherits Rectangle {
     in property <string> kind: "general";
     width: 18px;
@@ -712,7 +763,7 @@ export component TypeIcon inherits Rectangle {
     // ---- video: a blue film strip with a play sign
     if root.kind == "video": Rectangle {
         G {
-            fill: @linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+            fill: #2c68e7;
             commands: "M 1.5 3 L 14.5 3 L 14.5 13 L 1.5 13 Z";
         }
         G {
@@ -727,7 +778,7 @@ export component TypeIcon inherits Rectangle {
     // ---- music: a purple circle with a note
     if root.kind == "audio": Rectangle {
         G {
-            fill: @linear-gradient(180deg, #a855f7 0%, #7e22ce 100%);
+            fill: #a855f7;
             commands: "M 8 1 A 7 7 0 1 1 7.99 1 Z";
         }
         G {
@@ -738,7 +789,7 @@ export component TypeIcon inherits Rectangle {
     // ---- archives: a yellow box with a zipper
     if root.kind == "archive": Rectangle {
         G {
-            fill: @linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+            fill: #d97706;
             commands: "M 2 4 L 14 4 L 14 14 L 2 14 Z";
         }
         G {
@@ -759,7 +810,7 @@ export component TypeIcon inherits Rectangle {
     // ---- documents: a page with a folded corner and its sign
     if root.page: Rectangle {
         G {
-            fill: @linear-gradient(180deg, root.page-color.brighter(20%) 0%, root.page-color 100%);
+            fill: root.page-color;
             commands: "M 3 1 L 10 1 L 14 5 L 14 15 L 3 15 Z";
         }
         G {
@@ -799,7 +850,7 @@ export component TypeIcon inherits Rectangle {
     // ---- apps for phones: a green phone
     if root.kind == "apk": Rectangle {
         G {
-            fill: @linear-gradient(180deg, #4ade80 0%, #16a34a 100%);
+            fill: #16a34a;
             commands: "M 4.5 1 L 11.5 1 L 11.5 15 L 4.5 15 Z";
         }
         G {
@@ -814,7 +865,7 @@ export component TypeIcon inherits Rectangle {
     // ---- disc images: a silver disc
     if root.kind == "disc": Rectangle {
         G {
-            fill: @linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
+            fill: #94a3b8;
             stroke: #64748b;
             stroke-width: 0.6px;
             commands: "M 8 1 A 7 7 0 1 1 7.99 1 Z";
@@ -827,7 +878,7 @@ export component TypeIcon inherits Rectangle {
     // ---- pictures: a teal frame with hills and a sun
     if root.kind == "image": Rectangle {
         G {
-            fill: @linear-gradient(180deg, #2dd4bf 0%, #0f766e 100%);
+            fill: #1ea596;
             commands: "M 1.5 2.5 L 14.5 2.5 L 14.5 13.5 L 1.5 13.5 Z";
         }
         G {
@@ -900,7 +951,11 @@ export component ToolBtn inherits Rectangle {
     // -- and the buttons still grow when the text gets bigger (Options >
     // Appearance), like upstream
     width: root.small ? 34px : max(52px, 52px * Theme.font-scale);
-    height: root.small ? 34px : max(56px, 30px + 26px * Theme.font-scale);
+    // 36 px for the label: two lines of Arabic need ~34 px (Noto Sans
+    // Arabic's line box is taller than Latin at the same 10 px size); the
+    // old 26 px cut the second line off, so "Delete Done" and "Stop Queue"
+    // read exactly like "Delete" and "Stop" in Arabic
+    height: root.small ? 34px : max(66px, 30px + 36px * Theme.font-scale);
     // a name that is still too long never covers the next button
     clip: true;
     border-radius: 3px;
@@ -980,7 +1035,8 @@ export component ToolBtn inherits Rectangle {
             horizontal-alignment: center;
             vertical-alignment: top;
             wrap: word-wrap;
-            max-height: 26px * Theme.font-scale;
+            // two lines fit: 36 px at font-scale 1 (see the height note above)
+            max-height: 36px * Theme.font-scale;
             color: Theme.toolbar-text;
         }
     }

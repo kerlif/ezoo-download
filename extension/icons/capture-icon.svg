@@ -1,19 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" role="img" aria-label="Ezoo Download Manager capture icon">
   <!--
-    Ezoo Download capture icon (original design, v1.1.1 Phase 5).
-    Brand gradient violet -> blue, white download arrow, amber accent
-    dot — the same design as the floating bubble in content.js.
-    Toolbar PNGs (icon16/32/48/128.png) are rendered from this file
-    with icons/generate-icons.py; do not hand-edit the PNGs.
+    Ezoo Download Manager capture icon — hand-built vector of the supplied
+    supplied EDM logo (2026-11-05): navy tile + EDM letters with the
+    green D-arrow. Toolbar PNGs (icon16/32/48/128.png) are rendered
+    from this geometry with icons/generate-icons.py (Pillow);
+    16/32 use the simplified D-arrow-only mark. Do not hand-edit the PNGs.
   -->
+  <g transform="scale(0.03125)">
   <defs>
-    <linearGradient id="ezg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8A57F5"/>
-      <stop offset="0.5" stop-color="#6A5CF6"/>
-      <stop offset="1" stop-color="#2E7BF6"/>
+    <linearGradient id="edm-bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#253149"/>
+      <stop offset="0.5" stop-color="#253149"/>
+      <stop offset="0.5" stop-color="#1D283A"/>
+      <stop offset="1" stop-color="#1D283A"/>
+    </linearGradient>
+    <linearGradient id="edm-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".10"/>
+      <stop offset=".38" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="15" height="15" rx="3.5" fill="url(#ezg)"/>
-  <path d="M8 4.5 L8 11 M4.5 8.5 L8 12 L11.5 8.5" fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="12.4" cy="12.4" r="2.1" fill="#F5A524" stroke="#ffffff" stroke-width="0.8"/>
+  <!-- tile: navy two-tone, left #253149 | right #1D283A (hard split) -->
+  <rect width="512" height="512" rx="82" fill="url(#edm-bg)"/>
+  <rect width="512" height="512" rx="82" fill="url(#edm-sheen)"/>
+  <!-- E #4687C7 (bottom bar ends in a diagonal slant) -->
+  <g fill="#4687C7">
+    <rect x="48" y="179" width="32" height="167" rx="8"/>
+    <rect x="48" y="179" width="115" height="34" rx="8"/>
+    <rect x="48" y="245" width="92" height="34" rx="8"/>
+    <polygon points="48,312 170,312 186,346 48,346"/>
+  </g>
+  <!-- D #54AB64: bowl + download-arrow stem (tip stops short of the base) -->
+  <g fill="#54AB64">
+    <rect x="178" y="179" width="32" height="96"/>
+    <polygon points="158,272 230,272 193,330"/>
+    <path fill-rule="evenodd" d="M178 179 H252 Q323 179 323 262 Q323 346 252 346 H178 Z M210 213 H258 Q292 213 292 262 Q292 311 258 311 H210 Z"/>
+  </g>
+  <!-- M #C2453F: slanted left leg, V point, vertical right stem, foot triangle -->
+  <g fill="#C2453F">
+    <polygon points="300,179 338,179 382,308"/>
+    <polygon points="414,179 450,179 382,308"/>
+    <rect x="432" y="179" width="32" height="167"/>
+    <polygon points="325,310 297,346 329,346"/>
+  </g>
+  <!-- GitHub badge: light-grey circle, dark octocat silhouette (as supplied) -->
+  <g>
+    <circle cx="425" cy="426" r="43" fill="#B8BBC2"/>
+    <polygon fill="#1D283A" points="408,404 413,384 422,402"/>
+    <polygon fill="#1D283A" points="428,402 437,384 442,404"/>
+    <circle cx="425" cy="420" r="20" fill="#1D283A"/>
+    <ellipse cx="425" cy="452" rx="14" ry="12" fill="#1D283A"/>
+    <path d="M404 452 q-14 -2 -12 10" fill="none" stroke="#1D283A" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  </g>
 </svg>

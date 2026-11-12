@@ -1,9 +1,9 @@
-<svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ezoo Download">
+<svg width="1200" height="400" viewBox="0 0 1200 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ezoo Download Manager">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8A57F5"/>
-      <stop offset=".52" stop-color="#6A5CF6"/>
-      <stop offset="1" stop-color="#2E7BF6"/>
+      <stop offset="0" stop-color="#253149"/>
+      <stop offset=".52" stop-color="#1D283A"/>
+      <stop offset="1" stop-color="#1D283A"/>
     </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
@@ -16,15 +16,49 @@
   <circle cx="1050" cy="60" r="100" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="2"/>
   <circle cx="120" cy="360" r="90" fill="none" stroke="#ffffff" stroke-opacity=".12" stroke-width="2"/>
   <rect width="1200" height="400" rx="36" fill="url(#sheen)"/>
-  <!-- E-arrow mark -->
-  <g fill="#ffffff">
-    <rect x="104" y="92" width="46" height="216" rx="10"/>
-    <rect x="104" y="92" width="156" height="46" rx="10"/>
-    <rect x="104" y="262" width="156" height="46" rx="10"/>
-    <rect x="104" y="177" width="112" height="46" rx="10"/>
-    <polygon points="212,154 296,200 212,246"/>
+  <!-- EDM tile mark -->
+  <g transform="translate(92 96) scale(0.40625)">
+  <defs>
+    <linearGradient id="edm-bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#253149"/>
+      <stop offset="0.5" stop-color="#253149"/>
+      <stop offset="0.5" stop-color="#1D283A"/>
+      <stop offset="1" stop-color="#1D283A"/>
+    </linearGradient>
+    <linearGradient id="edm-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".10"/>
+      <stop offset=".38" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- tile: navy gradient, left #253149 -> right #1D283A -->
+  <rect width="512" height="512" rx="82" fill="url(#edm-bg)"/>
+  <rect width="512" height="512" rx="82" fill="url(#edm-sheen)"/>
+  <!-- E #4687C7 -->
+  <g fill="#4687C7">
+    <rect x="56" y="179" width="34" height="167" rx="8"/>
+    <rect x="56" y="179" width="104" height="34" rx="8"/>
+    <rect x="56" y="245" width="78" height="34" rx="8"/>
+    <rect x="56" y="312" width="104" height="34" rx="8"/>
+  </g>
+  <!-- D #54AB64: bowl + download-arrow stem -->
+  <g fill="#54AB64">
+    <rect x="167" y="179" width="34" height="121"/>
+    <polygon points="153,296 215,296 184,346"/>
+    <path fill-rule="evenodd" d="M167 179 H238 Q302 179 302 262 Q302 346 238 346 H167 Z M201 213 H236 Q268 213 268 262 Q268 311 236 311 H201 Z"/>
+  </g>
+  <!-- M #C2453F -->
+  <polygon fill="#C2453F" points="311,179 345,179 387,264 429,179 463,179 463,346 429,346 429,250 387,332 345,250 345,346 311,346"/>
+  <!-- GitHub badge (simplified octocat), bottom-right, as in the supplied logo -->
+  <g>
+    <circle cx="425" cy="450" r="44" fill="#0D1117"/>
+    <polygon fill="#ffffff" points="404,430 411,406 421,428"/>
+    <polygon fill="#ffffff" points="429,428 439,406 446,430"/>
+    <circle cx="425" cy="446" r="24" fill="#ffffff"/>
+    <circle cx="416" cy="444" r="3.2" fill="#0D1117"/>
+    <circle cx="434" cy="444" r="3.2" fill="#0D1117"/>
+  </g>
   </g>
   <!-- Wordmark -->
-  <text x="330" y="212" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="bold" fill="#ffffff" letter-spacing="1">Ezoo Download</text>
-  <text x="334" y="268" font-family="Arial, Helvetica, sans-serif" font-size="30" fill="#ffffff" fill-opacity=".88" letter-spacing="2">Free  •  Open Source  •  Windows &amp; Linux</text>
+  <text x="330" y="212" font-family="Arial, Helvetica, sans-serif" font-size="60" font-weight="bold" fill="#ffffff" letter-spacing="1">Ezoo Download Manager</text>
+  <text x="334" y="268" font-family="Arial, Helvetica, sans-serif" font-size="26" fill="#ffffff" fill-opacity=".88" letter-spacing="2">Free  •  Open Source  •  Windows &amp; Linux</text>
 </svg>

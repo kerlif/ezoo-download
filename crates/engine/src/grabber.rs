@@ -3,7 +3,7 @@
 
 use crate::config::wildcard_match;
 use crate::filename;
-use crate::http::request;
+use crate::http::{request, SendOrdered};
 use crate::model::RequestHeaders;
 use regex::Regex;
 use reqwest::Client;
@@ -204,7 +204,7 @@ fn allowed(opts: &GrabOptions, url: &str) -> bool {
 
 async fn fetch_page(client: &Client, url: &str, opts: &GrabOptions) -> Option<(String, String)> {
     let resp = request(client, url, &opts.headers, &opts.user_agent)
-        .send()
+        .send_ordered()
         .await
         .ok()?;
     if !resp.status().is_success() {

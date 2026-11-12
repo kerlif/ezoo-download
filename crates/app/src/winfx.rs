@@ -230,6 +230,8 @@ pub(crate) fn taskbar_progress(w: &slint::Window, p: TaskbarProgress) {
 /// Drag a finished file out of the program: the user drops it on the
 /// desktop, a folder, a chat... (a copy; the file stays where it is, so the
 /// download list stays right). Returns when the mouse is let go.
+/// Windows only: on Linux the gesture is not wired at all (P3).
+#[cfg(windows)]
 pub(crate) fn drag_file_out(w: &slint::Window, path: &std::path::Path) {
     #[cfg(windows)]
     {
@@ -301,10 +303,6 @@ pub(crate) fn drag_file_out(w: &slint::Window, path: &std::path::Path) {
             ILFree(pidl);
         }
     }
-    #[cfg(not(windows))]
-    {
-        let _ = (w, path);
-    }
 }
 
 /// Files dropped on the window from Explorer.
@@ -322,15 +320,28 @@ pub(crate) fn on_files_dropped(w: &slint::Window, f: impl Fn(std::path::PathBuf)
 #[cfg(not(windows))]
 pub(crate) fn on_files_dropped(_w: &slint::Window, _f: impl Fn(std::path::PathBuf) + 'static) {}
 
+/// On Linux the dialogs go through our own zenity calls (see
+/// `native_dialog`): rfd passes `--no-markup`, which zenity 4.x
+/// removed, so every dialog failed and looked like a cancel (Q27).
+/// On Windows rfd stays: it is the native picker there.
+#[cfg(target_os = "linux")]
+pub(crate) use crate::native_dialog::{
+    FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel,
+};
+#[cfg(not(target_os = "linux"))]
+pub(crate) use rfd::{
+    FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel,
+};
+
 /// A file / folder picker that belongs to `w`: it stays on top of it and
 /// `w` waits for it.
 #[cfg(windows)]
-pub(crate) fn on_top_of(dlg: rfd::FileDialog, w: &slint::Window) -> rfd::FileDialog {
+pub(crate) fn on_top_of(dlg: FileDialog, w: &slint::Window) -> FileDialog {
     dlg.set_parent(&w.window_handle())
 }
 
 #[cfg(not(windows))]
-pub(crate) fn on_top_of(dlg: rfd::FileDialog, _w: &slint::Window) -> rfd::FileDialog {
+pub(crate) fn on_top_of(dlg: FileDialog, _w: &slint::Window) -> FileDialog {
     dlg
 }
 
@@ -379,8 +390,8 @@ impl raw_window_handle::HasDisplayHandle for OwnWindow {
 
 /// A message box that belongs to the window in front: it opens on top of
 /// it (never hidden behind, which looked like the program had frozen).
-pub(crate) fn msg_box() -> rfd::MessageDialog {
-    let d = rfd::MessageDialog::new();
+pub(crate) fn msg_box() -> MessageDialog {
+    let d = MessageDialog::new();
     #[cfg(windows)]
     if let Some(h) = own_front_window() {
         return d.set_parent(&OwnWindow(h));
@@ -389,11 +400,11 @@ pub(crate) fn msg_box() -> rfd::MessageDialog {
 }
 
 /// The same for file / folder pickers.
-pub(crate) fn file_box() -> rfd::FileDialog {
+pub(crate) fn file_box() -> FileDialog {
     // the windows wait for the picker: no "does not answer" meanwhile (the
     // main timer clears this once the windows move again)
     crate::api::UI_WAITS.store(true, std::sync::atomic::Ordering::Relaxed);
-    let d = rfd::FileDialog::new();
+    let d = FileDialog::new();
     #[cfg(windows)]
     if let Some(h) = own_front_window() {
         return d.set_parent(&OwnWindow(h));

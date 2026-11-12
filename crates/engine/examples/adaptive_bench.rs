@@ -129,6 +129,7 @@ async fn one_run(
         user_agent: "bench".into(),
         total_size: Some(total),
         resumable: true,
+        etag: None,
         part_path: part.clone(),
         connections: if adaptive { 16 } else { fixed },
         min_split: 64 * 1024,
@@ -187,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
         ("fixed-8", false, 8),
         ("fixed-16", false, 16),
     ];
-    let dir = std::env::temp_dir().join("swiftget-bench");
+    let dir = std::env::temp_dir().join("edm-bench");
     std::fs::create_dir_all(&dir)?;
     for profile in &profiles {
         let total = profile.file_bytes;

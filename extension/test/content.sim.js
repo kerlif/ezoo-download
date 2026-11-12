@@ -102,6 +102,7 @@ const items = [
   { label: "720p · MP4 · stream", sub: "", url: "https://cdn.example/pl/720/index.m3u8", ext: "ts", quality: "720p", qualityKey: "720p" },
   { label: "Video stream (DASH) · choose a quality", sub: "", resolve: "https://cdn.example/v/manifest.mpd", ext: "mp4" },
   { label: "Getting video qualities…", sub: "This takes a few seconds", disabled: true },
+  { label: "Movie file · MP4", sub: "50 MB", url: "https://cdn.example/movie.mp4", ext: "mp4", size: 50000000 },
 ];
 
 // One fresh page load of content.js: fresh DOM, fresh chrome fakes.
@@ -205,21 +206,28 @@ function makeHarness({ config = { enabled: true, skipSites: [] }, storedPanel = 
     const root = hosts[0].shadowRoot;
     assert(root, "closed shadow root");
 
-    // the new icon: gradient tile + white arrow + amber dot
+    // the simplified EDM mark: flat navy tile + green D-arrow only
     const svg = root.querySelector("svg");
     assert(svg, "icon svg present");
     const tile = svg.children.find((c) => c.tagName === "RECT");
-    assert(tile && tile.getAttribute("fill") === "url(#ezg)", "brand gradient tile");
+    assert(tile && tile.getAttribute("fill") === "#253149", "navy tile");
+    assert(tile && tile.getAttribute("rx") === "2.5", "tile corner ~16% of its side");
     const arrow = svg.children.find((c) => c.tagName === "PATH");
-    assert(arrow && arrow.getAttribute("fill") === "#fff", "white download arrow");
-    const dot = svg.children.find((c) => c.tagName === "CIRCLE");
-    assert(dot && dot.getAttribute("fill") === "#F5A524", "amber accent dot");
+    assert(arrow && arrow.getAttribute("fill") === "#54AB64", "green D-arrow");
+    assert(arrow && arrow.getAttribute("fill-rule") === "evenodd", "D counter cut out");
+    assert(!svg.children.some((c) => c.tagName === "CIRCLE"), "no amber dot in the new mark");
+    assert(!svg.children.some((c) => c.tagName === "DEFS"), "no gradient in the new mark");
 
-    // the counter-badge pill: 5 usable items (one row is disabled)
-    assert.strictEqual(root.getElementById("label").textContent, "Download video (5)");
+    // the button is flat now: no gradient anywhere in the panel CSS
+    const css = root.querySelector("style").textContent;
+    assert(!/linear-gradient/.test(css), "no gradient left in the bubble CSS");
+    assert(css.includes("#3570A6"), "EDM Blue-AA primary in the bubble CSS");
+
+    // the counter-badge pill: 6 usable items (one row is disabled)
+    assert.strictEqual(root.getElementById("label").textContent, "Download video (6)");
     const badge = root.getElementById("count");
     assert.strictEqual(badge.hidden, false);
-    assert.strictEqual(badge.textContent, "5");
+    assert.strictEqual(badge.textContent, "6");
 
     // the rows: name + size, no URL anywhere
     // (the list only shows once the bubble is opened, as for a real click)
@@ -228,57 +236,159 @@ function makeHarness({ config = { enabled: true, skipSites: [] }, storedPanel = 
     const list = root.getElementById("list");
     assert.strictEqual(list.hidden, false);
     const rows = list.querySelectorAll(".item");
-    assert.strictEqual(rows.length, 6, "5 usable rows + 1 disabled row");
+    assert.strictEqual(rows.length, 8, "Download all row + 6 usable rows + 1 disabled row");
     for (const row of rows) assert(!/https?:\/\//.test(row.textContent), "no row shows a URL: " + row.textContent);
 
     const rowText = (row) => row.textContent;
-    assert(rowText(rows[0]).includes("MP4 file · 1080p"), "row 1 name");
-    assert(rowText(rows[0]).includes("143.1 MB"), "row 1 size");
-    assert(rowText(rows[0]).includes("Full HD"), "row 1 tag");
-    assert(rowText(rows[1]).includes("3.8 MB"), "row 2 size");
+    // two direct files: a "Download all" row comes first
+    assert(rowText(rows[0]).includes("Download all (2 files)"), "row 0 is Download all");
+    assert(rowText(rows[1]).includes("MP4 file · 1080p"), "row 1 name");
+    assert(rowText(rows[1]).includes("143.1 MB"), "row 1 size");
+    assert(rowText(rows[1]).includes("Full HD"), "row 1 tag");
+    assert(rowText(rows[2]).includes("3.8 MB"), "row 2 size");
     // the MP3 size is computed, so it is marked estimated
-    assert(rowText(rows[2]).includes("6.9 MB"), "row 3 size");
-    assert(rowText(rows[2]).includes("estimated"), "row 3 estimated mark");
-    assert(rowText(rows[3]).includes("720p"), "row 4 name");
-    assert(!rowText(rows[3]).includes("MB"), "row 4 has no size to show");
+    assert(rowText(rows[3]).includes("6.9 MB"), "row 3 size");
+    assert(rowText(rows[3]).includes("estimated"), "row 3 estimated mark");
+    assert(rowText(rows[4]).includes("720p"), "row 4 name");
+    assert(!rowText(rows[4]).includes("MB"), "row 4 has no size to show");
+    assert(rowText(rows[7]).includes("Movie file · MP4"), "row 7 name");
+    assert(rowText(rows[7]).includes("47.7 MB"), "row 7 size");
 
     const buttons = (row) => row.querySelectorAll(".mini").map((b) => b.textContent);
-    assert.deepStrictEqual(buttons(rows[0]), ["Preview", "Copy link"]);
-    assert.deepStrictEqual(buttons(rows[3]), ["Preview", "Copy link"]);
+    assert.deepStrictEqual(buttons(rows[1]), ["Preview", "Copy link"]);
+    assert.deepStrictEqual(buttons(rows[4]), ["Preview", "Copy link"]);
     // a "choose a quality" row has nothing to preview, only a link to copy
-    assert.deepStrictEqual(buttons(rows[4]), ["Copy link"]);
+    assert.deepStrictEqual(buttons(rows[5]), ["Copy link"]);
     // the disabled row has no buttons
-    assert.deepStrictEqual(buttons(rows[5]), []);
+    assert.deepStrictEqual(buttons(rows[6]), []);
+    // a direct file row also offers "Cut part…"; a stream playlist does not
+    assert.deepStrictEqual(buttons(rows[7]), ["Preview", "Copy link", "Cut part…"]);
 
     // Preview opens the stream in a new tab (and does not start a download)
     const beforeDl = sentToBg.filter((m) => m.type === "swiftget-download").length;
-    rows[0].querySelectorAll(".mini")[0].click();
+    rows[1].querySelectorAll(".mini")[0].click();
     assert.deepStrictEqual(openedTabs, [{ url: "https://gv/137", target: "_blank" }]);
     assert.strictEqual(sentToBg.filter((m) => m.type === "swiftget-download").length, beforeDl, "Preview is not a download");
 
     // Copy link puts the download address on the clipboard
-    rows[0].querySelectorAll(".mini")[1].click();
+    rows[1].querySelectorAll(".mini")[1].click();
     await tick();
     assert.deepStrictEqual(copied, ["https://gv/137"]);
-    assert.strictEqual(rows[0].querySelectorAll(".mini")[1].textContent, "Copied ✔");
-    rows[4].querySelectorAll(".mini")[0].click();
+    assert.strictEqual(rows[1].querySelectorAll(".mini")[1].textContent, "Copied ✔");
+    rows[5].querySelectorAll(".mini")[0].click();
     await tick();
     assert.strictEqual(copied[1], "https://cdn.example/v/manifest.mpd", "a stream row copies its manifest address");
 
     // clipboard denied: the textarea fallback still copies
     h.setClipboardFails(true);
     copied.length = 0;
-    rows[3].querySelectorAll(".mini")[1].click();
+    rows[4].querySelectorAll(".mini")[1].click();
     await tick();
-    assert.strictEqual(rows[3].querySelectorAll(".mini")[1].textContent, "Copied ✔", "fallback copy works");
+    assert.strictEqual(rows[4].querySelectorAll(".mini")[1].textContent, "Copied ✔", "fallback copy works");
     h.setClipboardFails(false);
 
     // clicking the row itself still downloads it
-    rows[0].click();
+    rows[1].click();
     await tick();
     const dl = sentToBg.filter((m) => m.type === "swiftget-download");
     assert.strictEqual(dl.length, beforeDl + 1);
     assert.strictEqual(dl[dl.length - 1].item.yt.videoUrl, "https://gv/137");
+
+    // the row download above flashed "Sent…": wait it out, so the
+    // panel shows the rows again before the clip-window checks
+    await new Promise((r) => setTimeout(r, 2600));
+
+    // P4-bis: two windows — "All qualities" and "Download part".
+    // The tabs sit above the rows; the clip window is a separate
+    // view with its own quality picker, not a form under a row.
+    {
+      // "Cut part…" on the direct-file row opens the clip window
+      // with that quality already chosen
+      rows[7].querySelectorAll(".mini")[2].click();
+      await tick();
+      let win = list.querySelector(".clipwin");
+      assert(win, "Cut part… opens the Download part window");
+      let picks = win.querySelectorAll(".qrow");
+      assert.strictEqual(picks.length, 1, "only the direct file is offered to cut");
+      assert(picks[0].textContent.includes("Movie file"), "the offered quality is the direct file");
+      assert(picks[0].classList.contains("sel"), "the direct file is selected");
+      assert(picks[0].querySelector(".selmark"), "the selection is marked, not just coloured");
+      assert(win.textContent.includes("cannot be cut yet"), "streams are honestly out of the clip window");
+
+      // back to All qualities, then in through the tab
+      win.querySelectorAll(".mini").find((b) => b.textContent === "← All qualities").click();
+      await tick();
+      const tabs = list.querySelectorAll(".tab");
+      assert.strictEqual(tabs.length, 2, "two windows to choose from");
+      assert.strictEqual(tabs[0].textContent, "All qualities");
+      assert.strictEqual(tabs[1].textContent, "Download part");
+      assert(tabs[0].classList.contains("on"), "All qualities is the open window");
+      assert(!tabs[1].classList.contains("on"), "Download part is not open yet");
+      assert(list.querySelectorAll(".item").length >= 8, "All qualities shows the rows");
+      tabs[1].click();
+      await tick();
+      win = list.querySelector(".clipwin");
+      assert(win, "the clip window opens from its tab");
+      assert(win.textContent.includes("Download part of a video"), "clip window heading");
+      picks = win.querySelectorAll(".qrow");
+      assert.strictEqual(picks.length, 1, "the tab's clip window offers the direct file");
+      const inputs = win.querySelectorAll("input");
+      assert.strictEqual(inputs.length, 3, "from, to, exact");
+      const cutBtn = win.querySelectorAll(".mini").find((b) => b.textContent === "Cut part");
+      assert(cutBtn, "Cut part button");
+
+      // invalid first: end before start — shown inline, nothing sent
+      const beforeClip = sentToBg.filter((m) => m.type === "swiftget-download").length;
+      inputs[0].value = "3:25";
+      inputs[1].value = "1:20";
+      cutBtn.click();
+      await tick();
+      assert.strictEqual(sentToBg.filter((m) => m.type === "swiftget-download").length, beforeClip, "invalid range is not sent");
+      assert(win.querySelector(".err").textContent.includes("half a second"), "invalid range is explained inline");
+      assert.strictEqual(inputs[0].value, "3:25", "the typed values stay after an invalid range");
+
+      // the parser itself: four parts, a negative part, "inf" — none is a time
+      for (const bad of ["1:2:3:4", "1:-30", "inf"]) {
+        inputs[0].value = bad;
+        inputs[1].value = "2:00";
+        cutBtn.click();
+        await tick();
+        assert.strictEqual(sentToBg.filter((m) => m.type === "swiftget-download").length, beforeClip, `no cut is sent for ${bad}`);
+      }
+
+      // switching windows keeps what was typed
+      inputs[0].value = "1:20";
+      inputs[1].value = "3:25";
+      inputs[2].checked = true;
+      list.querySelectorAll(".tab")[0].click();
+      await tick();
+      assert(list.querySelectorAll(".item").length >= 8, "back on All qualities: the rows are there");
+      list.querySelectorAll(".tab")[1].click();
+      await tick();
+      const win2 = list.querySelector(".clipwin");
+      const inputs2 = win2.querySelectorAll("input");
+      assert.strictEqual(inputs2[0].value, "1:20", "the start survives switching windows");
+      assert.strictEqual(inputs2[1].value, "3:25", "the end survives switching windows");
+      assert.strictEqual(inputs2[2].checked, true, "the exact choice survives switching windows");
+
+      // valid: 1:20 -> 3:25, exact cut, of the selected quality
+      win2.querySelectorAll(".mini").find((b) => b.textContent === "Cut part").click();
+      await tick();
+      const clipDl = sentToBg.filter((m) => m.type === "swiftget-download");
+      assert.strictEqual(clipDl.length, beforeClip + 1, "valid cut is sent once");
+      // field-by-field: the clip object is built inside the page's vm
+      // context, so its prototype differs from a test-context literal
+      const gotClip = clipDl[clipDl.length - 1].clip;
+      assert.strictEqual(gotClip.start, 80);
+      assert.strictEqual(gotClip.end, 205);
+      assert.strictEqual(gotClip.exact, true);
+      assert.strictEqual(clipDl[clipDl.length - 1].item.url, "https://cdn.example/movie.mp4");
+      // sent: back on the "All qualities" window
+      await new Promise((r) => setTimeout(r, 2600));
+      const tabsBack = list.querySelectorAll(".tab");
+      assert(tabsBack[0].classList.contains("on"), "after a sent cut the window is All qualities again");
+      assert(list.querySelectorAll(".item").length >= 8, "the quality rows are back");
+    }
 
     // one item left: the pill shows no count
     onMsg({ type: "swiftget-media", items: [items[0]] }, {}, () => {});
@@ -353,5 +463,45 @@ function makeHarness({ config = { enabled: true, skipSites: [] }, storedPanel = 
     await h2.tick();
     assert.strictEqual(h2.bubbleHosts().length, 1, "app closed, last-known on: the bubble shows");
     console.log("app unreachable: last-known panel setting (on) wins");
+  }
+
+  // ---- scenario 5 (P4-bis): streams only — the clip window says
+  // plainly that cutting is not supported, and offers no Cut button
+  {
+    const h = makeHarness();
+    const { onMsg, tick } = h;
+    await tick();
+    const hosts = h.bubbleHosts();
+    assert.strictEqual(hosts.length, 1, "one bubble host");
+    const root = hosts[0].shadowRoot;
+    const streamOnly = [
+      { label: "1080p · MP4", sub: "143.1 MB", yt: { quality: "1080p", tag: "Full HD", codec: "", ext: "mp4", duration: 300, kbps: 3800, size: 150000000, sizeSource: "filesize", videoUrl: "https://gv/137", audioUrl: "https://gv/140", key: "1080p|MP4" } },
+      { label: "720p · MP4 · stream", sub: "", url: "https://cdn.example/pl/720/index.m3u8", ext: "ts", quality: "720p", qualityKey: "720p" },
+      { label: "Video stream (DASH) · choose a quality", sub: "", resolve: "https://cdn.example/v/manifest.mpd", ext: "mp4" },
+    ];
+    onMsg({ type: "swiftget-media", items: streamOnly }, {}, () => {});
+    await tick();
+    onMsg({ type: "swiftget-open-panel" }, {}, () => {});
+    await tick();
+    const list = root.getElementById("list");
+    assert.strictEqual(list.hidden, false);
+    assert.strictEqual(list.querySelectorAll(".item").length, 3, "three stream rows, no Download all");
+    // no "Cut part…" button on any stream row
+    for (const row of list.querySelectorAll(".item")) {
+      assert(!row.querySelectorAll(".mini").some((b) => b.textContent === "Cut part…"), "no Cut part… on a stream row");
+    }
+    list.querySelectorAll(".tab")[1].click();
+    await tick();
+    const win = list.querySelector(".clipwin");
+    assert(win, "the clip window still opens");
+    assert(win.textContent.includes("not supported for streams"), "streams get the plain unsupported note");
+    assert.strictEqual(win.querySelectorAll(".qrow").length, 0, "no quality to cut from");
+    assert.strictEqual(win.querySelectorAll(".mini").filter((b) => b.textContent === "Cut part").length, 0, "no Cut button for streams");
+    // and back to the qualities
+    win.querySelectorAll(".mini").find((b) => b.textContent === "← All qualities").click();
+    await tick();
+    assert(list.querySelectorAll(".tab")[0].classList.contains("on"), "back on All qualities");
+    assert.strictEqual(list.querySelectorAll(".item").length, 3, "the stream rows are back");
+    console.log("streams only: the clip window refuses honestly, with no Cut button");
   }
 })().catch((e) => { console.error(e); process.exit(1); });

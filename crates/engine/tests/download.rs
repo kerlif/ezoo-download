@@ -60,7 +60,7 @@ async fn segmented_download_with_pause_and_resume() {
     assert!(p.resumable);
     assert_eq!(p.file_name, "test file.bin");
 
-    let dir = std::env::temp_dir().join(format!("swiftget-test-{port}"));
+    let dir = std::env::temp_dir().join(format!("edm-test-{port}"));
     std::fs::create_dir_all(&dir).unwrap();
     let part = dir.join("out.sgpart");
     let _ = std::fs::remove_file(&part);
@@ -70,6 +70,7 @@ async fn segmented_download_with_pause_and_resume() {
         user_agent: "test".into(),
         total_size: p.total_size,
         resumable: true,
+        etag: None,
         part_path: part.clone(),
         connections: 8,
         min_split: 64 * 1024,
@@ -135,7 +136,7 @@ async fn chunked_requests_with_32_connections() {
     let port = serve(data.clone()).await;
     let url = format!("http://127.0.0.1:{port}/v.bin");
     let shared = Arc::new(Shared::new(build_client().unwrap(), SpeedLimiter::new(0)));
-    let dir = std::env::temp_dir().join(format!("swiftget-chunk-{port}"));
+    let dir = std::env::temp_dir().join(format!("edm-chunk-{port}"));
     std::fs::create_dir_all(&dir).unwrap();
     let part = dir.join("v.sgpart");
     let job = HttpJob {
@@ -144,6 +145,7 @@ async fn chunked_requests_with_32_connections() {
         user_agent: "test".into(),
         total_size: Some(data.len() as u64),
         resumable: true,
+        etag: None,
         part_path: part.clone(),
         connections: 32,
         min_split: 32 * 1024,
@@ -212,7 +214,7 @@ async fn waits_through_a_long_outage_and_resumes() {
     let port = serve_flaky(data.clone(), down.clone()).await;
     let url = format!("http://127.0.0.1:{port}/f.bin");
     let shared = Arc::new(Shared::new(build_client().unwrap(), SpeedLimiter::new(0)));
-    let dir = std::env::temp_dir().join(format!("swiftget-flaky-{port}"));
+    let dir = std::env::temp_dir().join(format!("edm-flaky-{port}"));
     std::fs::create_dir_all(&dir).unwrap();
     let part = dir.join("out.sgpart");
     let job = HttpJob {
@@ -221,6 +223,7 @@ async fn waits_through_a_long_outage_and_resumes() {
         user_agent: "test".into(),
         total_size: Some(data.len() as u64),
         resumable: true,
+        etag: None,
         part_path: part.clone(),
         connections: 4,
         min_split: 64 * 1024,
@@ -517,7 +520,7 @@ async fn connections_changed_while_downloading() {
     let p = probe(&shared.client(), &url, &RequestHeaders::default(), "test")
         .await
         .unwrap();
-    let dir = std::env::temp_dir().join(format!("swiftget-conns-{port}"));
+    let dir = std::env::temp_dir().join(format!("edm-conns-{port}"));
     std::fs::create_dir_all(&dir).unwrap();
     let part = dir.join("out.sgpart");
     let _ = std::fs::remove_file(&part);
@@ -527,6 +530,7 @@ async fn connections_changed_while_downloading() {
         user_agent: "test".into(),
         total_size: p.total_size,
         resumable: true,
+        etag: None,
         part_path: part.clone(),
         connections: 8,
         min_split: 64 * 1024,
@@ -1020,7 +1024,7 @@ async fn slow_segment_is_shared_not_left_alone() {
     let port = serve_slow_half(data.clone()).await;
     let url = format!("http://127.0.0.1:{port}/slow.bin");
     let shared = Arc::new(Shared::new(build_client().unwrap(), SpeedLimiter::new(0)));
-    let dir = std::env::temp_dir().join(format!("swiftget-slow-{port}"));
+    let dir = std::env::temp_dir().join(format!("edm-slow-{port}"));
     std::fs::create_dir_all(&dir).unwrap();
     let part = dir.join("out.sgpart");
     let job = HttpJob {
@@ -1029,6 +1033,7 @@ async fn slow_segment_is_shared_not_left_alone() {
         user_agent: "test".into(),
         total_size: Some(data.len() as u64),
         resumable: true,
+        etag: None,
         part_path: part.clone(),
         connections: 2,
         min_split: 64 * 1024,
@@ -1149,6 +1154,75 @@ async fn per_site_limit_runs_one_download_at_a_time() {
         );
         mgr.remove(id, false);
     }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Q30, P6 gate: a per-site limit changed while a download runs
+/// reaches the engine at once — the running download sheds workers
+/// down to the new per-site connection cap instead of finishing at
+/// the old count. (The queue side — a waiting download over the
+/// per-site max-downloads limit — is covered by
+/// `per_site_limit_runs_one_download_at_a_time` above.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn per_site_limit_change_reaches_running_download() {
+    let data = test_data(48 * 1024 * 1024 + 5);
+    let port = serve(data.clone()).await;
+    let root = std::env::temp_dir().join(format!("ezoo-site-limit-live-{port}"));
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join("out");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mgr =
+        swiftget_engine::Manager::new(tokio::runtime::Handle::current(), root.join("app")).unwrap();
+    let mut s = mgr.settings();
+    s.connections = 8;
+    mgr.set_settings(s).unwrap();
+    let id = mgr.add(swiftget_engine::NewDownload {
+        url: format!("http://127.0.0.1:{port}/live.bin"),
+        save_dir: Some(dir.clone()),
+        start: true,
+        ..Default::default()
+    });
+    // wait until the pool really is up before changing the limit
+    let mut saw_pool = false;
+    for _ in 0..3000 {
+        let v = mgr.get(id).unwrap();
+        if v.active_connections >= 4 {
+            saw_pool = true;
+            break;
+        }
+        if v.status == swiftget_engine::Status::Completed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(saw_pool, "the pool never grew past 4 workers");
+    // tighten the per-site cap to 1 while it runs
+    let mut s = mgr.settings();
+    s.server_limits = vec![swiftget_engine::config::ServerLimit {
+        host: "127.0.0.1".into(),
+        connections: 1,
+        max_downloads: None,
+    }];
+    mgr.set_settings(s).unwrap();
+    // the running download must shed workers down to the new cap
+    let mut shed = false;
+    for _ in 0..3000 {
+        let v = mgr.get(id).unwrap();
+        if v.active_connections <= 1 {
+            shed = true;
+            break;
+        }
+        if v.status == swiftget_engine::Status::Completed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        shed,
+        "still at {} connections 30 s after the limit tightened to 1",
+        mgr.get(id).unwrap().active_connections
+    );
+    mgr.remove(id, false);
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -1428,5 +1502,139 @@ async fn quality_key_is_stored_with_the_record() {
         saved.contains("watch?v=AAAAAAAAAAA"),
         "source page persisted: {saved}"
     );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A clip add names the file after its part and stores the clip on
+/// the record; a torrent ignores the clip (it is not a video file).
+#[tokio::test]
+async fn clip_add_names_the_part_and_persists_it() {
+    let root = std::env::temp_dir().join(format!("ezoo-clip-add-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let mgr =
+        swiftget_engine::Manager::new(tokio::runtime::Handle::current(), root.join("app")).unwrap();
+    let clip = swiftget_engine::Clip::new(80.0, 205.0, true).unwrap();
+    let id = mgr.add(swiftget_engine::NewDownload {
+        url: "http://127.0.0.1:1/video.mp4".to_string(),
+        file_name: Some("video.mp4".to_string()),
+        clip: Some(clip),
+        ..Default::default()
+    });
+    let view = mgr.get(id).expect("clip download exists");
+    assert_eq!(view.file_name, "video [01-20 → 03-25].mp4");
+    mgr.shutdown();
+    let saved = std::fs::read_to_string(root.join("app").join("downloads.json")).unwrap();
+    assert!(saved.contains("\"clip\""), "clip persisted: {saved}");
+    assert!(saved.contains("03-25"), "clip name persisted: {saved}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A server that answers the probe normally but 429s the first `n_429`
+/// bounded-range segment requests (`Retry-After: 0`), then serves the
+/// rest. The probe's requests are a HEAD and an open-ended `bytes=0-`
+/// GET, so only a bounded range counts as a segment request.
+async fn serve_rate_limited(data: Arc<Vec<u8>>, n_429: u32) -> u16 {
+    let limited = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let (port, _) = testserver::spawn({
+        let data = data.clone();
+        let limited = limited.clone();
+        move |req: &testserver::Request| {
+            if req.method == "GET" {
+                if let Some((_, Some(_))) = req.range() {
+                    if limited.fetch_add(1, Ordering::Relaxed) < n_429 {
+                        return testserver::Action::Respond(
+                            testserver::Response::new(429, Vec::new()).header("Retry-After", "0"),
+                        );
+                    }
+                }
+            }
+            let range = req
+                .range()
+                .map(|(a, b)| (a, b.unwrap_or(data.len() - 1).min(data.len() - 1)));
+            let (a, b) = range.unwrap_or((0, data.len() - 1));
+            let resp = if range.is_some() {
+                testserver::StreamResponse::new(206, data[a..=b].to_vec())
+                    .header("Content-Range", &format!("bytes {a}-{b}/{}", data.len()))
+                    .header(
+                        "Content-Disposition",
+                        "attachment; filename=\"test file.bin\"",
+                    )
+            } else {
+                testserver::StreamResponse::new(200, data.clone().to_vec())
+            };
+            // the first part of the file is slow -> other connections split it
+            let delay = if a < data.len() / 8 {
+                Duration::from_millis(5)
+            } else {
+                Duration::from_millis(1)
+            };
+            testserver::Action::Stream(resp.chunk_delay(delay))
+        }
+    });
+    port
+}
+
+/// P6 deferred, closed in P8: a manager-level 429 end-to-end. The
+/// server answers the probe normally but 429s the first two segment
+/// requests, then serves the rest. The download must still finish
+/// whole — and the lowered connection count the 429s forced must be
+/// persisted into `settings.json`'s per-host learning for 127.0.0.1,
+/// so the next download from that host starts low instead of earning
+/// another 429.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rate_limited_download_persists_lowered_count() {
+    let data = test_data(4 * 1024 * 1024 + 11);
+    let port = serve_rate_limited(data.clone(), 2).await;
+    let url = format!("http://127.0.0.1:{port}/files/test.bin");
+    let root = std::env::temp_dir().join(format!("ezoo-rate-limit-learn-{port}"));
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join("out");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mgr =
+        swiftget_engine::Manager::new(tokio::runtime::Handle::current(), root.join("app")).unwrap();
+    let id = mgr.add(swiftget_engine::NewDownload {
+        url,
+        save_dir: Some(dir.clone()),
+        start: true,
+        ..Default::default()
+    });
+    let mut status = swiftget_engine::Status::Queued;
+    for _ in 0..1500 {
+        status = mgr.get(id).unwrap().status;
+        if matches!(
+            status,
+            swiftget_engine::Status::Completed | swiftget_engine::Status::Failed
+        ) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        status,
+        swiftget_engine::Status::Completed,
+        "{:?}",
+        mgr.get(id).unwrap().error
+    );
+    let v = mgr.get(id).unwrap();
+    let got = std::fs::read(&v.save_path).unwrap();
+    assert_eq!(got, *data, "the file is whole after the 429s");
+    // the lowered count is in settings.json, not just in memory
+    let saved: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("app").join("settings.json")).unwrap(),
+    )
+    .unwrap();
+    let learned = saved["host_learning"]["127.0.0.1"].clone();
+    assert!(
+        !learned.is_null(),
+        "no host_learning entry for 127.0.0.1 was saved: {saved}"
+    );
+    let ema = learned["connections_ema"].as_f64().unwrap();
+    assert!(
+        (1.0..=2.0).contains(&ema),
+        "the learned count should be the 429-lowered one (4 halved once or twice), got {ema}"
+    );
+    assert_eq!(learned["samples"].as_u64(), Some(1));
+    mgr.remove(id, false);
     let _ = std::fs::remove_dir_all(&root);
 }

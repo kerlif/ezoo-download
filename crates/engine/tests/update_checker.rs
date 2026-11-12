@@ -1007,6 +1007,64 @@ async fn missing_manifest_or_sums_is_a_silent_fail() {
 }
 
 // ---------------------------------------------------------------------------
+// The manifest asset is listed but its download 404s: no offer.
+// This is the P8-quinquies split: a release published before
+// version.json is uploaded (the extension is not yet approved in
+// both stores) yields a silent fail — not an error, not an offer.
+
+#[tokio::test]
+async fn manifest_asset_listed_but_404_is_a_silent_fail() {
+    let (port, stats) = {
+        let base_holder = Arc::new(Mutex::new(String::new()));
+        let (p, s) = testserver::spawn({
+            let base_holder = base_holder.clone();
+            move |req| match req.path.as_str() {
+                "/latest" => Response {
+                    status: 200,
+                    headers: vec![],
+                    body: payload(
+                        &base_holder.lock().unwrap(),
+                        "v99.0.0",
+                        &[
+                            ("version.json", "/version.json"),
+                            ("SHA256SUMS.txt", "/sums.txt"),
+                        ],
+                    )
+                    .into_bytes(),
+                },
+                "/version.json" => Response {
+                    status: 404,
+                    headers: vec![],
+                    body: b"Not Found".to_vec(),
+                },
+                _ => Response {
+                    status: 404,
+                    headers: vec![],
+                    body: vec![],
+                },
+            }
+        });
+        *base_holder.lock().unwrap() = format!("http://127.0.0.1:{p}");
+        (p, s)
+    };
+    let dir = tmpdir("manifest-404");
+    assert!(matches!(
+        run_check(
+            &checker_client(),
+            &format!("http://127.0.0.1:{port}"),
+            &dir,
+            UPDATE_PUBLIC_KEY
+        )
+        .await,
+        CheckOutcome::SilentFail { .. }
+    ));
+    // the manifest really was fetched (and 404'd) — the checker did
+    // not skip the release for another reason
+    assert_eq!(stats.lock().unwrap().hits.get("/version.json"), Some(&1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
 // A verified download succeeds and is reused without re-fetching.
 
 #[tokio::test]

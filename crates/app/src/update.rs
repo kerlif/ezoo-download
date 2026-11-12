@@ -1,4 +1,4 @@
-//! New versions of Ezoo Download from GitHub, checked through the fork's
+//! New versions of Ezoo Download Manager from GitHub, checked through the fork's
 //! releases API (see `swiftget_engine::selfupdate`): right after the
 //! program opens it looks for a newer release, and then every 24 hours
 //! while it stays open. A failed check (offline, rate-limited, malformed
@@ -615,7 +615,7 @@ async fn windows_available(
         // the user is asked, and the install waits until no download
         // is running (the manual window is the immediate path instead)
         let question = tf(
-            "Version {} was downloaded and checked. Install {} now? Ezoo Download closes and opens again when it is installed.",
+            "Version {} was downloaded and checked. Install {} now? Ezoo Download Manager closes and opens again when it is installed.",
             &[&rel.version, &package_label()],
         );
         if !ask_user(question).await {
@@ -698,7 +698,7 @@ async fn linux_available(
                 }
             };
             let question = tf(
-                "Version {} was downloaded and checked. Replace {} now? The new version starts the next time you open Ezoo Download.",
+                "Version {} was downloaded and checked. Replace {} now? The new version starts the next time you open Ezoo Download Manager.",
                 &[&rel.version, &package_label()],
             );
             // the notice already asked («Update now»): the second ask is
@@ -715,7 +715,7 @@ async fn linux_available(
             match selfupdate::install_appimage(&file, &current, &sha) {
                 Ok(()) => {
                     tell_user(tf(
-                        "The AppImage file was replaced. Open Ezoo Download again to use version {}.",
+                        "The AppImage file was replaced. Open Ezoo Download Manager again to use version {}.",
                         &[&rel.version],
                     ));
                 }
@@ -945,7 +945,7 @@ fn check_now_linux(ui: &Ui) {
         .await
         {
             selfupdate::CheckOutcome::UpToDate => finish(tf(
-                "Ezoo Download ({}) is up to date (version {}).",
+                "Ezoo Download Manager ({}) is up to date (version {}).",
                 &[&package_label(), &selfupdate::current()],
             )),
             selfupdate::CheckOutcome::SilentFail { .. } => finish(format!(
@@ -1103,7 +1103,7 @@ fn check_now_windows(ui: &Ui) {
                 tell(
                     &shared,
                     1,
-                    t("Ezoo Download is up to date"),
+                    t("Ezoo Download Manager is up to date"),
                     tf(
                         "Version {} ({}) is the newest version.",
                         &[&selfupdate::current(), &package_label()],
@@ -1155,7 +1155,7 @@ fn check_now_windows(ui: &Ui) {
                     &shared,
                     3,
                     tf("Installing version {}…", &[&rel.version]),
-                    t("Ezoo Download closes now and opens again when it is installed."),
+                    t("Ezoo Download Manager closes now and opens again when it is installed."),
                     -1.0,
                 );
                 // a moment to read it, then the setup runs in front of the user
@@ -1303,10 +1303,10 @@ mod tests {
     fn downloads_folder_is_home_downloads() {
         assert_eq!(
             downloads_folder_for(
-                Some(std::path::Path::new("/home/tensi")),
+                Some(std::path::Path::new("/home/user")),
                 std::path::Path::new("/fallback")
             ),
-            PathBuf::from("/home/tensi/Downloads")
+            PathBuf::from("/home/user/Downloads")
         );
         assert_eq!(
             downloads_folder_for(None, std::path::Path::new("/fallback")),

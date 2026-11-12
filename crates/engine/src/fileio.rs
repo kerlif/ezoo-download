@@ -54,3 +54,43 @@ pub fn make_sparse(file: &File) {
     #[cfg(not(windows))]
     let _ = file;
 }
+
+/// Refuse a path that is a symbolic link (or, on Unix, any path whose
+/// metadata cannot be read without following one). The download state
+/// files are ours alone: a link in their place would send the bytes
+/// somewhere else — a file the user did not choose, or a file that
+/// another program watches. Missing paths are fine: they are created.
+pub fn refuse_linked(path: &std::path::Path) -> io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(md) if md.file_type().is_symlink() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "refusing to write through a symbolic link: {}",
+                path.display()
+            ),
+        )),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Refuse an already-open file with more than one hard link: another
+/// name for the same bytes would let another process read half-written
+/// data, or keep the file alive after we delete our name. Unix only;
+/// Windows has no cheap equivalent and the check is skipped there.
+pub fn check_not_hardlinked(file: &File) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let nlink = file.metadata()?.nlink();
+        if nlink > 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "refusing to write a file with more than one hard link",
+            ));
+        }
+    }
+    let _ = file;
+    Ok(())
+}

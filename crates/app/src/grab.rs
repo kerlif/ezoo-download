@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use swiftget_engine::fmt_size;
 use swiftget_engine::grabber::{self, FoundFile, GrabOptions, GrabProgress};
+use swiftget_engine::http::SendOrdered;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -162,7 +163,7 @@ pub(crate) fn open_grabber(ui: &Ui) {
     open_window!(d);
 }
 
-/// "Download all links with Ezoo Download" from the browser.
+/// "Download all links with Ezoo Download Manager" from the browser.
 pub(crate) fn open_links(ui: &Ui, l: api::LinksRequest) {
     let Some(d) = ensure_grabber(ui) else {
         return;
@@ -207,7 +208,7 @@ async fn probe_size(
     if !user_agent.is_empty() {
         rb = rb.header("user-agent", user_agent);
     }
-    let resp = tokio::time::timeout(Duration::from_secs(3), rb.send())
+    let resp = tokio::time::timeout(Duration::from_secs(3), rb.send_ordered())
         .await
         .ok()?
         .ok()?;

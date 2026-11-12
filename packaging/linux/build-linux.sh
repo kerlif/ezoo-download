@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ezoo Download — Linux build (deb + AppImage + rpm)
+# Ezoo Download Manager — Linux build (deb + AppImage + rpm)
 # Usage:  ./packaging/linux/build-linux.sh [deb|appimage|rpm|all]
 # Result: dist/EzooDownload_<version>_amd64.deb
 #         dist/EzooDownload-<version>-x86_64.AppImage

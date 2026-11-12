@@ -241,7 +241,63 @@ adaptive supervisor, splitting, and rescue do not run for such
 downloads. The single-connection path still verifies the finished
 file the same way any other download is verified by the caller.
 
-## 10. What is not in this phase
+## 10. Rate limiting (429), slow drops, per-site limits, refresh-link
+
+Added in 1.1.2 (P6, folding upstream 1.0.9's 429 reaction into this
+engine instead of copying its `server-limits.json` — there is no
+second learning store; see §8):
+
+- **429 lowers the ceiling for this download only.** A 429 answer
+  halves the connection count (`Scaler::halve`) and latches the
+  halved count as the ceiling (`limited_cap`): the scaler never
+  grows past it again in the same download, however well throughput
+  recovers. A second 429 lowers it further. The user taking the
+  connection count by hand lifts the latch; a fresh 429 re-latches
+  it.
+- **Retry-After is honoured, capped at 600 s** (`RateLimited::
+  from_headers`, `RetryPolicy::wait`). A 429 without one waits the
+  default backoff (5 s). The wait is per segment worker, and a 429
+  retry never consumes one of the segment's ordinary retries.
+- **Giving up.** A server that answers 429 to every request would
+  otherwise park the download forever: after 40 consecutive 429s
+  for the same part with no progress between them
+  (`AdaptiveConfig::rate_limit_give_up_after`), the run fails with
+  a clear error naming the 429 instead of waiting forever. Any
+  successful request or any progress resets the count.
+- **Recovery.** The latch is per-download: the next download starts
+  with a fresh scaler and can grow again. What persists is only the
+  *learned starting point*: when a download was rate-limited, the
+  manager records the lowered count (`min_target`), not the best
+  count it reached before the 429 (`Manager::record_learning`), so
+  the next download from the host starts low instead of earning
+  another 429 at once. Clean downloads then raise the average
+  again through the EMA in §8, and entries expire after 30 days.
+- **Slow drops are counted, not matched on text.** When a
+  connection much slower than the others is dropped (`SlowDrop`, a
+  typed error), the supervisor counts it: 6 slow drops inside 60 s
+  while the download still made at least 1 MiB of progress halves
+  the pool, like a 429 (`AdaptiveState::note_slow_drop`).
+- **Per-site limits reach a running download at once.**
+  `Manager::set_settings` pushes the new per-site connection cap
+  (`Settings::connections_for`) into every running download's
+  `want_connections`, and `pump()` re-reads the per-site
+  max-downloads limit, so a limit changed in Options applies
+  immediately — the pool sheds workers down to the new cap and a
+  download over the new max-downloads limit waits in the queue.
+  The explicit server limits are user-set caps and are never
+  changed by learning (§8).
+- **Refresh-link** (`Manager::refresh_link`, UI: "Refresh download
+  address"): a new link for a stalled/expired download is accepted
+  only when it probes as the same file — same size, resumable, not
+  a web page, and the same validator: matching strong ETags, else
+  matching Last-Modified when the ETags are weak or absent. A new
+  link without a validator is accepted only when the old download
+  never had one; a different size or a different validator is
+  refused. The check re-probes the new link before anything is
+  re-queued, so a wrong link can never silently restart a different
+  file.
+
+## 11. What is not in this phase
 
 - No settings-UI strings: the tunables are code constants until
   Phase 6 decides how to expose them.
@@ -255,6 +311,5 @@ file the same way any other download is verified by the caller.
 - No new outbound requests: the only network activity remains the
   download requests themselves (see `docs/PRIVACY.md`).
 - The 30 s stall timeout, the retry/backoff behaviour for ordinary
-  network errors, and the pause/resume behaviour checklist in
-  `docs/BASELINE.md` §2 are unchanged except for the adaptive
+  network errors, and the pause/resume behaviour checklist are unchanged except for the adaptive
   behaviours described here.

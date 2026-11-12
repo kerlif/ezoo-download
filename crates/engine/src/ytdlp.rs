@@ -537,10 +537,15 @@ pub fn apply_headers(target: &mut RequestHeaders, headers: &[(String, String)]) 
 pub fn netscape_cookies(cookies: &[BrowserCookie]) -> String {
     let mut out = String::from("# Netscape HTTP Cookie File\n");
     for c in cookies {
+        // a tab or line break in ANY field would let a forged cookie
+        // line into the file (the name, value, domain and path all
+        // ride raw in the Netscape format), so the cookie is dropped
         if c.name.is_empty()
             || c.domain.is_empty()
-            || c.name.contains(['\t', '\n'])
-            || c.value.contains(['\t', '\n'])
+            || c.name.contains(['\t', '\n', '\r'])
+            || c.value.contains(['\t', '\n', '\r'])
+            || c.domain.contains(['\t', '\n', '\r'])
+            || c.path.contains(['\t', '\n', '\r'])
         {
             continue;
         }
@@ -640,11 +645,16 @@ fn cookie_file(cookies: &[BrowserCookie]) -> anyhow::Result<std::path::PathBuf> 
             "ezoo-cookies-{}-{nanos:x}-{n}.txt",
             std::process::id()
         ));
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        // owner-only on Unix: the file holds live session cookies
+        // (see local_token.rs for the same discipline)
+        #[cfg(unix)]
         {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&path) {
             Ok(mut f) => {
                 f.write_all(netscape_cookies(cookies).as_bytes())?;
                 return Ok(path);
@@ -786,7 +796,7 @@ fn login_wall(msg: &str) -> bool {
 
 /// The error shown when a video needs a login or an age check and no
 /// cookies of the browser help.
-pub const LOGIN_NEEDED: &str = "this video needs a login or an age check: open it once in the browser where you are signed in (with the Ezoo Download extension), then try again";
+pub const LOGIN_NEEDED: &str = "this video needs a login or an age check: open it once in the browser where you are signed in (with the Ezoo Download Manager extension), then try again";
 
 fn with_cookies<T>(
     page_url: &str,
@@ -890,7 +900,7 @@ fn resolve_now(
     referer: Option<&str>,
 ) -> anyhow::Result<YtInfo> {
     let tool = find_tool("yt-dlp")
-        .ok_or_else(|| anyhow!("yt-dlp.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again"))?;
+        .ok_or_else(|| anyhow!("yt-dlp.exe is missing. Ezoo Download Manager gets it by itself in a minute (internet needed), then try again"))?;
     let cookies = cookies.filter(|c| !c.is_empty());
     let json = with_cookies(page_url, cookies, |file| {
         run_ytdlp(&tool, page_url, file, referer)
@@ -1389,6 +1399,72 @@ mod tests {
         assert!(std::fs::read_to_string(&a).unwrap().contains("example.com"));
         let _ = std::fs::remove_file(a);
         let _ = std::fs::remove_file(b);
+    }
+
+    /// The temp cookie file holds live session cookies: it must be
+    /// owner-only (0600) from creation, not the umask default 0644.
+    #[test]
+    #[cfg(unix)]
+    fn temp_cookie_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let list = vec![BrowserCookie {
+            domain: ".example.com".into(),
+            name: "a".into(),
+            value: "b".into(),
+            path: "/".into(),
+            secure: true,
+            expiration_date: None,
+        }];
+        let path = cookie_file(&list).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(mode, 0o600, "the temp cookie file must be owner-only");
+    }
+
+    /// A tab or line break in the domain or path must not smuggle a
+    /// forged cookie line into the Netscape file — the cookie is
+    /// dropped whole, like one with a bad name or value.
+    #[test]
+    fn netscape_cookies_skips_unsafe_domain_and_path() {
+        let bad_domain = BrowserCookie {
+            domain: "evil.com\nforged\tTRUE\t/\tFALSE\t0\tX\tY".into(),
+            name: "SID".into(),
+            value: "v".into(),
+            path: "/".into(),
+            secure: true,
+            expiration_date: None,
+        };
+        let bad_path = BrowserCookie {
+            domain: ".example.com".into(),
+            name: "SID".into(),
+            value: "v".into(),
+            path: "/a\nforged\tTRUE".into(),
+            secure: true,
+            expiration_date: None,
+        };
+        let bad_cr = BrowserCookie {
+            domain: ".example.com".into(),
+            name: "SID".into(),
+            value: "v\rforged".into(),
+            path: "/".into(),
+            secure: true,
+            expiration_date: None,
+        };
+        let good = BrowserCookie {
+            domain: ".example.com".into(),
+            name: "SID".into(),
+            value: "v".into(),
+            path: "/".into(),
+            secure: true,
+            expiration_date: None,
+        };
+        let s = netscape_cookies(&[bad_domain, bad_path, bad_cr, good]);
+        assert!(!s.contains("forged"), "no forged line may survive: {s}");
+        assert!(
+            s.contains(".example.com\tTRUE\t/\tTRUE\t2147483647\tSID\tv\n"),
+            "the good cookie stays: {s}"
+        );
+        assert_eq!(s.lines().count(), 2, "header + the one good cookie: {s}");
     }
 
     #[test]

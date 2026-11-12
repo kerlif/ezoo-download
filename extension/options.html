@@ -2,24 +2,30 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Ezoo Download - Settings</title>
+<title>Ezoo Download Manager - Settings</title>
 <style>
+  /* EDM palette (from the supplied logo, 2026-11-05): navy #253149 / #1D283A,
+     blue #4687C7, green #54AB64, red #C2453F, grey #B0B3B8. Accents use
+     the AA-safe variants: blue #3570A6 (5.22:1 white), green #2E7D3F
+     (5.10:1 white). Heading is navy; cards stay white. All fills flat. */
   body { font: 14px/1.5 "Segoe UI", system-ui, sans-serif; color: #1f2733; margin: 0; padding: 18px 22px; min-width: 420px; background: #f4f6fa; }
-  h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 18px; }
+  h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 18px; color: #253149; }
   h2 img { width: 28px; height: 28px; }
   .card { background: #fff; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   label { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
   select { padding: 3px 6px; border: 1px solid #d5dbe4; border-radius: 6px; font: inherit; }
   input[type=number] { width: 90px; padding: 4px 8px; border: 1px solid #d5dbe4; border-radius: 6px; font: inherit; }
-  input[type=range] { flex: 1; accent-color: #1f6feb; }
+  input[type=range] { flex: 1; accent-color: #3570A6; }
+  input[type=checkbox] { accent-color: #3570A6; }
+  input:focus-visible, select:focus-visible { outline: 2px solid #3570A6; outline-offset: 1px; }
   output { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
-  .saved { color: #1a9e5a; font-size: 12px; height: 16px; margin-top: 8px; }
+  .saved { color: #2E7D3F; font-size: 12px; height: 16px; margin-top: 8px; }
 </style>
 </head>
 <body>
-  <h2><img src="icons/icon48.png" alt="">Ezoo Download — Settings</h2>
+  <h2><img src="icons/icon48.png" alt="">Ezoo Download Manager — Settings</h2>
   <div class="card">
-    <label><input type="checkbox" id="intercept"> Send browser downloads to Ezoo Download</label>
+    <label><input type="checkbox" id="intercept"> Send browser downloads to Ezoo Download Manager</label>
     <label>Ignore files smaller than <input type="number" id="minSize" min="0"> KB</label>
     <label>App port <input type="number" id="port" min="1024" max="65535"></label>
     <label>Size of the "Download this video" button

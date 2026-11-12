@@ -1,4 +1,4 @@
-//! New versions of Ezoo Download itself.
+//! New versions of Ezoo Download Manager itself.
 //!
 //! Every release on GitHub carries (among other files):
 //!
@@ -342,7 +342,7 @@ pub fn parse(text: &str) -> anyhow::Result<Release> {
 pub fn parse_signed(text: &str) -> anyhow::Result<Release> {
     let r = parse(text)?;
     if !signature_ok(&r, UPDATE_PUBLIC_KEY) {
-        anyhow::bail!("the update is not signed by Ezoo Download, so it is not installed");
+        anyhow::bail!("the update is not signed by Ezoo Download Manager, so it is not installed");
     }
     Ok(r)
 }
@@ -405,7 +405,13 @@ pub async fn open_guarded(
             }
             req = req.header(name.clone(), value.clone());
         }
-        let resp = req.send().await?;
+        // "Host" first on every hop, like the other clients: the
+        // update check talks to GitHub's API, which is also behind a
+        // bot filter. The host-jump rejection below stays exactly as
+        // it was — this only reorders the headers of each request.
+        let mut req = req.build()?;
+        crate::http::host_first(&mut req);
+        let resp = client.execute(req).await?;
         if !resp.status().is_redirection() {
             return Ok(resp);
         }
@@ -1709,7 +1715,7 @@ mod tests {
     /// emoji bullets first, then one long English paragraph.
     fn real_shaped_body() -> String {
         [
-            "## Ezoo Download 1.1.1 — الجودة تتحكم بالتنزيل",
+            "## Ezoo Download Manager 1.1.1 — الجودة تتحكم بالتنزيل",
             "",
             "🎯 اختيار الجودة في نافذة الالتقاط أصبح يؤثر فعلًا.",
             "🖱️ صفوف نافذة الالتقاط تعرض اسم كل رابط وحجمه.",

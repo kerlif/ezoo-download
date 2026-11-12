@@ -2,7 +2,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-  <img alt="Ezoo Download: parallel download segments filling in" src="assets/banner-light.svg" width="100%">
+  <img alt="Ezoo Download Manager: parallel download segments filling in" src="assets/banner-light.svg" width="100%">
 </picture>
 
 **Multi-connection, resumable downloads for Windows and Linux.**<br>
@@ -27,7 +27,9 @@ Free and open source. No ads. No accounts.
 
 <br>
 
-## Why Ezoo Download
+**Ezoo Download Manager (EDM) is an independent fork of Ezoo Download by Ahmed Ezzat (Ezoo Tech), maintained and extended by kerlif. Special thanks to Ahmed Ezzat for the original program, and to kerlif for the additional improvements.**
+
+## Why Ezoo Download Manager
 
 | | Feature | What it does |
 |:-:|---|---|
@@ -100,7 +102,7 @@ chmod +x EzooDownload-*-x86_64.AppImage
 ./EzooDownload-*-x86_64.AppImage
 ```
 
-The `.deb`, `.rpm`, AppImage, and Flatpak packages include ffmpeg, so merging video and audio works without installing anything else. The Flatpak bundle also includes aria2: [`EzooDownload-x86_64.flatpak`](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak).
+The `.deb`, `.rpm`, and AppImage packages include ffmpeg, so merging video and audio works without installing anything else. Exception: the bundled ffmpeg crashes on some MPEG-TS sources — the app automatically retries with the system ffmpeg when installed; otherwise install ffmpeg via your package manager.
 
 For troubleshooting, see the [Linux guide](packaging/linux/README-Linux.md).
 
@@ -134,14 +136,14 @@ To build the Windows installer, run `build-windows.ps1`. For Linux packages, see
 ## Privacy and network
 
 - Downloads go directly from the server you chose to your computer.
-- Two automatic network requests: an update check (app name and version only, every 24 hours — you can turn it off in settings), and a tool update check that fetches yt-dlp at most once a day and verifies its checksum before use; aria2 is fetched on Windows only (on Linux install it with your system package manager; in the Flatpak it is bundled).
+- Two automatic network requests: an update check (app name and version only, every 24 hours — you can turn it off in settings), and a tool update check that fetches yt-dlp at most once a day and verifies its checksum before use; aria2 is fetched on Windows only (on Linux install it with your system package manager).
 - yt-dlp runs only when you request video, playlist, or tool-update features.
 - No telemetry, analytics, or automatic crash reports.
 
 ## Responsible use
 
 > [!IMPORTANT]
-> Ezoo Download refuses DRM-protected streams and does not try to bypass DRM. Download only content you have the right to download, and follow the terms of each website you use.
+> Ezoo Download Manager refuses DRM-protected streams and does not try to bypass DRM. Download only content you have the right to download, and follow the terms of each website you use.
 
 ## FAQ
 
@@ -169,7 +171,7 @@ Yes. For HLS streams the download uses the picked variant's URL; for DASH it dow
 <details>
 <summary><b>Does it run on Linux?</b></summary>
 
-Yes, with `.deb`, `.rpm`, AppImage, and [Flatpak](https://github.com/kerlif/ezoo-download/releases/latest/download/EzooDownload-x86_64.flatpak) packages.
+Yes, with `.deb`, `.rpm`, and AppImage packages.
 
 </details>
 
@@ -201,10 +203,10 @@ Open an issue to report a bug or suggest a feature. Translation fixes are welcom
 
 <br>
 
-<img src="assets/logo.svg" width="56" alt="Ezoo Download logo">
+<img src="assets/logo.svg" width="56" alt="Ezoo Download Manager logo">
 
 <br>
 
-<sub><picture><source media="(prefers-color-scheme: dark)" srcset="assets/rust-logo-white-outline.svg"><img src="assets/rust-logo.svg" width="15" height="15" alt="Rust logo"></picture> Built with Rust.</sub>
+<sub><picture><source media="(prefers-color-scheme: dark)" srcset="assets/rust-logo-white-outline.svg"><img src="assets/rust-logo.svg" width="15" height="15" alt="Rust logo"></picture> Built with Rust. Rust logo © Rust Foundation, licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> (artwork from <a href="https://github.com/rust-lang/rust-artwork">rust-lang/rust-artwork</a>).</sub>
 
 </div>

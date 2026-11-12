@@ -4,7 +4,10 @@ Inventory complete as of Phase 7 of the v1.1.0 upgrade (surveyed from
 the code; the update-checker section is verified by local-server
 tests). Nothing outside this list is contacted by the program. Phases
 4–5 added the probing and learning entries only; Phase 7 added the
-update checker and surveyed the rest.
+update checker and surveyed the rest. Phase P8 (v1.1.2 regression)
+re-surveyed the P0–P7 + P4-bis + UI/UX diff against `main` and found
+no new outbound destination — see "Phase P8 verification (v1.1.2)"
+below.
 
 ## Rules that apply to every request below
 
@@ -14,10 +17,11 @@ update checker and surveyed the rest.
   written to disk, never written to a log, and never included in any
   result object. The only place a download's headers are stored is the
   download's own record, sealed as described in `secret.rs` — DPAPI-encrypted
-  on Windows; on Linux the record file itself is owner-only (mode 0600,
-  since v1.1.1, see `store.rs`); probing adds no new stored copy.
+  on Windows; on Linux stored in the user's Secret Service keyring (since
+  v1.1.2, P8-bis; falls back to the owner-only 0600 file, with a stderr
+  warning, when no keyring answers); probing adds no new stored copy.
   The same holds for the proxy password in `settings.json`: DPAPI-encrypted
-  on Windows, owner-only file (mode 0600) on Linux.
+  on Windows, Secret Service keyring on Linux (same fallback).
 - Probing never runs yt-dlp. yt-dlp runs only when the user asks for
   video choices (the browser panel's "Download this video" flow).
 
@@ -110,10 +114,10 @@ it is telemetry, and none of it was added or changed by Phase 7
 |---|---|---|
 | Downloads (HTTP, HLS, DASH) | The user adds a link, or the browser extension / clipboard hands one over | The link's own server only. Headers: the user-agent from settings, the browser's captured headers for that link when present, and any saved site login for it. `Range` requests for segments/resume. |
 | Site grabber | The user runs the grabber on a page | That site's pages, with the shared client (proxy + user-agent settings), to find links. After a crawl (or a links batch from the browser), the grabber also sends one HEAD request per shown file (at most 100, 6 at a time, 3 s each) to the same site, only to read Content-Length for the size column — no cookies, no body, no other destination; a link the server will not answer stays "unknown". |
-| Tools updater (`tools.rs`) | Automatic: 20 s after startup, then every 6 h, but only fetches when a day has passed or a tool is missing; silent, no UI | `github.com/yt-dlp/yt-dlp` (the `yt-dlp` binary + `SHA2-256SUMS`, hash-checked before use) and, on Windows only, the fixed aria2 1.37.0 release zip (hash-checked). On Linux the app never fetches aria2: `.deb`/`.rpm`/AppImage need a system `aria2c` installed by the user, and the Flatpak bundles aria2 1.37.0 built from source (see `docs/FLATPAK.md` §5b). Sends the browser user-agent string (`DEFAULT_USER_AGENT`) — pre-existing behaviour, unchanged by Phase 7; the update checker does not use it. ffmpeg: on Windows, `restore_ffmpeg()` (Phase 1) fetches `ffmpeg.exe` from the fork's own release (`kerlif/ezoo-download`) when the bundled ffmpeg is missing, and only accepts it when its SHA-256 matches the hash baked in at build time (`EZOO_FFMPEG_SHA256`, injected by the fork workflows in Phase 9); until that hash is injected the function does nothing and ffmpeg is never fetched. On Linux the bundled ffmpeg inside the packages suffices and nothing is fetched (Q23). |
+| Tools updater (`tools.rs`) | Automatic: 20 s after startup, then every 6 h, but only fetches when a day has passed or a tool is missing; silent, no UI | `github.com/yt-dlp/yt-dlp` (the `yt-dlp` binary + `SHA2-256SUMS` from the same release, hash-checked before use — the checksum file comes from the same release it verifies, so the check proves the binary matches the release's published checksums; it does not authenticate the release beyond the TLS connection to github.com) and, on Windows only, the fixed aria2 1.37.0 release zip (hash-checked). On Linux the app never fetches aria2: `.deb`/`.rpm`/AppImage need a system `aria2c` installed by the user (no Flatpak package ships in v1.1.2). Sends the browser user-agent string (`DEFAULT_USER_AGENT`) — pre-existing behaviour, unchanged by Phase 7; the update checker does not use it. ffmpeg: on Windows, `restore_ffmpeg()` (Phase 1) fetches `ffmpeg.exe` from the fork's own release (`kerlif/ezoo-download`) when the bundled ffmpeg is missing, and only accepts it when its SHA-256 matches the hash baked in at build time (`EZOO_FFMPEG_SHA256`, injected by the fork workflows in Phase 9); until that hash is injected the function does nothing and ffmpeg is never fetched. On Linux the bundled ffmpeg inside the packages suffices and nothing is fetched (Q23). |
 | yt-dlp subprocess | User action only: video choices in the browser panel, playlist lookups, Help > update yt-dlp | Whatever yt-dlp itself contacts (video sites; its own update endpoint when updating). That is yt-dlp's behaviour, not the app's; the app never runs it in the background. |
-| Torrents (aria2 subprocess) | The user adds a torrent | The trackers and peers of that torrent. The app talks to aria2 only over its local JSON-RPC server on `127.0.0.1` (ephemeral port, random password per start, never through a proxy). aria2 itself also opens an ephemeral UDP port for DHT and outbound TCP connections to peers — that is the torrent's own traffic, not app traffic; the RPC listener itself is loopback-only (see `crates/engine/src/torrent.rs`). |
-| Browser-extension bridge | Inbound only: the extension posts captured links | Local TCP server on `127.0.0.1` (port 9614). No outbound traffic from the app. POSTs must carry the per-install token (`X-SwiftGet-Token`, Q29, Phase 1): 32 random bytes made once per install, kept in `local-api-token` in the data folder (owner-only on Unix), handed to the extension through GET `/config`; the token never leaves the machine. GET `/ping` and `/config` stay open (liveness, and the token bootstrap). Since the Phase 3 extension, the token is required on every POST with no fallback (the 1.1.0 legacy fallback — a POST from a browser-extension origin, or with no Origin, taken on the `X-SwiftGet` header alone — is gone); `POST /quit` and `POST /open-torrent` (new in 1.0.8, merged in Phase 2) required the token from day one. The token does not protect against local processes or other extensions (they can read the token file or GET `/config`); the native-messaging host (later release) closes that. The `Host` is validated against DNS rebinding. The extension itself re-fetches HLS playlists it already saw the page request (Phase 3, upstream 1.0.8) to list their qualities — same media server, no new destination. |
+| Torrents (aria2 subprocess) | The user adds a torrent | The trackers and peers of that torrent. The app talks to aria2 only over its local JSON-RPC server on `127.0.0.1` (ephemeral port, random password per start, never through a proxy). aria2 itself also opens an ephemeral UDP port for DHT and outbound TCP connections to peers — that is the torrent's own traffic, not app traffic; the RPC listener itself is loopback-only (see `crates/engine/src/torrent.rs`). Since v1.1.2 P5, a torrent known to be public is also announced to 11 well-known public trackers (tracker.opentrackr.org, open.stealth.si, tracker.torrent.eu.org, exodus.desync.com, explodie.org, open.demonii.com, tracker.dler.org, tracker.tiny-vps.com, tracker.openbittorrent.com, tracker.tamersunion.org — see `PUBLIC_TRACKERS` in `crates/engine/src/torrent.rs`), passed per download, never as a daemon-wide flag. A private torrent (BEP 27) and a magnet link whose file list has not come yet are never announced to them: a live test (2026-11-05, aria2 1.37.0) proved aria2 announces to `--bt-tracker` trackers for a private torrent too, so the fork gates them per download (Q56, verified-closed). A magnet link's metadata fetch (file list before download) uses the link's own trackers and DHT, as every client must to learn the file list. |
+| Browser-extension bridge | Inbound only: the extension posts captured links | Local TCP server on `127.0.0.1` (port 9614). No outbound traffic from the app. POSTs must carry an HMAC signature over the per-install token (Q53, v1.1.2 P2): `X-Ezoo-Time` / `X-Ezoo-Nonce` / `X-Ezoo-Sig` (HMAC-SHA256 over method, path, time, nonce and body, ±300 s window, each nonce once); the token itself is never sent — the old `X-SwiftGet-Token` bearer header is gone, no fallback. The token is 32 random bytes made once per install, kept in `local-api-token` in the data folder (owner-only on Unix), handed to the extension through GET `/config`; the token never leaves the machine. GET `/ping` and `/config` stay open (liveness, and the token bootstrap). Since the Phase 3 extension, the token is required on every POST with no fallback (the 1.1.0 legacy fallback — a POST from a browser-extension origin, or with no Origin, taken on the `X-SwiftGet` header alone — is gone); `POST /quit` and `POST /open-torrent` (new in 1.0.8, merged in Phase 2) required the token from day one. The token does not protect against local processes or other extensions (they can read the token file or GET `/config`); the native-messaging host (later release) closes that. The `Host` is validated against DNS rebinding. The extension itself re-fetches HLS playlists it already saw the page request (Phase 3, upstream 1.0.8) to list their qualities — same media server, no new destination. |
 
 Not app traffic: the Firefox add-on update manifest
 (`firefox-updates.json`, a static file on the release) is fetched
@@ -132,7 +136,55 @@ token on POSTs, legacy fallback for the 1.1.0 extension). Phase 3
 POST. No new outbound destination of any kind: the token never leaves the machine,
 and `restore_ffmpeg()` fetches only from the fork's own release.
 
+Phase P3 (v1.1.2) changes to the table above: POSTs are now HMAC-signed
+(Q53, see the bridge row) instead of carrying the token, and `POST
+/check` is a new outbound request from the app — a HEAD-only probe of
+the very link the extension is deciding about, sent to that link's own
+server (no new destination) with the browser's cookies for that link
+when the extension has them, so a sign-in-only file is recognised
+before the download starts. The probe never fetches a body, never
+spends a one-time link, and at most two run at once; nothing about the
+user or the machine is sent anywhere new, and there is no telemetry.
+
+Phase P4 (v1.1.2) changes to the table above: cutting a part of a
+video from a URL serves the file to ffmpeg through a second local
+server (`clipserve`, `crates/engine/src/clipserve.rs`) — a TCP
+listener on `127.0.0.1` with an ephemeral port, loopback peers only,
+one listener per process, started only while a URL cut runs. Each
+cut gets a fresh 64-hex one-use token (from `getrandom`); the token
+is sent to ffmpeg in an environment variable, never on its command
+line (Unix — on Windows there is no `sh`, so it rides the command
+line there; the token is one-use and dies when the cut ends). The
+server fetches the video's byte ranges from the link's own server —
+the same destination a download of that link would use, no new
+destination — and streams them to ffmpeg; nothing about the user or
+the machine is sent anywhere new, and there is no telemetry. Cutting
+a local file and previewing a part touch no network at all.
+
+## Phase P8 verification (v1.1.2)
+
+The P0–P7 + P4-bis + UI/UX sweep (diff `fe7e1f35..HEAD`, 2026-11-05)
+found no new outbound destination. Per phase: P1 Cloudflare is
+header/ordering changes on the same requests; P2 HMAC signing is
+loopback only (the extension ↔ app channel on port 9614, already
+listed); P3 `/check` reuses the existing probe (HEAD-only) against
+the link's own server; P4 clipserve is the loopback server above;
+P5 public trackers were already listed in the torrent row (and
+private torrents now announce to no added tracker at all); P6 429
+handling sends no new traffic; P7, P4-bis and the UI/UX pass touch
+no network. The only new URL in the whole diff is the loopback
+clipserve URL `http://127.0.0.1:{port}/c/{token}`. No telemetry was
+added anywhere.
+
 ## Flatpak (Phase 8)
+
+> **P8-bis (2026-11-08):** Flatpak packaging was deleted from
+> v1.1.2 by the maintainer's decision — no Flatpak ships in 1.1.2 and
+> `docs/FLATPAK.md` was removed (copies kept in the v112 workspace
+> backup, `flatpak-backup-2026-11-08/`). This section is kept as the
+> Phase 8 verification record for the released v1.1.1 Flatpak,
+> which stays on GitHub untouched. References to `docs/FLATPAK.md`
+> below point at that deleted file.
 
 The Flatpak build adds no new outbound request of any kind, and no
 new network destination:
@@ -140,22 +192,23 @@ new network destination:
 - Downloads, probing, per-host learning, the tools updater and the
   update checker behave exactly as inventoried above. The tools
   updater's yt-dlp fetch (hash-checked `yt-dlp_linux` from the
-  yt-dlp releases page) is the Flatpak's yt-dlp supply: no yt-dlp
+  yt-dlp releases page — the checksum comes from the same release
+  it verifies, self-referential trust; see the tools-updater row
+  above) is the Flatpak's yt-dlp supply: no yt-dlp
   is shipped inside the Flatpak, and no manual user install is
-  needed — see `docs/FLATPAK.md` §6 (Open Question 1, resolved).
+  needed (Open Question 1, resolved).
 - The browser-extension bridge stays local-only: `--share=network`
   shares the host network namespace, so the host browser's POST to
   `127.0.0.1:9614` reaches the sandboxed app over the same
   loopback. Documented expectation, not a tested fact — no
-  Flatpak run was possible in Phase 8; see `docs/FLATPAK.md` §7.
+  Flatpak run was possible in Phase 8.
 - The Flatpak bundles a static ffmpeg (johnvansickle 7.0.2-static,
   GPLv3) at `/app/lib/ezoo-download/ffmpeg` — the app's own search
   path, verified in the code — with its licence text and GPLv3
-  source offer in the Flatpak's documentation directory; see
-  `docs/FLATPAK.md` §5 (Open Question 13 resolved by the
+  source offer in the Flatpak's documentation directory (Open Question 13 resolved by the
   static-ffmpeg module; the proof run still has to confirm one
   real merge). Torrents in the Flatpak use the bundled aria2
-  1.37.0 built from source — see `docs/FLATPAK.md` §5b. The
+  1.37.0 built from source. The
   aria2 JSON-RPC server (loopback only, ephemeral port, random
   per-run password) and its DHT/peer connections are the same as
   on the other Linux packages.

@@ -584,7 +584,7 @@ pub(crate) fn wire(ui: &Ui, d: &SettingsDialog) {
                     let _ = d.hide();
                     refresh(&ui2);
                     if port_changed {
-                        message(&t("Restart Ezoo Download to use the new port. Set the same port in the browser extension."));
+                        message(&t("Restart Ezoo Download Manager to use the new port. Set the same port in the browser extension."));
                     }
                 }
                 Err(msg) => d.set_message(msg.into()),

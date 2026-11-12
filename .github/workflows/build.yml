@@ -1,10 +1,23 @@
-name: Build Ezoo Download for Windows
+name: Build Ezoo Download Manager for Windows
 
 # Every push: build and keep the result as an artifact.
 # A push to main whose commit message contains [release] also publishes a
-# GitHub release v<version> with the setup and version.json; installed
-# copies of the program read version.json of the latest release
-# (Help > Check for updates, or by themselves when they start).
+# GitHub release v<version> with the setup (never version.json: the
+# release and the updater announcement are separate steps — the
+# manifest is published later by the publish-updater-manifest dispatch
+# in windows-release.yml, only after the extension is approved in
+# both stores). Installed copies read version.json of the latest
+# release (Help > Check for updates, or by themselves when they
+# start) and see no update until that dispatch runs.
+#
+# Signing (P8-sexies, 2026-11-08): the Ed25519 key that signs
+# version.json (UPDATE_SIGNING_KEY) lives in the GitHub environment
+# `release-signing` with required reviewers, NOT as a repository
+# secret. The `windows` job below references that environment, so
+# every run of it waits for a reviewer's approval before it starts.
+# Until the environment is created and the key moved into it, the
+# repository secret of the same name is used instead and the job
+# runs ungated — the workflow change alone protects nothing.
 
 on:
   push:
@@ -17,7 +30,7 @@ permissions:
   contents: write
 
 jobs:
-  # Ezoo Download's own small ffmpeg (tools/ffmpeg/build.sh): built from the
+  # Ezoo Download Manager's own small ffmpeg (tools/ffmpeg/build.sh): built from the
   # official sources, both checked (exact commit / SHA-256), kept in the cache
   # until the script or a version changes
   ffmpeg:
@@ -71,6 +84,14 @@ jobs:
   windows:
     needs: ffmpeg
     runs-on: windows-latest
+    # Signing key comes from the `release-signing` environment
+    # (required reviewers): this job waits for a reviewer's approval
+    # before it starts, on EVERY push (this workflow runs on all
+    # branches), because the gate is at job level (P8-sexies; see
+    # §15 of docs/UPDATE-CHECKER.md). Until the environment exists
+    # with the key moved into it, the repository secret of the same
+    # name is used instead and the job runs ungated.
+    environment: release-signing
     steps:
       # actions pinned to exact commits (a moved tag can't change the build)
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -86,7 +107,7 @@ jobs:
         with:
           name: ffmpeg-test
           path: ffmpeg-test
-      - name: Check our ffmpeg (everything Ezoo Download asks of it)
+      - name: Check our ffmpeg (everything Ezoo Download Manager asks of it)
         shell: pwsh
         run: |
           $ff = "ffmpeg-out/ffmpeg.exe"; $t = "ffmpeg-test"
@@ -246,9 +267,13 @@ jobs:
         run: |
           gh release view "v$env:VERSION" --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -eq 0) { Write-Host "v$env:VERSION is already released"; exit 0 }
-          $files = @("dist/EzooDownload-Setup.exe", "dist/version.json", "dist/ffmpeg.exe")
+          $files = @("dist/EzooDownload-Setup.exe", "dist/ffmpeg.exe")
+          # version.json is deliberately NOT uploaded here (see the
+          # header): the updater manifest is published later by the
+          # publish-updater-manifest dispatch, only after the
+          # extension is approved in both stores.
           if (Test-Path dist/ezoo-download-firefox-$extVersion.xpi) { $files += "dist/ezoo-download-firefox-$extVersion.xpi", "dist/firefox-updates.json" }
-          gh release create "v$env:VERSION" @files --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Ezoo Download $env:VERSION" --notes "Ezoo Download $env:VERSION" --latest
+          gh release create "v$env:VERSION" @files --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Ezoo Download Manager $env:VERSION" --notes "Ezoo Download Manager $env:VERSION" --latest
           if ($LASTEXITCODE -ne 0) { throw "could not create the release" }
           # old releases are KEPT (Q24, decided 2026-10-31): this step
           # must never delete other releases or their tags — deleting

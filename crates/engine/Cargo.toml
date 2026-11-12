@@ -26,9 +26,15 @@ filetime = "0.2"
 sha2 = "0.10"
 # Ed25519 check of signed updates (selfupdate.rs)
 ring = "0.17"
+# one-use clip tokens: OS randomness, no weak fallback (clipserve.rs)
+getrandom = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
+# ALPN over the system TLS stack, like browsers: Windows only. Never in
+# the shared dependencies — there it would silently flip Linux from
+# rustls to OpenSSL (and bring back the OpenSSL build dependency the
+# fork removed on purpose). Linux rustls sends ALPN already.
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "native-tls-alpn"] }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_IO",
@@ -41,6 +47,17 @@ windows-sys = { version = "0.59", features = [
 [target.'cfg(not(windows))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
 libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Secret Service (libsecret) for Linux passwords/cookies (P8-bis F10):
+# the app stores site passwords and session cookies in the user's
+# keyring instead of plaintext. Needs libsecret-1-dev to build and
+# libsecret-1-0 at runtime (declared in the .deb/.rpm metadata);
+# linuxdeploy bundles the library into the AppImage. When no keyring
+# answers (headless, no D-Bus, locked), seal() falls back to the
+# 0600 file and warns once on stderr — the app keeps working.
+libsecret = "0.9"
+gio = "0.22"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

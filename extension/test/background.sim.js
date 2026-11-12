@@ -15,8 +15,8 @@ const chrome = {
     },
   },
   downloads: { onCreated: on("dl"), onDeterminingFilename: on("det"), cancel: async (id) => { cancelled.push(id); }, erase: async () => {}, download: (o) => browserDl.push(o.url) },
-  webRequest: { onHeadersReceived: on("headers"), onBeforeRequest: on("before") },
-  tabs: { onUpdated: on("upd"), onRemoved: on("rm"), get: async (id) => ({ id, url: tabUrl }), query: async () => [{ id: 7 }],
+  webRequest: { onHeadersReceived: on("headers"), onBeforeRequest: on("before"), onSendHeaders: on("sendHeaders") },
+  tabs: { onUpdated: on("upd"), onRemoved: on("rm"), get: async (id) => ({ id, url: tabUrl }), query: async () => queryTabs,
           sendMessage: async (id, m) => tabMsgs.push(m) },
   action: { setBadgeBackgroundColor: () => {}, setBadgeText: async () => {} },
   runtime: { onInstalled: on("inst"), onStartup: on("start"), onMessage: on("msg"), getManifest: () => ({ version: "1.0.4" }), reload: () => { reloads++; } },
@@ -24,6 +24,8 @@ const chrome = {
   cookies: { getAll: async () => [] },
 };
 const ytCalls = []; const browserDl = []; const cancelled = []; const suggested = []; let appDown = false;
+const sentMeta = []; // { method, body } per POST in `sent`, to verify its signature
+const checkCalls = []; const checkHeaders = []; const checkMeta = []; let checkOk = true; let checkFails = false; let queryTabs = [{ id: 7 }];
 let configResponse = { localToken: "test-token" }; let configFails = false;
 const fetch = async (url, opts = {}) => {
   if (url.endsWith("/ping") && pingExt) return { ok: true, status: 200, json: async () => ({ ext: pingExt }) };
@@ -32,7 +34,12 @@ const fetch = async (url, opts = {}) => {
     if (configFails) throw new TypeError("Failed to fetch");
     return { ok: true, status: 200, json: async () => configResponse };
   }
-  if (url.endsWith("/add")) { if (appDown) throw new TypeError("Failed to fetch"); sent.push(JSON.parse(opts.body)); sentHeaders.push(opts.headers || {}); }
+  if (url.endsWith("/check")) {
+    checkCalls.push(JSON.parse(opts.body)); checkHeaders.push(opts.headers || {}); checkMeta.push({ method: opts.method || "POST", body: opts.body || "" });
+    if (checkFails) throw new TypeError("Failed to fetch");
+    return { ok: true, status: 200, json: async () => ({ ok: checkOk, kind: "file", fileName: "f.bin", size: 1234 }) };
+  }
+  if (url.endsWith("/add")) { if (appDown) throw new TypeError("Failed to fetch"); sent.push(JSON.parse(opts.body)); sentHeaders.push(opts.headers || {}); sentMeta.push({ method: opts.method || "POST", body: opts.body || "" }); }
   if (url.endsWith("/resolve") && JSON.parse(opts.body).url.includes("unsupported.example")) {
     return { ok: true, status: 200, json: async () => ({ ok: false, error: "Unsupported URL: https://unsupported.example/watch" }) };
   }
@@ -51,16 +58,42 @@ const fetch = async (url, opts = {}) => {
   }
   return { ok: true, status: 200 };
 };
-const ctx = { chrome, fetch, AbortController, setTimeout, clearTimeout, navigator: { userAgent: "TestUA" }, console, URL,
+const ctx = { chrome, fetch, crypto: require("crypto").webcrypto, TextEncoder: require("util").TextEncoder, AbortController, setTimeout, clearTimeout, navigator: { userAgent: "TestUA" }, console, URL,
   importScripts: (...f) => f.forEach((x) => vm.runInContext(fs.readFileSync(path.join(dir, x), "utf8"), ctx)) };
 vm.createContext(ctx);
 // a clock the test can move: the 60 s config cache is driven by it
-vm.runInContext("var __now = Date.now(); Date.now = () => __now; globalThis.__advanceNow = (ms) => { __now += ms; };", ctx);
+vm.runInContext("var __now = Date.now(); Date.now = () => __now; globalThis.__advanceNow = (ms) => { __now += ms; }; globalThis.__nowMs = () => __now;", ctx);
 const advance = (ms) => ctx.__advanceNow(ms);
 vm.runInContext(fs.readFileSync(path.join(dir, "background.js"), "utf8"), ctx);
 
 const gv = (itag, mime, clen, dur, r) => `https://rr1---sn-x.googlevideo.com/videoplayback?expire=9&itag=${itag}&mime=${encodeURIComponent(mime)}&clen=${clen}&dur=${dur}&pot=T&range=${r}&rn=1`;
 const tick = () => new Promise((r) => setTimeout(r, 20));
+
+// Q53: a POST's HMAC signature must recompute from its own method,
+// path, time, nonce and body under the per-install secret — and the
+// secret itself must never travel in a header.
+const { createHmac } = require("crypto");
+function verifySig(i) {
+  const h = sentHeaders[i], m = sentMeta[i];
+  assert.strictEqual(typeof h["X-Ezoo-Sig"], "string", "every POST carries a signature");
+  assert.strictEqual(typeof h["X-Ezoo-Time"], "string", "every POST carries a time");
+  assert.match(h["X-Ezoo-Nonce"] || "", /^[0-9a-f]{32}$/, "every POST carries a fresh nonce");
+  const expect = createHmac("sha256", "test-token")
+    .update(`${m.method}\n/add\n${h["X-Ezoo-Time"]}\n${h["X-Ezoo-Nonce"]}\n${m.body}`)
+    .digest("hex");
+  assert.strictEqual(h["X-Ezoo-Sig"], expect, "the signature matches the signed request");
+  assert(!("X-SwiftGet-Token" in h), "the secret itself is never sent");
+}
+
+// Q53 again, for /check: every POST is signed, not just /add
+function verifyCheckSig(i) {
+  const h = checkHeaders[i], m = checkMeta[i];
+  assert.strictEqual(typeof h["X-Ezoo-Sig"], "string", "every /check carries a signature");
+  const expect = createHmac("sha256", "test-token")
+    .update(`${m.method}\n/check\n${h["X-Ezoo-Time"]}\n${h["X-Ezoo-Nonce"]}\n${m.body}`)
+    .digest("hex");
+  assert.strictEqual(h["X-Ezoo-Sig"], expect, "the /check signature matches the signed request");
+}
 
 (async () => {
   // player loads an ad, then the real video in many pieces
@@ -88,7 +121,7 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     listeners.msg({ type: "swiftget-download", item: last.items[0], title: "(2) Cool video - YouTube" }, { tab: { id: 7, url: tabUrl } }, resolve));
   assert.strictEqual(res.ok, true);
   const req = sent[0];
-  assert.strictEqual(sentHeaders[0]["X-SwiftGet-Token"], "test-token", "every POST to the app carries the per-install token");
+  verifySig(0);
   assert(req.url.includes("itag=137") && !req.url.includes("range="));
   assert(req.audioUrl.includes("itag=140"));
   assert.strictEqual(req.fileName, "Cool video [1080p].mp4");
@@ -142,11 +175,16 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
   assert.strictEqual(req3.sourcePage, "https://www.instagram.com/reel/C1abcDEF/");
   assert.strictEqual(req3.referrer, "https://www.instagram.com/reel/C1abcDEF/");
   console.log("Instagram reel via app:", req3.fileName);
+  // (Q53) the last POSTs are signed too, not just the first one
+  verifySig(sentHeaders.length - 1);
   // browser downloads: only new ones, each once, no loop when the app fails
   const now = new Date().toISOString();
   // Chrome style: decided before "Save as" (the browser waits for suggest)
   const dl = async (o) => {
-    const item = { id: Math.random(), state: "in_progress", startTime: now, ...o };
+    // a fresh start each time, on the mocked clock the add-in itself
+    // reads: the clock moves in the panel tests below, and a download
+    // older than 30 s is a restored one, left alone
+    const item = { id: Math.random(), state: "in_progress", startTime: new Date(ctx.__nowMs()).toISOString(), ...o };
     await listeners.dl(item); // nothing happens here any more
     const waits = listeners.det(item, () => suggested.push(item.id));
     assert.strictEqual(waits, true, "the browser waits for our answer");
@@ -276,13 +314,36 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(sent.length, before + 1, "the clicked link goes to the app once");
     assert.strictEqual(sent[sent.length - 1].url, "https://example.com/file.pdf");
     assert.strictEqual(sent[sent.length - 1].referrer, "https://example.com/page");
-    assert.strictEqual(sentHeaders[sentHeaders.length - 1]["X-SwiftGet-Token"], "test-token", "the clicked link's POST carries the token");
+    assert.strictEqual(sent[sent.length - 1].clip, null, "a plain download carries no clip");
+    verifySig(sentHeaders.length - 1);
     // the same link again right away: sent once, the browser's copy is dropped
     const res2 = await new Promise((r) =>
       listeners.msg({ type: "swiftget-link", url: "https://example.com/file.pdf" }, { tab: { id: 7, url: "https://example.com/page" } }, r));
     assert.strictEqual(res2.ok, true);
     assert.strictEqual(sent.length, before + 1, "a second click on the same link is not sent again");
     console.log("file-link click: to the app once, with the token");
+  }
+  // P4: a part cut in the page's panel travels with the download
+  {
+    const before = sent.length;
+    const res = await new Promise((r) =>
+      listeners.msg({ type: "swiftget-download", item: { url: "https://cdn.example/movie.mp4" }, title: "x", clip: { start: 80, end: 205, exact: true } }, { tab: { id: 7, url: "https://example.com/page" } }, r));
+    assert.strictEqual(res.ok, true, "clip download taken: " + JSON.stringify(res));
+    assert.strictEqual(sent.length, before + 1);
+    assert.deepStrictEqual(sent[sent.length - 1].clip, { start: 80, end: 205, exact: true });
+    assert.strictEqual(sent[sent.length - 1].url, "https://cdn.example/movie.mp4");
+    console.log("clip download: part travels with the /add body");
+  }
+  // P4-bis: a part of a YouTube video cannot be cut yet — refuse
+  // it plainly instead of silently sending the whole video
+  {
+    const before = sent.length;
+    const res = await new Promise((r) =>
+      listeners.msg({ type: "swiftget-download", item: { yt: { quality: "1080p", videoUrl: "https://gv/137", audioUrl: "https://gv/140", ext: "mp4", key: "1080p|MP4" } }, title: "x", clip: { start: 80, end: 205, exact: true } }, { tab: { id: 7, url: "https://example.com/page" } }, r));
+    assert.strictEqual(res.ok, false, "a YouTube clip is refused: " + JSON.stringify(res));
+    assert.match(res.error || "", /not supported/, "the refusal says why");
+    assert.strictEqual(sent.length, before, "nothing is sent for the refused clip");
+    console.log("YouTube clip: refused plainly, no silent whole download");
   }
   // ---- H5: the video panel honours its setting, even when the app is gone
   // the download tests above already fetched /config once, so the cache
@@ -324,6 +385,74 @@ const tick = () => new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(cfg5.enabled, true, "never configured: the panel defaults to on");
     configFails = false;
     console.log("panel setting: live config wins, last-known wins when the app is gone");
+  }
+  // ---- P3: /check — the app is asked before a download is taken
+  {
+    const n = checkCalls.length;
+    const before = sent.length;
+    await dl({ url: "https://example.com/check-ok.zip" });
+    assert.strictEqual(sent.length, before + 1, "the app can fetch it: taken");
+    assert.strictEqual(checkCalls.length, n + 1, "asked /check once");
+    assert.strictEqual(checkCalls[n].url, "https://example.com/check-ok.zip");
+    verifyCheckSig(n);
+    // the app cannot fetch it (a sign-in page): the browser keeps it
+    checkOk = false;
+    const before2 = sent.length;
+    await dl({ url: "https://example.com/check-no.zip" });
+    assert.strictEqual(sent.length, before2, "the app cannot fetch it: left to the browser");
+    assert.strictEqual(checkCalls[checkCalls.length - 1].url, "https://example.com/check-no.zip");
+    checkOk = true;
+    // /check itself fails: fail open, the download is taken
+    checkFails = true;
+    const before3 = sent.length;
+    await dl({ url: "https://example.com/check-down.zip" });
+    assert.strictEqual(sent.length, before3 + 1, "no answer from /check: taken anyway");
+    checkFails = false;
+    console.log("/check: asked once per decision, no means browser, failure means take");
+  }
+  // ---- P3: the browser's own request goes with the download
+  {
+    listeners.sendHeaders({
+      url: "https://example.com/sent.zip",
+      requestHeaders: [
+        { name: "Cookie", value: "sess=1" },
+        { name: "Referer", value: "https://example.com/page" },
+        { name: "User-Agent", value: "SentUA" },
+        { name: "Sec-Fetch-Site", value: "same-origin" },
+        { name: "Authorization", value: "Bearer x" },
+      ],
+    });
+    const before = sent.length;
+    await dl({ url: "https://example.com/sent.zip" });
+    const req = sent[sent.length - 1];
+    assert.strictEqual(req.cookies, "sess=1", "the cookie the site really got");
+    assert.strictEqual(req.referrer, "https://example.com/page");
+    assert.strictEqual(req.userAgent, "SentUA");
+    assert.deepStrictEqual(req.headers, [["Sec-Fetch-Site", "same-origin"]], "only the pass-on headers, never Authorization");
+    verifySig(sentHeaders.length - 1);
+    console.log("browser request: cookie + referrer + user agent + pass-on headers");
+  }
+  // ---- P3: a PDF open in the browser's viewer stays there
+  {
+    queryTabs = [{ id: 7, url: "https://example.com/view.pdf" }];
+    const before = sent.length;
+    await dl({ url: "https://example.com/view.pdf", mime: "application/pdf" });
+    assert.strictEqual(sent.length, before, "the viewer keeps its PDF");
+    queryTabs = [{ id: 7 }];
+    console.log("PDF in the viewer: left to the browser");
+  }
+  // ---- P3: the app needs a newer add-in (minExt) — last: the config
+  // keeps the newer version after this
+  {
+    configResponse = { localToken: "test-token", minExt: "9.9.9" };
+    advance(61000);
+    const r0 = reloads;
+    await ctx.getConfig();
+    assert.strictEqual(reloads, r0 + 1, "reloads once for the newer add-in");
+    advance(61000);
+    await ctx.getConfig();
+    assert.strictEqual(reloads, r0 + 1, "only once per version");
+    console.log("minExt handshake: reloads once for a newer add-in");
   }
   console.log("background simulation: all checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });

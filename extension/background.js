@@ -1,14 +1,14 @@
-// Ezoo Download browser integration (Manifest V3 service worker)
-//  1. takes over browser downloads and hands them to the Ezoo Download app
+// Ezoo Download Manager browser integration (Manifest V3 service worker)
+//  1. takes over browser downloads and hands them to the Ezoo Download Manager app
 //     together with cookies + referrer, so links behind a login still work
 //  2. watches network responses for video/audio and HLS streams and offers
 //     a "Download this video" button on the page
 //  3. Videos on web pages: the app finds the qualities with yt-dlp,
 //     downloads video + audio with many connections and joins them
-//  4. adds "Download with Ezoo Download", "Download all links with Ezoo
-//     Download" and "Download video with Ezoo Download" to the right-click menu
+//  4. adds "Download with Ezoo Download Manager", "Download all links with Ezoo
+//     Download" and "Download video with Ezoo Download Manager" to the right-click menu
 //  5. follows the app's Options: file types to take, sites to leave alone,
-//     the keys that skip / force Ezoo Download, the video panel
+//     the keys that skip / force Ezoo Download Manager, the video panel
 
 // Chrome / Edge / Opera load yt-core.js here; Firefox lists it in its manifest
 if (typeof importScripts === "function") importScripts("yt-core.js");
@@ -35,12 +35,16 @@ async function fetchWithTimeout(url, opts = {}, ms = 1500) {
   }
 }
 
-// ---------------------------------------------------------------- local token (Q29)
+// ---------------------------------------------------------------- local token (Q29) + HMAC (Q53)
 // The app hands the add-in a per-install secret through /config; every
-// POST to the app proves it is ours by sending it back. A web page cannot
-// read /config (its answer is opaque to it), so the token is what keeps a
-// malicious page from driving the app. /ping and /config stay token-free:
-// liveness, and the bootstrap that fetches the token itself.
+// POST to the app proves it is ours by signing the request with it
+// (HMAC-SHA256 over method, path, time, nonce and body). The secret
+// itself is never sent — unlike the old bearer header, a captured
+// signature cannot be replayed (fresh nonce, ±5 min window). A web
+// page cannot read /config (its answer is opaque to it), so the token
+// is what keeps a malicious page from driving the app. /ping and
+// /config stay token-free: liveness, and the bootstrap that fetches
+// the token itself.
 let localToken = null;
 async function getLocalToken(port) {
   if (localToken) return localToken;
@@ -66,11 +70,36 @@ async function getLocalToken(port) {
   return localToken;
 }
 
-/** Every POST to the app goes through here: the token proves it is ours. */
+/** HMAC-SHA256 of `text` under the per-install secret, as lowercase hex. */
+async function hmacHex(key, text) {
+  const k = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(key),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(text));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Every POST to the app goes through here: an HMAC signature over the
+ *  method, path, time, nonce and body proves it is ours. The secret
+ *  itself is never sent. */
 async function apiFetch(port, path, opts = {}, ms = 1500) {
   const token = await getLocalToken(port);
   const headers = Object.assign({ "X-SwiftGet": "1" }, opts.headers || {});
-  if (token) headers["X-SwiftGet-Token"] = token;
+  const method = (opts.method || "GET").toUpperCase();
+  if (token && method === "POST") {
+    const body = typeof opts.body === "string" ? opts.body : "";
+    const time = Math.floor(Date.now() / 1000);
+    const nonce = [...crypto.getRandomValues(new Uint8Array(16))]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    headers["X-Ezoo-Time"] = String(time);
+    headers["X-Ezoo-Nonce"] = nonce;
+    headers["X-Ezoo-Sig"] = await hmacHex(token, `${method}\n${path}\n${time}\n${nonce}\n${body}`);
+  }
   return fetchWithTimeout(apiUrl(port, path), Object.assign({}, opts, { headers }), ms);
 }
 
@@ -192,18 +221,72 @@ function isYoutube(url) {
   }
 }
 
-async function sendToApp({ url, audioUrl, referrer, fileName, headers, sourcePage, sourceKey, qualityKey }) {
+// ---------------------------------------------------------------- the browser's own request
+// What the browser sent for a file a moment ago (some sites let only exactly
+// that request in: the right Accept-Language, Sec-Fetch-*, client hints...).
+// The download is handed over with the same headers, and /check asks the
+// app with them too. Kept in memory for two minutes: the download starts
+// right after its request. Only the headers a download needs are kept —
+// never Authorization, never the page's own cookies beyond the one
+// Cookie line the site itself got (and that line is only ever sent back
+// to the app on this computer, never to a page).
+const SENT_HEADERS = new Map();
+const KEEP_HEADERS = /^(accept-language|sec-fetch-(site|mode|dest|user)|sec-ch-ua(-mobile|-platform)?|origin|referer|user-agent|cookie|x-requested-with)$/i;
+function rememberRequest(d) {
+  if (!d.requestHeaders || !/^https?:/i.test(d.url)) return;
+  const kept = d.requestHeaders.filter((h) => KEEP_HEADERS.test(h.name) && typeof h.value === "string");
+  if (!kept.length) return;
+  SENT_HEADERS.set(d.url, { at: Date.now(), headers: kept });
+  if (SENT_HEADERS.size > 300) {
+    const old = Date.now() - 120000;
+    for (const [k, v] of SENT_HEADERS) if (v.at < old || SENT_HEADERS.size > 300) SENT_HEADERS.delete(k);
+  }
+}
+try {
+  // Chrome / Edge / Brave need "extraHeaders" to show Cookie and Referer;
+  // Firefox has no such option, so there the Cookie and Referer lines are
+  // simply missing and the fallbacks below (cookies of the page, the
+  // browser's user agent) apply instead
+  const extra = chrome.webRequest.OnSendHeadersOptions && chrome.webRequest.OnSendHeadersOptions.EXTRA_HEADERS;
+  chrome.webRequest.onSendHeaders.addListener(
+    rememberRequest,
+    { urls: ["<all_urls>"], types: ["main_frame", "sub_frame", "media", "object", "other", "xmlhttprequest"] },
+    extra ? ["requestHeaders", extra] : ["requestHeaders"]
+  );
+} catch (_) {
+  /* no request headers here: the cookies and the page still go along */
+}
+
+/** What the browser sent for `url` (or the first of `urls` it knows). */
+function browserRequest(...urls) {
+  for (const u of urls) {
+    const r = u && SENT_HEADERS.get(u);
+    if (r && Date.now() - r.at < 120000) return r.headers;
+  }
+  return null;
+}
+
+async function sendToApp({ url, audioUrl, referrer, fileName, headers, sourcePage, sourceKey, qualityKey, clip, alsoUrl }) {
   const { port } = await getOpts();
+  // the browser's own request for this file: its headers go along (the app
+  // keeps its own Accept / Range); its cookie is the one the site really got
+  const sent = headers ? null : browserRequest(url, alsoUrl);
+  const sentCookie = sent && sent.find((h) => /^cookie$/i.test(h.name));
+  const sentReferer = sent && sent.find((h) => /^referer$/i.test(h.name));
+  const sentUa = sent && sent.find((h) => /^user-agent$/i.test(h.name));
+  const passOn = sent ? sent.filter((h) => !/^(cookie|referer|user-agent|range)$/i.test(h.name)).map((h) => [h.name, h.value]) : null;
   const body = {
     url,
     audioUrl: audioUrl || null,
-    headers: headers || null,
+    headers: headers || passOn,
     sourcePage: sourcePage || null,
     sourceKey: sourceKey || null,
     qualityKey: qualityKey || null,
-    referrer: referrer || null,
-    cookies: await cookieHeader(url),
-    userAgent: navigator.userAgent,
+    // cut only this part of the video (seconds; exact = re-encode)
+    clip: clip || null,
+    referrer: (sentReferer && sentReferer.value) || referrer || null,
+    cookies: (sentCookie && sentCookie.value) || (await cookieHeader(url)),
+    userAgent: (sentUa && sentUa.value) || navigator.userAgent,
     fileName: fileName || null,
   };
   const r = await apiFetch(
@@ -216,13 +299,23 @@ async function sendToApp({ url, audioUrl, referrer, fileName, headers, sourcePag
     },
     3000
   );
-  if (!r.ok) throw new Error(`Ezoo Download answered HTTP ${r.status}`);
+  if (!r.ok) throw new Error(`Ezoo Download Manager answered HTTP ${r.status}`);
 }
 
 // ---------------------------------------------------------------- app options
 
 let appConfig = null;
 let configAt = 0;
+
+/** true when version `a` is older than `b` ("1.1.1" < "1.1.2"). */
+function olderThan(a, b) {
+  const pa = String(a || "").split(".").map((x) => Number(x) || 0);
+  const pb = String(b || "").split(".").map((x) => Number(x) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0);
+  }
+  return false;
+}
 
 /** Options > File Types / General of the app (cached for a minute). */
 async function getConfig() {
@@ -233,6 +326,17 @@ async function getConfig() {
     if (r.ok) {
       appConfig = await r.json();
       configAt = Date.now();
+      // the app needs a newer add-in than this one: reload once, so the
+      // browser reads the files the program ships (the /ping check does
+      // the same, at most once a minute — this one runs on every config
+      // fetch, so a decision never uses a stale add-in)
+      if (appConfig.minExt && olderThan(chrome.runtime.getManifest().version, appConfig.minExt)) {
+        const done = (await chrome.storage.local.get("reloadedFor")).reloadedFor;
+        if (done !== appConfig.minExt) {
+          await chrome.storage.local.set({ reloadedFor: appConfig.minExt });
+          chrome.runtime.reload();
+        }
+      }
       // the last panel setting the app sent, so the panel stays off when
       // the app is closed (content.js reads it from here, not from the app)
       if (appConfig && appConfig.panel) {
@@ -271,7 +375,7 @@ function extensionOf(name) {
   return dot > 0 ? last.slice(dot + 1).toLowerCase() : "";
 }
 
-/** Should Ezoo Download take this browser download? (Options > File Types rules) */
+/** Should Ezoo Download Manager take this browser download? (Options > File Types rules) */
 function wanted(cfg, url, fileName, mime, keys) {
   if (!cfg) return true; // old app: take everything like before
   if (cfg.skipKey && cfg.skipKey !== "none" && keys[cfg.skipKey]) return false;
@@ -372,7 +476,7 @@ function isNewDownload(item) {
   return true;
 }
 
-/** Should Ezoo Download take this browser download? */
+/** Should Ezoo Download Manager take this browser download? */
 async function shouldTake(item) {
   const opts = await getOpts();
   if (!opts.enabled || !opts.intercept) return false;
@@ -387,7 +491,53 @@ async function shouldTake(item) {
   const cfg = await getConfig();
   if (!wanted(cfg, url, baseName(item.filename), item.mime, currentKeys())) return false;
   if (await appSaysBrowser([item.url, url])) return false; // the user chose the browser for it
+  if (await shownInPdfViewer(item)) return false; // open in the browser's PDF viewer: leave it there
+  // a link that works once only (the browser just used it) or only with
+  // the page's own sign-in: it stays in the browser
+  if (!(await appCanFetch(url, item))) return false;
   return true;
+}
+
+/** Can the program get this file with the browser's sign-in? (a short
+ *  look; when it can't tell, yes — a slow server never loses a download
+ *  to the browser.) */
+async function appCanFetch(url, item) {
+  const { port } = await getOpts();
+  try {
+    const sent = browserRequest(url, item.url);
+    const pick = (n) => sent && sent.find((h) => h.name.toLowerCase() === n);
+    const passOn = sent ? sent.filter((h) => !/^(cookie|referer|user-agent|range)$/i.test(h.name)).map((h) => [h.name, h.value]) : null;
+    const body = {
+      url,
+      referrer: item.referrer || (pick("referer") && pick("referer").value) || null,
+      cookies: (pick("cookie") && pick("cookie").value) || (await cookieHeader(url)),
+      userAgent: (pick("user-agent") && pick("user-agent").value) || navigator.userAgent,
+      headers: passOn && passOn.length ? passOn : null,
+    };
+    const r = await apiFetch(
+      port,
+      "/check",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      3200
+    );
+    if (!r.ok || typeof r.json !== "function") return true;
+    return (await r.json()).ok !== false;
+  } catch {
+    return true;
+  }
+}
+
+/** A PDF that a tab shows in the browser's own viewer right now. */
+async function shownInPdfViewer(item) {
+  const pdf = /pdf/i.test(item.mime || "") || /\.pdf($|[?#])/i.test(item.finalUrl || item.url || "");
+  if (!pdf) return false;
+  try {
+    const tabs = await chrome.tabs.query({});
+    const same = (a, b) => !!a && !!b && a.split("#")[0] === b.split("#")[0];
+    return tabs.some((t) => same(t.url, item.url) || same(t.url, item.finalUrl));
+  } catch {
+    return false;
+  }
 }
 
 /** Take it from the browser and give it to the app. */
@@ -401,7 +551,7 @@ async function takeOver(item) {
   }
   if (await sentRecently(url)) return;
   try {
-    await sendToApp({ url, referrer: item.referrer, fileName: baseName(item.filename) });
+    await sendToApp({ url, alsoUrl: item.url, referrer: item.referrer, fileName: baseName(item.filename) });
   } catch (e) {
     // the app may have got it anyway (it was only slow to answer): never
     // hand it to the browser as well, that showed the file twice
@@ -417,7 +567,7 @@ async function takeLink(url, referrer) {
   if (!/^https?:/i.test(url || "")) throw new Error("not a web address");
   const opts = await getOpts();
   if (!opts.enabled || !opts.intercept) throw new Error("sending is off");
-  if (!(await appAlive())) throw new Error("Ezoo Download is not running");
+  if (!(await appAlive())) throw new Error("Ezoo Download Manager is not running");
   if (await appSaysBrowser([url])) throw new Error("the browser keeps it");
   // the same link clicked twice in a row: once is enough
   if (!(await sentRecently(url))) await sendToApp({ url, referrer });
@@ -455,8 +605,9 @@ if (DECIDE_EARLY) {
         }
       }
     };
-    // never leave the browser waiting long
-    const guard = setTimeout(keep, 4000);
+    // never leave the browser waiting long (the /check look gets its
+    // own 3200 ms, so the guard is longer than it used to be)
+    const guard = setTimeout(keep, 7000);
     shouldTake(item)
       .then((take) => {
         clearTimeout(guard);
@@ -533,8 +684,8 @@ async function itemsForTab(tabId) {
           items.push({ label: "Can't get this video", sub: yt.resolveError, disabled: true });
         } else if (yt.sabr) {
           items.push({
-            label: "This video needs Ezoo Download",
-            sub: "Open Ezoo Download (with yt-dlp.exe next to it) and reload the page",
+            label: "This video needs Ezoo Download Manager",
+            sub: "Open Ezoo Download Manager (with yt-dlp.exe next to it) and reload the page",
             disabled: true,
           });
         }
@@ -614,14 +765,14 @@ async function pushToTab(tabId) {
   const { enabled } = await getOpts();
   if (!enabled) {
     // switched off: no buttons on the page, "off" on the add-in's icon
-    chrome.action.setBadgeBackgroundColor({ color: "#8a94a3" });
+    chrome.action.setBadgeBackgroundColor({ color: "#363940" });
     chrome.action.setBadgeText({ tabId, text: "off" }).catch(() => {});
     chrome.tabs.sendMessage(tabId, { type: "swiftget-media", items: [] }).catch(() => {});
     return;
   }
   const items = await itemsForTab(tabId);
   const count = items.filter((i) => !i.disabled).length;
-  chrome.action.setBadgeBackgroundColor({ color: "#1f6feb" });
+  chrome.action.setBadgeBackgroundColor({ color: "#3570A6" });
   chrome.action.setBadgeText({ tabId, text: count ? String(count) : "" }).catch(() => {});
   chrome.tabs.sendMessage(tabId, { type: "swiftget-media", items }).catch(() => {});
 }
@@ -649,7 +800,7 @@ async function addMedia(tabId, item) {
   const current = (await chrome.storage.session.get(key))[key] || [];
   if (current.some((m) => m.url === item.url)) return;
   current.push(item);
-  while (current.length > 15) current.shift();
+  while (current.length > 20) current.shift();
   await chrome.storage.session.set({ [key]: current });
   pushToTab(tabId);
   if (item.type === "HLS stream") readHls(tabId, item.url).catch(() => {});
@@ -897,7 +1048,7 @@ async function resolveYoutube(tabId, pageUrl) {
   try {
     change = await askApp(`https://www.youtube.com/watch?v=${videoId}`);
   } catch (e) {
-    change = { resolveError: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download is not running" };
+    change = { resolveError: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download Manager is not running" };
   } finally {
     if (resolving.get(tabId) === videoId) resolving.delete(tabId);
   }
@@ -926,7 +1077,7 @@ async function resolvePage(tabId, page, embedded = false) {
   try {
     change = await askApp(page);
   } catch (e) {
-    change = { resolveError: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download is not running" };
+    change = { resolveError: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download Manager is not running" };
   } finally {
     if (resolving.get(tabId) === page) resolving.delete(tabId);
   }
@@ -946,7 +1097,7 @@ async function resolveOneVideo(msg, tab) {
       if (r.resolved && r.resolved.options.length) return { items: optionItems(r.resolved, msg.resolve) };
       return { error: r.resolveError || "Can't get this video" };
     } catch (e) {
-      return { error: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download is not running" };
+      return { error: (await appAlive()) ? String((e && e.message) || e) : "Ezoo Download Manager is not running" };
     }
   }
   // a player in a frame (Dailymotion, news sites...): what was found for the
@@ -983,7 +1134,7 @@ async function resolveOneVideo(msg, tab) {
       if (r.resolved && r.resolved.options.length) items.unshift(...optionItems(r.resolved, page));
       else problem = r.resolveError || "Can't get this video";
     } catch (e) {
-      if (!(await appAlive())) return { error: "Ezoo Download is not running" };
+      if (!(await appAlive())) return { error: "Ezoo Download Manager is not running" };
       problem = String((e && e.message) || e);
     }
   }
@@ -1019,25 +1170,25 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 function makeMenus() {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: "swiftget-link", title: "Download with Ezoo Download", contexts: ["link"] });
+    chrome.contextMenus.create({ id: "swiftget-link", title: "Download with Ezoo Download Manager", contexts: ["link"] });
     chrome.contextMenus.create({
       id: "swiftget-media",
-      title: "Download this media with Ezoo Download",
+      title: "Download this media with Ezoo Download Manager",
       contexts: ["video", "audio", "image"],
     });
     chrome.contextMenus.create({
       id: "swiftget-video",
-      title: "Download video with Ezoo Download",
+      title: "Download video with Ezoo Download Manager",
       contexts: ["page", "video", "frame"],
     });
     chrome.contextMenus.create({
       id: "swiftget-all",
-      title: "Download all links with Ezoo Download",
+      title: "Download all links with Ezoo Download Manager",
       contexts: ["page", "frame", "link", "image"],
     });
     chrome.contextMenus.create({
       id: "swiftget-selected",
-      title: "Download selected links with Ezoo Download",
+      title: "Download selected links with Ezoo Download Manager",
       contexts: ["selection"],
     });
   });
@@ -1069,7 +1220,7 @@ async function sendAllLinks(tab, selection) {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "swiftget-all" || info.menuItemId === "swiftget-selected") {
-    if (tab) sendAllLinks(tab, info.menuItemId === "swiftget-selected").catch((e) => console.warn("Ezoo Download:", e));
+    if (tab) sendAllLinks(tab, info.menuItemId === "swiftget-selected").catch((e) => console.warn("Ezoo Download Manager:", e));
     return;
   }
   if (info.menuItemId === "swiftget-video") {
@@ -1083,7 +1234,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
   const url = info.linkUrl || info.srcUrl;
   if (!url || !/^https?:/i.test(url)) return;
-  sendToApp({ url, referrer: info.pageUrl }).catch((e) => console.warn("Ezoo Download:", e));
+  sendToApp({ url, referrer: info.pageUrl }).catch((e) => console.warn("Ezoo Download Manager:", e));
 });
 
 // ---------------------------------------------------------------- messages from page/popup
@@ -1101,8 +1252,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const item = msg.item || {};
       // a video inside a frame (embedded player): that frame's page
       const referrer = sender.frameId && msg.referrer ? msg.referrer : sender.tab ? sender.tab.url : msg.referrer;
+      // a part of a YouTube video cannot be cut yet (the engine has
+      // no clip for it): refuse it plainly, never silently send the
+      // whole video as if the part had been asked for
+      if (item.yt && msg.clip) {
+        sendResponse({ ok: false, error: "Cutting a part is not supported for this video yet." });
+        return true;
+      }
       if (item.yt) return reply(downloadVideo(item.yt, msg.title, referrer), sendResponse);
-      return reply(sendToApp({ url: item.url, referrer, fileName: msg.fileName, qualityKey: item.qualityKey || null }), sendResponse);
+      return reply(sendToApp({ url: item.url, referrer, fileName: msg.fileName, qualityKey: item.qualityKey || null, clip: msg.clip || null }), sendResponse);
     }
     case "swiftget-get-media":
       itemsForTab(msg.tabId).then(sendResponse);

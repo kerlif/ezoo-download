@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ezoo Download — fetch the bundled ffmpeg for the Linux packages.
+# Ezoo Download Manager — fetch the bundled ffmpeg for the Linux packages.
 #
 # Usage:  ./packaging/linux/fetch-ffmpeg.sh <out-dir>
 # Result: <out-dir>/ffmpeg, <out-dir>/ffmpeg-version.txt, <out-dir>/ffmpeg-LICENSE.txt

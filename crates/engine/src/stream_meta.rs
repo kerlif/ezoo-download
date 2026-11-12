@@ -8,7 +8,7 @@
 //! ~5 second deadline; a slow server yields "unknown", never a hang.
 //! DRM-signaled streams are reported, never downloaded.
 
-use crate::http::request;
+use crate::http::{request, SendOrdered};
 use crate::m3u8;
 use crate::model::{DownloadKind, RequestHeaders};
 use crate::mpd;
@@ -85,9 +85,12 @@ async fn fetch_text(
     deadline: Instant,
 ) -> anyhow::Result<String> {
     let remaining = deadline.saturating_duration_since(Instant::now());
-    let resp = tokio::time::timeout(remaining, request(client, url, headers, default_ua).send())
-        .await
-        .map_err(|_| anyhow!("the stream details took too long to load"))??;
+    let resp = tokio::time::timeout(
+        remaining,
+        request(client, url, headers, default_ua).send_ordered(),
+    )
+    .await
+    .map_err(|_| anyhow!("the stream details took too long to load"))??;
     if !resp.status().is_success() {
         bail!("server answered HTTP {}", resp.status().as_u16());
     }
@@ -115,7 +118,10 @@ async fn segment_size(
         return None;
     }
     let rb = request(client, url, headers, default_ua).header(RANGE, "bytes=0-0");
-    if let Ok(resp) = tokio::time::timeout(remaining, rb.send()).await.ok()? {
+    if let Ok(resp) = tokio::time::timeout(remaining, rb.send_ordered())
+        .await
+        .ok()?
+    {
         if resp.status() == StatusCode::PARTIAL_CONTENT {
             let total = resp
                 .headers()
@@ -139,7 +145,8 @@ async fn segment_size(
     }
     let resp = tokio::time::timeout(
         remaining,
-        crate::http::request_method(client, url, headers, default_ua, reqwest::Method::HEAD).send(),
+        crate::http::request_method(client, url, headers, default_ua, reqwest::Method::HEAD)
+            .send_ordered(),
     )
     .await
     .ok()?
@@ -300,29 +307,55 @@ async fn probe_hls(
             url: v.url.clone(),
             is_audio_only: false,
         };
-        // A separate audio group adds its own bandwidth: the audio
-        // rendition's playlist is sampled when no tag gives it.
+        // A separate audio group adds its own bandwidth — unless the
+        // tag already counts it. HLS BANDWIDTH is the whole variant
+        // (video + audio) on some servers and video-only on others,
+        // and adding the audio on top of a tag that already includes
+        // it counts the audio twice (Q8). When the tag is there,
+        // sample the video first: if the video alone is clearly below
+        // the tag, the tag already holds the audio and nothing is added.
+        // When the video cannot be sampled, the audio is added as
+        // before (the old behaviour is the safer fallback).
         if let Some(group) = &v.audio_group {
-            if let Some(rend) = renditions
-                .iter()
-                .find(|r| &r.group_id == group)
-                .and_then(|r| r.uri.clone())
-            {
-                if let Ok(audio_text) =
-                    fetch_text(client, &rend, headers, default_ua, deadline).await
+            let tag_holds_audio = if variant.video_bps > 0 {
+                match sample_bps(
+                    client,
+                    &media.segment_urls,
+                    &media.segment_durations,
+                    headers,
+                    default_ua,
+                    deadline,
+                )
+                .await
                 {
-                    if let Ok(audio) = m3u8::parse_media_meta(&rend, &audio_text) {
-                        if let Some(bps) = sample_bps(
-                            client,
-                            &audio.segment_urls,
-                            &audio.segment_durations,
-                            headers,
-                            default_ua,
-                            deadline,
-                        )
-                        .await
-                        {
-                            variant.audio_bps = bps;
+                    Some(sampled) => sampled * 100 < variant.video_bps * 85,
+                    None => false,
+                }
+            } else {
+                false
+            };
+            if !tag_holds_audio {
+                if let Some(rend) = renditions
+                    .iter()
+                    .find(|r| &r.group_id == group)
+                    .and_then(|r| r.uri.clone())
+                {
+                    if let Ok(audio_text) =
+                        fetch_text(client, &rend, headers, default_ua, deadline).await
+                    {
+                        if let Ok(audio) = m3u8::parse_media_meta(&rend, &audio_text) {
+                            if let Some(bps) = sample_bps(
+                                client,
+                                &audio.segment_urls,
+                                &audio.segment_durations,
+                                headers,
+                                default_ua,
+                                deadline,
+                            )
+                            .await
+                            {
+                                variant.audio_bps = bps;
+                            }
                         }
                     }
                 }

@@ -13,17 +13,18 @@
 //! answers are honoured with halved concurrency, and a segment that
 //! stalls is handed to a fresh connection from the last byte written.
 
-use crate::adaptive::{jittered, AdaptiveConfig, AdaptiveReport, Scaler, SegmentMonitor};
-use crate::fileio::{make_sparse, write_at};
+use crate::adaptive::{AdaptiveConfig, AdaptiveReport, RetryPolicy, Scaler, SegmentMonitor};
+use crate::fileio::{check_not_hardlinked, make_sparse, refuse_linked, write_at};
 use crate::http::{
     http_status_of, is_network_error, reconnect_delay, request, ConnGuard, HttpStatus, NetDrop,
-    Progress, RateLimited, Shared,
+    Progress, RateLimited, SendOrdered, Shared,
 };
 use crate::model::RequestHeaders;
 use crate::segments::{self, Segment};
 use anyhow::{anyhow, bail};
-use reqwest::header::{CONTENT_RANGE, RANGE};
+use reqwest::header::{CONTENT_RANGE, CONTENT_TYPE, IF_RANGE, RANGE};
 use reqwest::StatusCode;
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -58,6 +59,11 @@ pub struct HttpJob {
     pub user_agent: String,
     pub total_size: Option<u64>,
     pub resumable: bool,
+    /// The strong ETag the probe saw, when it saw one: sent back as
+    /// `If-Range` when a segment resumes mid-way, so a changed file is
+    /// never mixed with the old bytes. Weak ETags (`W/...`) are never
+    /// sent: they prove nothing about the bytes.
+    pub etag: Option<String>,
     pub part_path: PathBuf,
     pub connections: u32,
     pub min_split: u64,
@@ -129,6 +135,21 @@ impl std::fmt::Display for Leave {
 }
 impl std::error::Error for Leave {}
 
+/// Error returned when a connection is much slower than the others and
+/// is dropped to be made again. Typed on purpose: the old code matched
+/// the text "slow connection, made again", which is exactly the kind of
+/// fragile string match a rename would silently break — and the
+/// supervisor counts these drops to decide whether the site itself is
+/// shedding connections (see `AdaptiveState::note_slow_drop`).
+#[derive(Debug)]
+pub struct SlowDrop;
+impl std::fmt::Display for SlowDrop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("slow connection, made again")
+    }
+}
+impl std::error::Error for SlowDrop {}
+
 /// Shared adaptive state for one download run: the scaler, the stall
 /// monitor, and the counters the supervisor and the workers share.
 struct AdaptiveState {
@@ -144,6 +165,11 @@ struct AdaptiveState {
     rescues: AtomicU32,
     first_byte_total_ms: AtomicU64,
     first_byte_count: AtomicU32,
+    /// when slow connections were dropped, newest last (for the
+    /// "the site sheds connections" rule below)
+    slow_drops: Mutex<VecDeque<Instant>>,
+    /// bytes downloaded when the current slow-drop window started
+    slow_drop_start_bytes: AtomicU64,
 }
 
 impl AdaptiveState {
@@ -159,6 +185,8 @@ impl AdaptiveState {
             rescues: AtomicU32::new(0),
             first_byte_total_ms: AtomicU64::new(0),
             first_byte_count: AtomicU32::new(0),
+            slow_drops: Mutex::new(VecDeque::new()),
+            slow_drop_start_bytes: AtomicU64::new(0),
         }
     }
 
@@ -203,6 +231,34 @@ impl AdaptiveState {
     fn halve(&self) {
         self.scaler.lock().unwrap().halve();
         self.sync_target();
+    }
+
+    /// One slow connection was dropped. Returns true when the site is
+    /// shedding connections on purpose: at least 6 slow drops inside
+    /// 60 seconds while the download still made at least 1 MiB of
+    /// progress — then the pool halves, like after a 429. Counted,
+    /// not matched on error text.
+    fn note_slow_drop(&self, bytes_now: u64) -> bool {
+        let mut drops = self.slow_drops.lock().unwrap();
+        let now = Instant::now();
+        while drops
+            .front()
+            .is_some_and(|t| now.duration_since(*t) > Duration::from_secs(60))
+        {
+            drops.pop_front();
+        }
+        if drops.is_empty() {
+            self.slow_drop_start_bytes
+                .store(bytes_now, Ordering::Relaxed);
+        }
+        drops.push_back(now);
+        let made = bytes_now.saturating_sub(self.slow_drop_start_bytes.load(Ordering::Relaxed));
+        if drops.len() >= 6 && made >= 1024 * 1024 {
+            drops.clear();
+            true
+        } else {
+            false
+        }
     }
 
     fn note_reset(&self) {
@@ -328,12 +384,18 @@ pub async fn run(
         std::fs::create_dir_all(dir)?;
     }
     let segmented = job.resumable && job.total_size.is_some();
+    // the state file (.sgpart) is ours alone: refuse a symlink or a
+    // hardlink planted in its place before anything is written to it
+    refuse_linked(&job.part_path)?;
     let file = OpenOptions::new()
         .create(true)
         .read(true)
         .write(true)
         .truncate(false)
         .open(&job.part_path)?;
+    // after opening, refuse a hardlink too (a second name for the same
+    // file would let another process read half-written bytes)
+    check_not_hardlinked(&file)?;
 
     {
         let mut table = segs.lock().unwrap();
@@ -474,7 +536,20 @@ pub async fn run(
                 let bps = now_bytes.saturating_sub(last_bytes) as f64 / window_secs;
                 last_bytes = now_bytes;
                 let errors = adaptive.window_errors.swap(0, Ordering::Relaxed);
-                let decision = adaptive.scaler.lock().unwrap().observe(bps, errors);
+                // how many segments are actually being fetched: when it
+                // is below the target, work finished — the aggregate fall
+                // that follows is done work, not a useless connection
+                let active = segs
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|s| s.active)
+                    .count() as u32;
+                let decision = adaptive
+                    .scaler
+                    .lock()
+                    .unwrap()
+                    .observe_work(bps, errors, active);
                 adaptive.sync_target();
                 if decision == crate::adaptive::ScaleDecision::Add
                     && has_work(&segs, job.min_split)
@@ -661,6 +736,11 @@ impl Worker {
     async fn download_segment(&self, idx: usize, guard: &mut WorkerGuard) -> anyhow::Result<()> {
         let mut attempt = 0u32;
         let mut net_tries = 0u32;
+        // 429 answers in a row for this part, with no progress between
+        // them: a server that rate-limits every request will never let
+        // this part finish, so the run gives up after
+        // `rate_limit_give_up_after` instead of waiting forever.
+        let mut rate_limited_in_a_row = 0u32;
         loop {
             if self.cancel.is_cancelled() {
                 return Err(Cancelled.into());
@@ -676,6 +756,7 @@ impl Worker {
                         return Ok(());
                     }
                     attempt = 0; // one request done, ask for the next piece
+                    rate_limited_in_a_row = 0;
                 }
                 Err(e) => {
                     // fewer connections wanted: stop at once, the part
@@ -697,9 +778,23 @@ impl Worker {
                         .find_map(|c| c.downcast_ref::<RateLimited>())
                         .map(|rl| rl.retry_after);
                     if let Some(retry_after) = rate_limited {
-                        let asked =
-                            retry_after.unwrap_or(self.adaptive.cfg.rate_limit_default_backoff);
-                        let wait = jittered(asked, self.adaptive.cfg.jitter_fraction);
+                        rate_limited_in_a_row += 1;
+                        if rate_limited_in_a_row
+                            >= self.adaptive.cfg.rate_limit_give_up_after.max(1)
+                        {
+                            return Err(anyhow::anyhow!(
+                                "the server kept answering 429 (rate limit) {} times in a row \
+                                for the same part; the download was stopped instead of waiting \
+                                forever - try again later",
+                                rate_limited_in_a_row
+                            ));
+                        }
+                        let wait = RetryPolicy::default().wait(
+                            1,
+                            Some(
+                                retry_after.unwrap_or(self.adaptive.cfg.rate_limit_default_backoff),
+                            ),
+                        );
                         self.adaptive.window_errors.fetch_add(1, Ordering::Relaxed);
                         self.adaptive.halve();
                         tokio::select! {
@@ -712,8 +807,19 @@ impl Worker {
                     if after > before {
                         attempt = 0; // it was making progress, don't give up yet
                         net_tries = 0;
+                        rate_limited_in_a_row = 0;
                     }
-                    let network = is_network_error(&e);
+                    // a slow connection was dropped: if the site keeps
+                    // shedding them, halve the pool like after a 429
+                    let slow_drop = e.chain().any(|c| c.is::<SlowDrop>());
+                    if slow_drop
+                        && self
+                            .adaptive
+                            .note_slow_drop(self.progress.bytes.load(Ordering::Relaxed))
+                    {
+                        self.adaptive.halve();
+                    }
+                    let network = is_network_error(&e) || slow_drop;
                     let status = http_status_of(&e);
                     if network {
                         // no internet / reset / stall: wait as long as it takes,
@@ -752,7 +858,7 @@ impl Worker {
                     let backoff = if network {
                         reconnect_delay(net_tries)
                     } else {
-                        Duration::from_secs((1u64 << attempt.min(5)).min(30))
+                        RetryPolicy::default().wait(attempt, None)
                     };
                     tokio::select! {
                         _ = tokio::time::sleep(backoff) => {},
@@ -766,9 +872,9 @@ impl Worker {
     }
 
     async fn fetch_once(&self, idx: usize, guard: &mut WorkerGuard) -> anyhow::Result<()> {
-        let (pos, end) = {
+        let (pos, end, start) = {
             let table = self.segs.lock().unwrap();
-            (table[idx].pos, table[idx].end)
+            (table[idx].pos, table[idx].end, table[idx].start)
         };
         if pos >= end {
             return Ok(());
@@ -786,9 +892,19 @@ impl Worker {
         );
         if self.segmented {
             rb = rb.header(RANGE, format!("bytes={}-{}", pos, req_end - 1));
+            // resuming mid-segment with a strong ETag: the server must
+            // answer 206 for these exact bytes, or 412 for a changed
+            // file — never a silent mix of old and new bytes
+            if pos > start {
+                if let Some(etag) = &self.job.etag {
+                    if !etag.starts_with("W/") {
+                        rb = rb.header(IF_RANGE, etag.as_str());
+                    }
+                }
+            }
         }
         let request_started = Instant::now();
-        let mut resp = match tokio::time::timeout(HEADERS_TIMEOUT, rb.send()).await {
+        let mut resp = match tokio::time::timeout(HEADERS_TIMEOUT, rb.send_ordered()).await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
                 // a single request that fails is a passing failure;
@@ -812,6 +928,20 @@ impl Worker {
                     "server did not accept the byte range (HTTP {})",
                     status.as_u16()
                 );
+            }
+            // a ranged answer that is a web page is an error page, not
+            // the file: never write HTML into the part file
+            if resp
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ct| {
+                    ct.split(';')
+                        .next()
+                        .is_some_and(|t| t.trim().eq_ignore_ascii_case("text/html"))
+                })
+            {
+                bail!("the server sent a web page instead of the file");
             }
             // the part must be the one asked for (and of the same file):
             // anything else is never written
@@ -911,7 +1041,7 @@ impl Worker {
                         slow_windows = 0;
                     }
                     if slow_windows >= 2 {
-                        return Err(NetDrop("slow connection, made again".into()).into());
+                        return Err(SlowDrop.into());
                     }
                     window = Instant::now();
                     mine = 0;
@@ -996,5 +1126,30 @@ mod tests {
         );
         assert_eq!(parse_content_range("bytes 0-0/*"), Some((0, None)));
         assert_eq!(parse_content_range("items 0-9/10"), None);
+    }
+
+    #[test]
+    fn slow_drop_rule_counts_drops_not_error_text() {
+        // P6: the "site sheds connections" rule is a counter, not a
+        // match on the "slow connection" message. Six slow drops inside
+        // 60 s while the download still made >= 1 MiB of progress halve
+        // the pool; fewer drops, or drops with no progress, do not.
+        let state = AdaptiveState::new(AdaptiveConfig::default(), 8, 16);
+        // five drops with progress: not enough drops yet
+        assert!(!state.note_slow_drop(0));
+        for _ in 0..4 {
+            assert!(!state.note_slow_drop(2 * 1024 * 1024));
+        }
+        // the sixth, with 2 MiB made: the site is shedding connections
+        assert!(state.note_slow_drop(2 * 1024 * 1024));
+        // the trigger clears the window: the next drop starts a new one
+        assert!(!state.note_slow_drop(2 * 1024 * 1024 + 100));
+
+        // six drops but almost no progress: a stalled download, not a
+        // shedding site — no halving
+        let quiet = AdaptiveState::new(AdaptiveConfig::default(), 8, 16);
+        for _ in 0..6 {
+            assert!(!quiet.note_slow_drop(100));
+        }
     }
 }

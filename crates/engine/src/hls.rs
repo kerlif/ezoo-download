@@ -4,7 +4,7 @@
 //! DRM protected streams (SAMPLE-AES, Widevine, FairPlay...) are refused on
 //! purpose. Live streams (no #EXT-X-ENDLIST) are refused too.
 
-use crate::http::{request, ConnGuard, Progress, Shared};
+use crate::http::{request, ConnGuard, Progress, SendOrdered, Shared};
 use crate::http_download::Cancelled;
 use crate::m3u8::{best_variant, parse_media};
 use crate::model::RequestHeaders;
@@ -16,7 +16,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -61,7 +60,7 @@ async fn fetch_full(
     if let Some((start, end)) = range {
         rb = rb.header(RANGE, format!("bytes={start}-{}", end - 1));
     }
-    let resp = rb.send().await?;
+    let resp = rb.send_ordered().await?;
     if !resp.status().is_success() {
         bail!("HTTP {} for {}", resp.status().as_u16(), url);
     }
@@ -206,8 +205,13 @@ pub async fn run(
                             if attempt > job.retries {
                                 return Err(e);
                             }
-                            tokio::time::sleep(Duration::from_secs((attempt as u64 * 2).min(20)))
-                                .await;
+                            // one policy for every fetcher now: backoff
+                            // with a random spread, and the server's
+                            // `Retry-After` when it asked for one
+                            tokio::time::sleep(
+                                crate::adaptive::RetryPolicy::default().wait(attempt, None),
+                            )
+                            .await;
                         }
                     }
                 }

@@ -1,4 +1,4 @@
-// Ezoo Download – the classic download manager's extra windows:
+// Ezoo Download Manager – the classic download manager's extra windows:
 // Options, Scheduler (queues), File Properties, Columns, Category properties,
 // Find, Duplicate link, Shutdown countdown, Site Grabber / Download all
 // links, Tip of the day and Refresh download address.
@@ -901,7 +901,7 @@ export component ConfirmDialog inherits ThemedWindow {
 // ------------------------------------------------------------------ shut down / sleep countdown
 
 export component CountdownDialog inherits ThemedWindow {
-    title: @tr("Ezoo Download");
+    title: @tr("Ezoo Download Manager");
     preferred-width: 420px;
     always-on-top: true;
     // always in front already; kept so every window can be brought forward the same way
@@ -922,7 +922,7 @@ export component CountdownDialog inherits ThemedWindow {
             color: Theme.ok;
         }
         Label {
-            text: @tr("Ezoo Download will {} in {} seconds.", root.action-text, root.seconds-left);
+            text: @tr("Ezoo Download Manager will {} in {} seconds.", root.action-text, root.seconds-left);
             wrap: word-wrap;
         }
         Rectangle {
@@ -1204,7 +1204,7 @@ export component SchedulerDialog inherits ThemedWindow {
                         }
                     }
                     CheckBox {
-                        text: @tr("Start the queue when Ezoo Download starts");
+                        text: @tr("Start the queue when Ezoo Download Manager starts");
                         checked <=> root.on-startup;
                     }
                     Rectangle {
@@ -1237,7 +1237,7 @@ export component SchedulerDialog inherits ThemedWindow {
                             text: @tr("When the queue is done");
                         }
                         ComboBox {
-                            model: [@tr("Do nothing"), @tr("Exit Ezoo Download"), @tr("Sleep"), @tr("Shut down the computer"), @tr("Hibernate")];
+                            model: [@tr("Do nothing"), @tr("Exit Ezoo Download Manager"), @tr("Sleep"), @tr("Shut down the computer"), @tr("Hibernate")];
                             current-index <=> root.when-done;
                         }
                         Rectangle {
@@ -1482,7 +1482,7 @@ export component GrabberDialog inherits ThemedWindow {
                     }
                 }
                 Hint {
-                    text: @tr("Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \"Download all links with Ezoo Download\": every link you see there is collected.");
+                    text: @tr("Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \"Download all links with Ezoo Download Manager\": every link you see there is collected.");
                 }
                 HRow {
                     spacing: 8px;
@@ -1805,7 +1805,12 @@ export component TipDialog inherits ThemedWindow {
                 width: 44px;
                 height: 44px;
                 border-radius: 22px;
-                background: @linear-gradient(135deg, #8b5cf6 0%, #2563eb 100%);
+                // flat EDM Blue: the bulb is the meaning, the gradient
+                // was decoration without a function. #2f6699 is the
+                // AA-safe EDM Blue dark variant (Theme.accent on light
+                // themes): the yellow bulb #ffd54a measures 4.27:1 on it
+                // (was 3.66:1 on #2563eb)
+                background: #2f6699;
                 Glyph {
                     x: 10px;
                     y: 10px;
@@ -1896,7 +1901,7 @@ export component RefreshDialog inherits ThemedWindow {
             overflow: elide;
         }
         Label {
-            text: @tr("1. Open the web page where you got this file.\n2. Click the download link there again (or start the video).\n3. Ezoo Download takes the new address and continues from where it stopped.");
+            text: @tr("1. Open the web page where you got this file.\n2. Click the download link there again (or start the video).\n3. Ezoo Download Manager takes the new address and continues from where it stopped.");
             wrap: word-wrap;
         }
         if root.page != "": HRow {
@@ -1986,7 +1991,7 @@ export component SettingsDialog inherits ThemedWindow {
     // set for a moment so the window comes in front of the browser
     in property <bool> front;
     always-on-top: root.front;
-    title: @tr("Ezoo Download – Options");
+    title: @tr("Ezoo Download Manager – Options");
     preferred-width: 820px;
     preferred-height: 600px;
 
@@ -2279,7 +2284,7 @@ export component SettingsDialog inherits ThemedWindow {
                         }
                     }
                     CheckBox {
-                        text: @tr("Launch Ezoo Download on Windows startup");
+                        text: @tr("Launch Ezoo Download Manager on Windows startup");
                         checked <=> root.start-with-windows;
                     }
                     CheckBox {
@@ -2329,12 +2334,12 @@ export component SettingsDialog inherits ThemedWindow {
                         text: @tr("Browser integration");
                     }
                     Hint {
-                        text: @tr("Chrome and Edge: load the \"extension\" folder in chrome://extensions (Developer mode > Load unpacked). Downloads, videos and the right click menu then go to Ezoo Download.");
+                        text: @tr("Chrome and Edge: load the \"extension\" folder in chrome://extensions (Developer mode > Load unpacked). Downloads, videos and the right click menu then go to Ezoo Download Manager.");
                     }
                     HRow {
                         spacing: 8px;
                         Button {
-                            text: @tr("Add Ezoo Download to my browser…");
+                            text: @tr("Add Ezoo Download Manager to my browser…");
                             clicked => {
                                 root.open-extension-folder();
                             }
@@ -2360,7 +2365,7 @@ export component SettingsDialog inherits ThemedWindow {
                     HRow {
                         spacing: 8px;
                         Label {
-                            text: @tr("Hold this key to force Ezoo Download to take a link");
+                            text: @tr("Hold this key to force Ezoo Download Manager to take a link");
                         }
                         ComboBox {
                             width: 100px;
@@ -3051,7 +3056,7 @@ export component SettingsDialog inherits ThemedWindow {
                         }
                     }
                     CheckBox {
-                        text: @tr("Always turn on the speed limiter when Ezoo Download starts");
+                        text: @tr("Always turn on the speed limiter when Ezoo Download Manager starts");
                         checked <=> root.limiter-startup;
                     }
                     Hint {
@@ -3699,7 +3704,12 @@ component BrowserCard inherits Rectangle {
                 width: 52px;
                 height: 52px;
                 border-radius: 26px;
-                background: @linear-gradient(135deg, root.data.tint 0%, root.data.tint.darker(40%) 100%);
+                // flat tint: the browser's colour is the meaning, the
+                // diagonal gradient was decoration without a function.
+                // The tints are EDM-palette values, distinct per browser
+                // (see crates/app/src/browser.rs); the white globe reads
+                // >= 3:1 on every one of them
+                background: root.data.tint;
                 // a globe: the browser
                 Path {
                     x: 10px;
@@ -3719,7 +3729,7 @@ component BrowserCard inherits Rectangle {
                     width: 20px;
                     height: 20px;
                     border-radius: 10px;
-                    background: #2e9e4f;
+                    background: Theme.ok;
                     border-width: 2px;
                     border-color: Theme.panel;
                     Glyph {
@@ -3752,7 +3762,7 @@ export component BrowserDialog inherits ThemedWindow {
     // set for a moment so the window comes in front of the browser
     in property <bool> front;
     always-on-top: root.front;
-    title: @tr("Add Ezoo Download to your browser");
+    title: @tr("Add Ezoo Download Manager to your browser");
     preferred-width: 880px;
     in property <[BrowserRow]> browsers;
     in property <string> steps;
@@ -3760,6 +3770,7 @@ export component BrowserDialog inherits ThemedWindow {
     callback add(int);
     callback open-folder();
     callback copy-folder();
+    callback repair();
     callback close-window();
     VerticalLayout {
         padding: 16px;
@@ -3830,6 +3841,12 @@ export component BrowserDialog inherits ThemedWindow {
                 }
             }
             Button {
+                text: @tr("Repair extension files");
+                clicked => {
+                    root.repair();
+                }
+            }
+            Button {
                 text: @tr("Close");
                 primary: true;
                 clicked => {
@@ -3846,8 +3863,13 @@ export component AboutDialog inherits ThemedWindow {
     // set for a moment so the window comes in front of the browser
     in property <bool> front;
     always-on-top: root.front;
-    title: @tr("About Ezoo Download");
+    title: @tr("About Ezoo Download Manager");
     preferred-width: 420px;
+    // Arabic lines render ~28px taller than Slint measures them with the
+    // bundled Noto Sans Arabic (P8: the Close button clipped in Arabic —
+    // EN window 450px, AR measured 546px but ~574px rendered). RTL dialogs
+    // get a 600px floor so the button always fits; LTR stays measured.
+    min-height: Theme.rtl ? 600px : 0px;
     in property <string> version;
     // the running copy: "AppImage" / ".deb" / ".rpm" / "Flatpak" /
     // "Windows setup" / "portable copy" (hotfix H2: About names the copy)
@@ -3867,7 +3889,7 @@ export component AboutDialog inherits ThemedWindow {
             }
         }
         Text {
-            text: "Ezoo Download";
+            text: "Ezoo Download Manager";
             horizontal-alignment: center;
             font-size: 20px * Theme.font-scale;
             font-weight: 700;
@@ -3890,6 +3912,20 @@ export component AboutDialog inherits ThemedWindow {
             horizontal-alignment: center;
             font-size: 13px * Theme.font-scale;
             color: Theme.text;
+        }
+        Text {
+            text: @tr("Ezoo Download Manager (EDM) is an independent fork of Ezoo Download by Ahmed Ezzat (Ezoo Tech), maintained and extended by kerlif.");
+            horizontal-alignment: center;
+            font-size: 12px * Theme.font-scale;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+        Text {
+            text: @tr("Special thanks to Ahmed Ezzat for the original program, and to kerlif for the additional improvements.");
+            horizontal-alignment: center;
+            font-size: 12px * Theme.font-scale;
+            color: Theme.muted;
+            wrap: word-wrap;
         }
         Rectangle {
             height: 6px;
@@ -3915,7 +3951,7 @@ export component AboutDialog inherits ThemedWindow {
 export component WhatsNewDialog inherits ThemedWindow {
     in property <bool> front;
     always-on-top: root.front;
-    title: @tr("What's new in Ezoo Download");
+    title: @tr("What's new in Ezoo Download Manager");
     preferred-width: 560px;
     preferred-height: 560px;
     min-width: 440px;
@@ -4195,6 +4231,156 @@ export component UpdateDialog inherits ThemedWindow {
                 text: root.state == 2 || root.state == 3 ? @tr("Hide") : @tr("Close");
                 primary: root.state == 1 || root.state == 4;
                 enabled: root.state != 3;
+                clicked => {
+                    root.close-window();
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Cut a part of a video (P4, 1.1.2)
+
+export component ClipDialog inherits ThemedWindow {
+    // set for a moment so the window comes in front of the browser
+    in property <bool> front;
+    always-on-top: root.front;
+    title: @tr("Cut a part of a video");
+    preferred-width: 560px;
+    in-out property <string> source;
+    in-out property <string> from-text;
+    in-out property <string> to-text;
+    in-out property <bool> exact;
+    in property <float> duration;
+    in property <string> duration-text;
+    // what will be cut, once the video has been read (e.g. "720p ·
+    // 1280×720 · h264"); empty until then — a single file or address
+    // has only one quality, so this is shown, not picked
+    in property <string> quality-text;
+    in property <float> progress: -1;
+    in property <bool> busy;
+    in property <string> status;
+    callback browse();
+    callback fetch();
+    callback preview();
+    callback cut();
+    callback cancel();
+    callback close-window();
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        Label {
+            text: @tr("Video file or web address:");
+        }
+        HRow {
+            spacing: 6px;
+            LineEdit {
+                text <=> root.source;
+                horizontal-stretch: 1;
+                placeholder-text: @tr("movie.mp4 or https://…");
+                enabled: !root.busy;
+            }
+            Button {
+                text: @tr("Browse…");
+                enabled: !root.busy;
+                clicked => {
+                    root.browse();
+                }
+            }
+        }
+        HRow {
+            spacing: 6px;
+            Label {
+                text: @tr("From:");
+                vertical-alignment: center;
+            }
+            LineEdit {
+                text <=> root.from-text;
+                width: 90px;
+                placeholder-text: @tr("mm:ss");
+                enabled: !root.busy;
+                input-type: text;
+            }
+            Label {
+                text: @tr("To:");
+                vertical-alignment: center;
+            }
+            LineEdit {
+                text <=> root.to-text;
+                width: 90px;
+                placeholder-text: @tr("mm:ss");
+                enabled: !root.busy;
+                input-type: text;
+            }
+            Button {
+                text: @tr("Read length");
+                enabled: !root.busy && root.source != "";
+                clicked => {
+                    root.fetch();
+                }
+            }
+        }
+        Hint {
+            text: root.duration-text;
+        }
+        if root.quality-text != "": Hint {
+            text: root.quality-text;
+        }
+        CheckBox {
+            text: @tr("Exact cut (re-encode, frame-accurate)");
+            checked <=> root.exact;
+            enabled: !root.busy;
+        }
+        Hint {
+            text: root.exact ? @tr("The part starts on the very second asked. Slower, and it works the processor.") : @tr("Quick cut: stream copy, takes seconds and keeps the quality — but it starts at the nearest keyframe at or before the start time, so it may begin a second or two early.");
+            wrap: word-wrap;
+        }
+        if root.progress >= 0: Rectangle {
+            height: 8px;
+            border-radius: 4px;
+            // the standard progress track, like every other bar in the
+            // app (was Theme.muted, the odd one out)
+            background: Theme.bar-bg;
+            Rectangle {
+                width: parent.width * clamp(root.progress, 0, 1);
+                height: parent.height;
+                border-radius: 4px;
+                // EDM Blue via Theme.accent; the buttons are the standard
+                // Slint Buttons, whose primary colour comes from the
+                // Slint Palette, not from Theme tokens
+                background: Theme.accent;
+            }
+        }
+        Hint {
+            text: root.status;
+            wrap: word-wrap;
+        }
+        HRow {
+            alignment: end;
+            spacing: 6px;
+            Button {
+                text: @tr("Preview");
+                enabled: !root.busy && root.source != "";
+                clicked => {
+                    root.preview();
+                }
+            }
+            Button {
+                text: @tr("Cut part");
+                primary: true;
+                enabled: !root.busy && root.source != "";
+                clicked => {
+                    root.cut();
+                }
+            }
+            if root.busy: Button {
+                text: @tr("Cancel");
+                clicked => {
+                    root.cancel();
+                }
+            }
+            Button {
+                text: @tr("Close");
                 clicked => {
                     root.close-window();
                 }

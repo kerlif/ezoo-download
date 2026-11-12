@@ -78,7 +78,7 @@ mod imp {
             "[Desktop Entry]\n\
              Type=Application\n\
              Version=1.0\n\
-             Name=Ezoo Download\n\
+             Name=Ezoo Download Manager\n\
              GenericName=Download Manager\n\
              Comment=Download files with multiple connections\n\
              Exec=\"{}\" --background\n\

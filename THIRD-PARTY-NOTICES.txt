@@ -1,4 +1,4 @@
-Ezoo Download uses the following open source components.
+Ezoo Download Manager uses the following open source components.
 
 Slint (user interface toolkit) - https://slint.dev
   Used under the Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0.
@@ -23,14 +23,14 @@ FFmpeg - https://github.com/FFmpeg/FFmpeg
   ffmpeg-version.txt next to the binary. A later version may switch the
   Linux packages to the user's system ffmpeg install instead.
 
-  Flatpak: the Flatpak build bundles the same johnvansickle static
-  ffmpeg (7.0.2-static, GPLv3) as a manifest module, installed at
+  Flatpak (v1.1.1 only — deleted in v1.1.2): the released Flatpak
+  build bundled the same johnvansickle static ffmpeg (7.0.2-static,
+  GPLv3) as a manifest module, installed at
   /app/lib/ezoo-download/ffmpeg — the app's own search path, so no
-  code change was needed. Its licence text ships in the Flatpak
-  as ffmpeg-LICENSE.txt and the GPLv3 source offer is in
-  SOURCE-OFFER.txt next to it (see docs/FLATPAK.md §5). The
-  runtime's codec libraries (codecs-extra) are not used for
-  merging — the bundled binary is.
+  code change was needed. Its licence text shipped in the Flatpak
+  as ffmpeg-LICENSE.txt and the GPLv3 source offer in
+  SOURCE-OFFER.txt next to it. The runtime's codec libraries
+  (codecs-extra) are not used for merging — the bundled binary is.
 
 LAME - https://lame.sourceforge.io
   Built into that ffmpeg program to make MP3 files. GNU Lesser General Public
@@ -42,12 +42,13 @@ aria2 - https://github.com/aria2/aria2
   version 2 or later (see aria2-COPYING.txt in the "tools" folder). Its source
   code is available at https://github.com/aria2/aria2.
 
-  Flatpak: the Flatpak build compiles aria2 1.37.0 from source
-  (official release tarball) as a manifest module and installs
-  aria2c at /app/bin/aria2c; its licence text ships in the
-  Flatpak as aria2-COPYING.txt (see docs/FLATPAK.md §5b). On
-  .deb, .rpm, and AppImage, torrents need a system aria2c
-  installed by the user — the app never fetches aria2 on Linux.
+  Flatpak (v1.1.1 only — deleted in v1.1.2): the released Flatpak
+  build compiled aria2 1.37.0 from source (official release
+  tarball) as a manifest module and installed aria2c at
+  /app/bin/aria2c; its licence text shipped in the Flatpak as
+  aria2-COPYING.txt. On .deb, .rpm, and AppImage, torrents need a
+  system aria2c installed by the user — the app never fetches
+  aria2 on Linux.
   On Windows the app fetches the release build above.
 
 Rust crates (tokio, reqwest, serde, chrono, tiny_http, arboard, rfd, tray-icon,

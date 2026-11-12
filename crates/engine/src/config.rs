@@ -85,7 +85,7 @@ pub struct QueueSchedule {
     pub once_date: String,
     /// Monday .. Sunday
     pub days: [bool; 7],
-    /// start the queue when Ezoo Download starts
+    /// start the queue when Ezoo Download Manager starts
     pub on_startup: bool,
     pub stop_enabled: bool,
     pub stop_time: String,
@@ -187,7 +187,7 @@ pub fn default_categories() -> Vec<CategoryDef> {
     ]
 }
 
-/// Extensions the browser extension hands to Ezoo Download (Options > File Types).
+/// Extensions the browser extension hands to Ezoo Download Manager (Options > File Types).
 pub const DEFAULT_CAPTURE_EXTS: &str = "3GP 7Z AAC ACE AIF APK ARJ ASF AVI BIN BZ2 DEB DMG EXE GZ GZIP IMG ISO LZH M4A M4V MKA MKV MOV MP3 MP4 MPA MPE MPEG MPG MSI MSU OGG OGV PDF PLJ PPS PPT PPTX QT R0* R1* RA RAR RM RMVB RPM SEA SIT SITX TAR TIF TIFF TGZ WAV WEBM WMA WMV XAPK XZ Z ZIP ZST DOC DOCX XLS XLSX FLAC OPUS";
 
 /// Server with its own connection count (Options > Connection > Exceptions).
@@ -216,7 +216,7 @@ pub struct SiteLogin {
 pub const MAIN_QUEUE: u64 = 1;
 
 /// Bump when defaults change in a way old settings files should pick up.
-const SETTINGS_VERSION: u32 = 5;
+const SETTINGS_VERSION: u32 = 6;
 
 /// Columns of the download list that can be shown or hidden (View > Columns).
 pub const ALL_COLUMNS: [&str; 11] = [
@@ -325,6 +325,10 @@ pub struct Settings {
     /// "Tip of the day" at startup
     pub show_tips: bool,
     pub tip_index: u32,
+    /// the AV1-player tip was already shown once (P3): an AV1 video
+    /// whose player shows no picture is pointed at VLC, once only
+    #[serde(default)]
+    pub av1_tip_shown: bool,
     /// browser: extensions handed to us, space separated ("R0*" style patterns)
     pub capture_exts: String,
     /// browser: never take downloads from these sites (space separated, * allowed)
@@ -333,7 +337,7 @@ pub struct Settings {
     pub skip_addresses: Vec<String>,
     /// browser: key that lets the browser download by itself ("alt", "ctrl", "shift", "none")
     pub skip_key: String,
-    /// browser: key that forces Ezoo Download to take any link
+    /// browser: key that forces Ezoo Download Manager to take any link
     pub force_key: String,
     /// "Download this video" panel on web players
     pub panel_enabled: bool,
@@ -394,7 +398,7 @@ pub struct Settings {
     pub toolbar_small: bool,
     /// options-on-completion: close running programs when shutting down
     pub force_shutdown: bool,
-    /// "Add Ezoo Download to your browser" was shown once
+    /// "Add Ezoo Download Manager to your browser" was shown once
     pub extension_prompted: bool,
     /// start downloading at once while "Download File Info" is shown
     pub start_while_info: bool,
@@ -447,7 +451,9 @@ impl Default for Settings {
             speed_limit_kb: 0,
             retries: 10,
             user_agent: DEFAULT_USER_AGENT.into(),
-            clipboard_monitor: true,
+            // v6 (Q54, plan default (a)): clipboard monitoring is off
+            // until the user turns it on — it reads everything copied.
+            clipboard_monitor: false,
             show_complete_dialog: true,
             browser_port: DEFAULT_PORT,
             min_split_kb: 256,
@@ -477,6 +483,7 @@ impl Default for Settings {
             limiter_on_startup: false,
             show_tips: true,
             tip_index: 0,
+            av1_tip_shown: false,
             capture_exts: DEFAULT_CAPTURE_EXTS.into(),
             skip_sites: String::new(),
             skip_addresses: Vec::new(),
@@ -579,10 +586,36 @@ impl Settings {
             s.schedule.enabled = false;
         }
         if s.version < 5 {
-            // v5: automatic update checks are on unless the user turns
-            // them off (files written before the setting existed have no
-            // value; the struct default already fills it in as on)
+            // v5 (fork): automatic update checks are on unless the user
+            // turns them off (files written before the setting existed
+            // have no value; the struct default already fills it in as on)
             s.update_check = true;
+        }
+        if s.version < 6 {
+            // v6: re-apply BOTH v5 migrations — the fork's and upstream's
+            // (plan §3.6; the two trees both sat on version 5 with
+            // different meanings, so neither v5 migration ever ran on
+            // the other's files).
+            //
+            // (a) fork v5 (update checks on): nothing more to do here.
+            // A file older than v5 was already set `true` by the block
+            // above, and a v5 file that lacks the key gets `true` from
+            // the struct default on deserialize — while a v5 file that
+            // HAS the key keeps the user's own choice, on or off.
+            // Setting it unconditionally here would switch update
+            // checks back on for users who turned them off in 1.1.1.
+            //
+            // (b) upstream v5 (clipboard monitoring off): 1.1.1 wrote
+            // `clipboard_monitor: true` into every saved file as the
+            // unset default, so a stored `true` cannot be told apart
+            // from a user who explicitly turned it on — except when
+            // auto-start is on, which only works with monitoring and
+            // defaults off, so that user demonstrably wants it kept.
+            // Everyone else migrates to off and can re-enable it with
+            // one toggle in Options (Q54, plan default (a)).
+            if !s.auto_start_clipboard {
+                s.clipboard_monitor = false;
+            }
         }
         s.version = SETTINGS_VERSION;
         if !s.queues.iter().any(|q| q.id == MAIN_QUEUE) {
@@ -1032,11 +1065,93 @@ mod tests {
         std::fs::write(&path, "{\"version\":4}").unwrap();
         let s = Settings::load(&path);
         assert!(s.update_check);
-        assert_eq!(s.version, 5);
+        assert_eq!(s.version, 6);
         // an explicit off survives a load
         std::fs::write(&path, "{\"version\":5,\"update_check\":false}").unwrap();
         assert!(!Settings::load(&path).update_check);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real 1.1.1-written v5 fixture (see
+    /// `crates/engine/tests/fixtures/settings-v5-1.1.1.json`, generated
+    /// from the 1.1.1 tree): version 5, clipboard monitoring on,
+    /// update checks on, auto-start off.
+    const V5_FIXTURE: &str = include_str!("../tests/fixtures/settings-v5-1.1.1.json");
+
+    fn load_json(dir: &std::path::Path, name: &str, json: &str) -> Settings {
+        let path = dir.join(name);
+        std::fs::write(&path, json).unwrap();
+        Settings::load(&path)
+    }
+
+    #[test]
+    fn v5_fixture_migrates_to_v6_without_losing_settings() {
+        // the fixture really is a 1.1.1 file, not a hand-made one
+        let raw: serde_json::Value = serde_json::from_str(V5_FIXTURE).unwrap();
+        assert_eq!(raw["version"], 5);
+        assert_eq!(raw["clipboard_monitor"], true);
+        assert_eq!(raw["update_check"], true);
+        assert_eq!(raw["auto_start_clipboard"], false);
+
+        let dir = std::env::temp_dir().join(format!("ezoo-v6-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = load_json(&dir, "settings.json", V5_FIXTURE);
+        assert_eq!(s.version, 6);
+        // both v5 migrations applied: update checks stay on, clipboard
+        // monitoring goes off (auto-start was off, so nobody
+        // demonstrably used it)
+        assert!(s.update_check);
+        assert!(!s.clipboard_monitor);
+        // and nothing else is lost
+        assert_eq!(s.connections, 32);
+        assert_eq!(s.browser_port, 9614);
+        assert_eq!(s.categories.len(), 6);
+        assert_eq!(s.queues.len(), 1);
+        assert_eq!(s.queues[0].name, "Main download queue");
+        assert!(s.capture_exts.starts_with("3GP 7Z AAC"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v6_migration_keeps_clipboard_when_auto_start_is_on() {
+        // auto-start defaults off and only works with monitoring, so a
+        // file with it on is a user who demonstrably uses the clipboard
+        let dir = std::env::temp_dir().join(format!("ezoo-v6b-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = load_json(
+            &dir,
+            "settings.json",
+            "{\"version\":5,\"clipboard_monitor\":true,\"auto_start_clipboard\":true}",
+        );
+        assert_eq!(s.version, 6);
+        assert!(s.clipboard_monitor);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v6_migration_keeps_explicit_update_check_off() {
+        // re-applying the fork's v5 migration must not switch update
+        // checks back on for a user who turned them off in 1.1.1
+        let dir = std::env::temp_dir().join(format!("ezoo-v6c-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = load_json(
+            &dir,
+            "settings.json",
+            "{\"version\":5,\"update_check\":false,\"clipboard_monitor\":true}",
+        );
+        assert_eq!(s.version, 6);
+        assert!(!s.update_check);
+        assert!(!s.clipboard_monitor);
+        // a v5 file without the key at all still gets checks on
+        let s = load_json(&dir, "settings2.json", "{\"version\":5}");
+        assert!(s.update_check);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fresh_defaults_have_clipboard_monitoring_off() {
+        assert!(!Settings::default().clipboard_monitor);
+        assert_eq!(Settings::default().version, 6);
     }
 }
 

@@ -175,7 +175,7 @@ mod imp {
     impl Tray {
         pub fn new() -> Option<Tray> {
             let menu = Menu::new();
-            let show = MenuItem::new(crate::i18n::t("Restore Ezoo Download"), true, None);
+            let show = MenuItem::new(crate::i18n::t("Restore Ezoo Download Manager"), true, None);
             let add = MenuItem::new(crate::i18n::t("Add new download…"), true, None);
             let resume = MenuItem::new(crate::i18n::t("Resume all downloads"), true, None);
             let stop = MenuItem::new(crate::i18n::t("Stop all downloads"), true, None);
@@ -200,7 +200,7 @@ mod imp {
                 Icon::from_rgba(include_bytes!("../ui/tray32.rgba").to_vec(), 32, 32).ok()?;
             let tray = TrayIconBuilder::new()
                 .with_id(MAIN_ID)
-                .with_tooltip("Ezoo Download")
+                .with_tooltip("Ezoo Download Manager")
                 .with_icon(icon)
                 .with_menu(Box::new(menu))
                 // the menu on a right click only; a double click opens the window

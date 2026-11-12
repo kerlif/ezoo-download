@@ -1,4 +1,4 @@
-// Ezoo Download – user interface (Slint)
+// Ezoo Download Manager – user interface (Slint)
 // Classic download-manager layout: menu bar, big icon toolbar, category and
 // queue tree, detailed list, one progress window per download. Nine themes.
 
@@ -6,7 +6,7 @@ import { Button, LineEdit, SpinBox, ComboBox, ListView, TabWidget, TextEdit, Pal
 import { ToolTip, DownloadRow, QueueRow, SegView, Cols, ColDef, CatRow, PairRow, LinkRow, Theme, ThemedWindow, P, Icon, G, TypeIcon, BigTypeIcon, ToolBtn, ToolSeparator, TreeItem, HeaderCell, Cell, MenuEntry, MenuSep, MenuLabel, Glyph, HRow, CheckBox } from "common.slint";
 export { DownloadRow, QueueRow, SegView, Cols, ColDef, CatRow, PairRow, LinkRow, Theme }
 export { BrowserRow } from "dialogs.slint";
-export { ConfirmDialog, ColumnsDialog, CategoryDialog, FindDialog, PropertiesDialog, DuplicateDialog, CountdownDialog, SchedulerDialog, GrabberDialog, TipDialog, RefreshDialog, SettingsDialog, PlaylistDialog, TorrentDialog, BrowserDialog, AboutDialog, UpdateDialog, WhatsNewDialog, UpdateNoticeDialog } from "dialogs.slint";
+export { ConfirmDialog, ColumnsDialog, CategoryDialog, FindDialog, PropertiesDialog, DuplicateDialog, CountdownDialog, SchedulerDialog, GrabberDialog, TipDialog, RefreshDialog, SettingsDialog, PlaylistDialog, TorrentDialog, BrowserDialog, AboutDialog, UpdateDialog, WhatsNewDialog, UpdateNoticeDialog, ClipDialog } from "dialogs.slint";
 
 component DownloadItem inherits Rectangle {
     in property <DownloadRow> data;
@@ -166,7 +166,7 @@ component DownloadItem inherits Rectangle {
                 if !root.done && (root.data.kind == "video" || root.data.kind == "audio"): MenuEntry {
                     text: @tr("Play while downloading");
                     glyph: "play";
-                    glyph-color: #d6631d;
+                    glyph-color: Theme.warn;
                     clicked => {
                         root.action("preview");
                     }
@@ -182,7 +182,7 @@ component DownloadItem inherits Rectangle {
                 MenuEntry {
                     text: @tr("Resume download");
                     glyph: "play";
-                    glyph-color: #2e9e4f;
+                    glyph-color: Theme.ok;
                     enabled: root.can-resume || root.sel-count > 1;
                     clicked => {
                         root.action("resume");
@@ -191,7 +191,7 @@ component DownloadItem inherits Rectangle {
                 MenuEntry {
                     text: @tr("Stop download");
                     glyph: "pause";
-                    glyph-color: #e08a00;
+                    glyph-color: Theme.warn;
                     enabled: root.can-stop || root.sel-count > 1;
                     clicked => {
                         root.action("stop");
@@ -246,6 +246,12 @@ component DownloadItem inherits Rectangle {
                         root.action("sha256");
                     }
                 }
+                if root.done && (root.data.kind == "video" || root.data.kind == "audio"): MenuEntry {
+                    text: @tr("Cut a part of this video…");
+                    clicked => {
+                        root.action("cut-part");
+                    }
+                }
                 MenuEntry {
                     text: @tr("Properties");
                     glyph: "info";
@@ -257,7 +263,7 @@ component DownloadItem inherits Rectangle {
                 MenuEntry {
                     text: @tr("Remove");
                     glyph: "close";
-                    glyph-color: #e0443b;
+                    glyph-color: Theme.err;
                     clicked => {
                         root.action("delete");
                     }
@@ -323,12 +329,38 @@ component DownloadItem inherits Rectangle {
                         }
                     }
                 }
+                // second bar: the post-download step (join / convert / move /
+                // cut), amber so it reads apart from the download bar above
+                if root.data.step != "": Rectangle {
+                    x: 10px;
+                    y: parent.height - 10px;
+                    width: parent.width - 20px;
+                    height: 3px;
+                    border-radius: 1.5px;
+                    background: Theme.bar-bg;
+                    Rectangle {
+                        x: Theme.rtl ? parent.width - self.width : 0;
+                        width: parent.width * root.data.step-progress;
+                        height: parent.height;
+                        border-radius: 1.5px;
+                        background: Theme.warn;
+                        animate width {
+                            duration: 250ms;
+                            easing: linear;
+                        }
+                    }
+                }
                 Cell {
                     width: parent.width;
                     height: parent.height - 2px;
-                    text: root.data.status;
+                    text: root.data.step == "join" ? @tr("Joining video and audio…")
+                        : root.data.step == "tomp4" ? @tr("Converting to MP4…")
+                        : root.data.step == "tomp3" ? @tr("Converting to MP3…")
+                        : root.data.step == "move" ? @tr("Moving file…")
+                        : root.data.step == "cut" ? @tr("Cutting video…")
+                        : root.data.status;
                     horizontal-alignment: center;
-                    color: root.data.state == 3 ? Theme.ok : root.data.state == 4 ? Theme.err : root.data.state == 1 ? Theme.accent : Theme.text;
+                    color: root.data.step != "" ? Theme.warn : root.data.state == 3 ? Theme.ok : root.data.state == 4 ? Theme.err : root.data.state == 1 ? Theme.accent : Theme.text;
                 }
             }
             if c.key == "eta": Cell {
@@ -411,7 +443,7 @@ component TreeMenu inherits PopupWindow {
             if root.is-queue: MenuEntry {
                 text: @tr("Start queue");
                 glyph: "play";
-                glyph-color: #2e9e4f;
+                glyph-color: Theme.ok;
                 clicked => {
                     root.chosen("start");
                 }
@@ -419,7 +451,7 @@ component TreeMenu inherits PopupWindow {
             if root.is-queue: MenuEntry {
                 text: @tr("Stop queue");
                 glyph: "stop";
-                glyph-color: #e0443b;
+                glyph-color: Theme.err;
                 clicked => {
                     root.chosen("stop");
                 }
@@ -441,7 +473,7 @@ component TreeMenu inherits PopupWindow {
             if root.is-queue: MenuEntry {
                 text: @tr("Delete queue");
                 glyph: "close";
-                glyph-color: #e0443b;
+                glyph-color: Theme.err;
                 enabled: !root.builtin;
                 clicked => {
                     root.chosen("delete");
@@ -457,7 +489,7 @@ component TreeMenu inherits PopupWindow {
             if !root.is-queue && root.target != "": MenuEntry {
                 text: @tr("Delete category");
                 glyph: "close";
-                glyph-color: #e0443b;
+                glyph-color: Theme.err;
                 enabled: root.target != "General";
                 clicked => {
                     root.chosen("delete");
@@ -503,7 +535,7 @@ export component MainWindow inherits ThemedWindow {
     // set for a moment so the window comes in front of the browser
     in property <bool> front;
     always-on-top: root.front;
-    title: @tr("Ezoo Download");
+    title: @tr("Ezoo Download Manager");
     // Options > General > Background picture (shows through the panels)
     in property <image> bg-image;
     in property <bool> has-bg-image;
@@ -910,7 +942,7 @@ export component MainWindow inherits ThemedWindow {
                     }
                 }
                 MenuItem {
-                    title: (root.all-done == 3 ? "● " : "○ ") + @tr("Exit Ezoo Download");
+                    title: (root.all-done == 3 ? "● " : "○ ") + @tr("Exit Ezoo Download Manager");
                     activated => {
                         root.set-all-done(3);
                     }
@@ -1099,7 +1131,7 @@ export component MainWindow inherits ThemedWindow {
         Menu {
             title: @tr("Help");
             MenuItem {
-                title: @tr("Add Ezoo Download to my browser…");
+                title: @tr("Add Ezoo Download Manager to my browser…");
                 activated => {
                     root.browsers();
                 }
@@ -1124,7 +1156,7 @@ export component MainWindow inherits ThemedWindow {
             }
             MenuSeparator { }
             MenuItem {
-                title: @tr("About Ezoo Download");
+                title: @tr("About Ezoo Download Manager");
                 activated => {
                     root.about();
                 }
@@ -1159,7 +1191,7 @@ export component MainWindow inherits ThemedWindow {
     property <bool> qmenu-start: true;
     queue-menu := PopupWindow {
         x: Theme.rtl ? max(0px, root.qmenu-x + max(62px, 62px * Theme.font-scale) - 220px) : root.qmenu-x;
-        y: max(66px, 40px + 26px * Theme.font-scale);
+        y: max(76px, 40px + 36px * Theme.font-scale);
         width: 220px;
         height: qm-list.preferred-height;
         Rectangle {
@@ -1179,7 +1211,7 @@ export component MainWindow inherits ThemedWindow {
                 for q in root.queues: MenuEntry {
                     text: q.name;
                     glyph: q.running ? "play" : "";
-                    glyph-color: #2e9e4f;
+                    glyph-color: Theme.ok;
                     indent: true;
                     clicked => {
                         if (root.qmenu-start) {
@@ -1238,7 +1270,7 @@ export component MainWindow inherits ThemedWindow {
             // ---- toolbar: sized to fit a 960 px window with nothing cut off
             Rectangle {
                 // bigger text (Options > Appearance): a taller bar, the names are never cut
-                height: root.toolbar-small ? 42px : max(64px, 38px + 26px * Theme.font-scale);
+                height: root.toolbar-small ? 42px : max(74px, 38px + 36px * Theme.font-scale);
                 min-width: 0px;
                 clip: true;
                 background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
@@ -1856,7 +1888,7 @@ export component AddDialog inherits ThemedWindow {
     in-out property <string> password;
     // a warning about the address (web page, duplicate...)
     in property <string> warning;
-    // the server refused Ezoo Download: offer the browser instead
+    // the server refused Ezoo Download Manager: offer the browser instead
     in property <bool> can-use-browser;
     callback use-browser();
 
@@ -2526,6 +2558,10 @@ export component DetailsDialog inherits ThemedWindow {
     in property <string> error;
     in property <string> kind: "general";
     in property <float> progress;
+    // the post-download step ("join", "tomp4", "tomp3", "move", "cut") and
+    // how far it is (0..1); "" when no step is running (P7 second bar)
+    in property <string> step;
+    in property <float> step-progress;
     in property <int> state;
     in property <[SegView]> segs;
     in-out property <bool> show-details: false;
@@ -2812,7 +2848,7 @@ export component DetailsDialog inherits ThemedWindow {
                 }
                 ComboBox {
                     width: 300px;
-                    model: [@tr("Do nothing (keep the computer on)"), @tr("Shut down the computer"), @tr("Sleep"), @tr("Exit Ezoo Download"), @tr("Hibernate")];
+                    model: [@tr("Do nothing (keep the computer on)"), @tr("Shut down the computer"), @tr("Sleep"), @tr("Exit Ezoo Download Manager"), @tr("Hibernate")];
                     current-index <=> root.when-done;
                     selected(v) => {
                         root.completion-changed();
@@ -2856,12 +2892,45 @@ export component DetailsDialog inherits ThemedWindow {
                 y: 1px;
                 height: parent.height - 2px;
                 width: (parent.width - 2px) * root.progress;
-                background: @linear-gradient(180deg, #4fd06a 0%, #1f9d3e 100%);
+                // flat Theme.ok, like the list-row and step bars: the fill
+                // is the meaning, the green gradient was decoration
+                background: Theme.ok;
                 animate width {
                     duration: 100ms;
                     easing: linear;
                 }
             }
+        }
+        // second bar: the post-download step, amber so it reads apart
+        // from the download bar above; the label names the step
+        if root.step != "": Rectangle {
+            height: 8px;
+            border-width: 1px;
+            border-color: Theme.line;
+            background: Theme.bar-bg;
+            clip: true;
+            Rectangle {
+                x: Theme.rtl ? parent.width - 1px - self.width : 1px;
+                y: 1px;
+                height: parent.height - 2px;
+                width: (parent.width - 2px) * root.step-progress;
+                background: Theme.warn;
+                animate width {
+                    duration: 100ms;
+                    easing: linear;
+                }
+            }
+        }
+        if root.step != "": Text {
+            text: root.step == "join" ? @tr("Joining video and audio…")
+                : root.step == "tomp4" ? @tr("Converting to MP4…")
+                : root.step == "tomp3" ? @tr("Converting to MP3…")
+                : root.step == "move" ? @tr("Moving file…")
+                : root.step == "cut" ? @tr("Cutting video…")
+                : "";
+            font-size: 11px * Theme.font-scale;
+            color: Theme.warn;
+            horizontal-alignment: Theme.rtl ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
         }
         Rectangle {
             height: 8px;

@@ -78,8 +78,11 @@ pub struct AdaptiveConfig {
     pub stall_grace: Duration,
     /// Wait used for a rate-limit answer that carries no Retry-After.
     pub rate_limit_default_backoff: Duration,
-    /// A Retry-After longer than this is clamped to this.
-    pub max_retry_after: Duration,
+    /// Consecutive 429 answers for the same part after which the
+    /// download gives up instead of waiting forever: a server that
+    /// rate-limits every request will never let the part finish, so
+    /// the run fails with a clear error (upstream gives up after 40).
+    pub rate_limit_give_up_after: u32,
     /// Random spread added to backoff waits, as a fraction (0.25 = up
     /// to 25% longer, never shorter than the asked wait).
     pub jitter_fraction: f64,
@@ -107,7 +110,7 @@ impl Default for AdaptiveConfig {
             stall_seconds: Duration::from_secs(10),
             stall_grace: Duration::from_secs(10),
             rate_limit_default_backoff: Duration::from_secs(5),
-            max_retry_after: Duration::from_secs(300),
+            rate_limit_give_up_after: 40,
             jitter_fraction: 0.25,
             learning_alpha: 0.3,
             learning_expiry_days: 30,
@@ -181,6 +184,48 @@ pub fn parse_retry_after(value: &str, max: Duration) -> Option<Duration> {
     Some(Duration::from_secs(wait).min(max))
 }
 
+/// One retry policy for every fetcher (HTTP segments, HLS parts, DASH
+/// segments): exponential backoff with a random spread, honouring the
+/// `Retry-After` the server asked for when one is given. Before, each
+/// fetcher had its own loop — linear in HLS/DASH, doubling in HTTP — with
+/// no jitter and no `Retry-After` in HLS/DASH at all.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RetryPolicy {
+    /// Wait before the first retry.
+    pub base: Duration,
+    /// Longest backoff wait (before jitter).
+    pub max: Duration,
+    /// Random spread added to a wait, as a fraction (see `jittered`).
+    pub jitter_fraction: f64,
+    /// A `Retry-After` longer than this is clamped to this.
+    pub max_retry_after: Duration,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        RetryPolicy {
+            base: Duration::from_secs(1),
+            max: Duration::from_secs(30),
+            jitter_fraction: 0.25,
+            max_retry_after: Duration::from_secs(600),
+        }
+    }
+}
+
+impl RetryPolicy {
+    /// How long to wait before retry number `attempt` (1-based). A
+    /// server-asked wait wins over the backoff, clamped so one answer
+    /// cannot park a download for hours.
+    pub fn wait(&self, attempt: u32, retry_after: Option<Duration>) -> Duration {
+        if let Some(asked) = retry_after {
+            return jittered(asked.min(self.max_retry_after), self.jitter_fraction);
+        }
+        let shift = attempt.saturating_sub(1).min(5);
+        let backoff = self.base.saturating_mul(1 << shift).min(self.max);
+        jittered(backoff, self.jitter_fraction)
+    }
+}
+
 /// What the scaler decided after one measurement window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScaleDecision {
@@ -213,6 +258,10 @@ pub struct Scaler {
     min_target: u32,
     consecutive_resets: u32,
     rate_limit_hits: u32,
+    /// A 429 lowered the count to this: the scaler never grows past it
+    /// again in this download (the site said "fewer", and asking for
+    /// more in the same download would only earn another 429).
+    limited_cap: Option<u32>,
 }
 
 impl Scaler {
@@ -232,6 +281,7 @@ impl Scaler {
             min_target: initial,
             consecutive_resets: 0,
             rate_limit_hits: 0,
+            limited_cap: None,
         }
     }
 
@@ -241,11 +291,20 @@ impl Scaler {
     pub fn cap(&self) -> u32 {
         self.cap
     }
+    /// The ceiling a 429 set for this download, if any.
+    pub fn limited_cap(&self) -> Option<u32> {
+        self.limited_cap
+    }
     /// Set the target directly (the user changed the connection count
     /// while the download runs): growth probing pauses while the user
-    /// holds the count, and resumes cleanly when they let go.
+    /// holds the count, and resumes cleanly when they let go. An
+    /// explicit user count also lifts the 429 ceiling for this download:
+    /// they asked for it knowingly, and a fresh 429 re-latches it.
     pub fn set_target_external(&mut self, target: u32) {
-        self.set_target(target);
+        self.target = target.clamp(1, self.cap);
+        self.peak_target = self.peak_target.max(self.target);
+        self.min_target = self.min_target.min(self.target);
+        self.limited_cap = None;
         self.no_gain = 0;
         self.stopped = false;
     }
@@ -266,15 +325,24 @@ impl Scaler {
     }
 
     fn set_target(&mut self, target: u32) {
-        self.target = target.clamp(1, self.cap);
+        let mut target = target.clamp(1, self.cap);
+        // a 429 in this download caps the count for good (see halve):
+        // growth probing must not climb back over it
+        if let Some(cap) = self.limited_cap {
+            target = target.min(cap);
+        }
+        self.target = target;
         self.peak_target = self.peak_target.max(self.target);
         self.min_target = self.min_target.min(self.target);
     }
 
-    /// Probe with one more connection, unless growth stopped or the
-    /// cap is reached.
+    /// Probe with one more connection, unless growth stopped, the cap is
+    /// reached, or a 429 already lowered the ceiling for this download.
     fn probe(&mut self) -> ScaleDecision {
         if self.stopped || self.target >= self.cap {
+            return ScaleDecision::Hold;
+        }
+        if self.limited_cap.is_some_and(|cap| self.target >= cap) {
             return ScaleDecision::Hold;
         }
         self.set_target(self.target + 1);
@@ -283,7 +351,26 @@ impl Scaler {
 
     /// One measurement window's aggregate throughput (bytes/second) and
     /// how many rate-limit / reset errors happened inside it.
+    ///
+    /// `active` is how many segments are actually being fetched right
+    /// now. When it is below the target, connections are idle because
+    /// their work finished — the aggregate fall that follows means the
+    /// fast work is done, not that a connection is useless, so the
+    /// scaler holds instead of shedding one and stranding the slow
+    /// remainder on a single connection (item 20).
     pub fn observe(&mut self, bytes_per_sec: f64, errors: u32) -> ScaleDecision {
+        self.observe_work(bytes_per_sec, errors, self.target)
+    }
+
+    pub fn observe_work(&mut self, bytes_per_sec: f64, errors: u32, active: u32) -> ScaleDecision {
+        if active < self.target {
+            self.last_throughput = Some(bytes_per_sec);
+            return ScaleDecision::Hold;
+        }
+        self.observe_inner(bytes_per_sec, errors)
+    }
+
+    fn observe_inner(&mut self, bytes_per_sec: f64, errors: u32) -> ScaleDecision {
         if errors == 0 {
             self.consecutive_resets = 0;
         }
@@ -338,9 +425,13 @@ impl Scaler {
 
     /// A rate-limit answer: halve the connections and skip growth for
     /// the next window, so the server is not hammered straight back.
+    /// The halved count is also the ceiling for the rest of this
+    /// download: the site said it allows fewer, and the scaler must
+    /// never raise the count again within the same download.
     pub fn halve(&mut self) {
         self.rate_limit_hits += 1;
         self.set_target(self.target / 2);
+        self.limited_cap = Some(self.target);
         self.frozen_windows = 1;
         self.no_gain = 0;
         self.stopped = false;
@@ -827,6 +918,95 @@ mod tests {
     fn host_key_is_lowercase_host_only() {
         assert_eq!(host_key("https://EXAMPLE.com:8443/path?q=1"), "example.com");
         assert_eq!(host_key("not a url"), "");
+    }
+
+    #[test]
+    fn retry_policy_doubles_with_jitter_and_honours_retry_after() {
+        let p = RetryPolicy::default();
+        // backoff doubles from the 1 s base, capped at 30 s, never shorter
+        for (attempt, low, high) in [
+            (1, 1, 1),
+            (2, 2, 2),
+            (3, 4, 4),
+            (4, 8, 8),
+            (5, 16, 16),
+            (6, 30, 30),
+            (9, 30, 30),
+        ] {
+            let w = p.wait(attempt, None);
+            assert!(
+                w >= Duration::from_secs(low) && w <= Duration::from_secs(high).mul_f64(1.25),
+                "attempt {attempt}: {w:?}"
+            );
+        }
+        // a server-asked wait wins, clamped at 600 s
+        let w = p.wait(1, Some(Duration::from_secs(120)));
+        assert!(w >= Duration::from_secs(120) && w <= Duration::from_secs(150));
+        let w = p.wait(1, Some(Duration::from_secs(99999)));
+        assert!(w >= Duration::from_secs(600) && w <= Duration::from_secs(750));
+    }
+
+    #[test]
+    fn scaler_never_raises_again_after_a_rate_limit() {
+        let mut s = Scaler::new(cfg(), 8, 16);
+        s.halve();
+        assert_eq!(s.target(), 4);
+        assert_eq!(s.limited_cap(), Some(4));
+        // rising throughput would normally probe up — not after a 429
+        assert_eq!(s.observe(1000.0, 0), ScaleDecision::Hold);
+        assert_eq!(s.observe(2000.0, 0), ScaleDecision::Hold);
+        assert_eq!(s.observe(4000.0, 0), ScaleDecision::Hold);
+        assert_eq!(s.target(), 4, "never above the 429 ceiling");
+        // a second 429 lowers the ceiling further
+        s.halve();
+        assert_eq!(s.target(), 2);
+        assert_eq!(s.limited_cap(), Some(2));
+        // the user taking control lifts the ceiling; a fresh 429 re-latches
+        s.set_target_external(8);
+        assert_eq!(s.limited_cap(), None);
+        // the window frozen by the last halving still holds once
+        assert_eq!(s.observe(5000.0, 0), ScaleDecision::Hold);
+        assert_eq!(s.observe(6000.0, 0), ScaleDecision::Add);
+        assert_eq!(s.target(), 9);
+    }
+
+    #[test]
+    fn rate_limit_latch_does_not_survive_the_download() {
+        // P6 gate: recovery after the download ends. The 429 ceiling
+        // lives on the per-download scaler only: a fresh scaler for the
+        // next download starts unlatched and probes up again, so one
+        // rate-limited download never caps the host forever. (The
+        // lowered count is still learned for the *start* of the next
+        // download via record_learning -> host_learning, and fades
+        // through the EMA / 30-day expiry — see
+        // host_learning_ema_and_expiry.)
+        let mut s = Scaler::new(cfg(), 8, 16);
+        s.halve();
+        assert_eq!(s.limited_cap(), Some(4));
+        let mut next = Scaler::new(cfg(), 4, 16);
+        assert_eq!(next.limited_cap(), None);
+        assert_eq!(next.observe(1000.0, 0), ScaleDecision::Add);
+        assert_eq!(next.target(), 5);
+    }
+
+    #[test]
+    fn scaler_holds_when_work_finished_instead_of_shedding() {
+        // item 20: fast segments done, one slow segment left — the
+        // aggregate fall is finished work, not a useless connection
+        let mut s = Scaler::new(cfg(), 4, 16);
+        s.observe(1000.0, 0);
+        s.observe(1200.0, 0);
+        assert_eq!(s.target(), 6);
+        // only 1 of 6 segments still active, throughput fell: hold
+        assert_eq!(
+            s.observe_work(200.0, 0, 1),
+            ScaleDecision::Hold,
+            "shedding here would strand the slow remainder"
+        );
+        assert_eq!(s.target(), 6);
+        // all segments active and throughput fell: shed as before
+        assert_eq!(s.observe_work(100.0, 0, 6), ScaleDecision::Remove);
+        assert_eq!(s.target(), 5);
     }
 
     #[test]

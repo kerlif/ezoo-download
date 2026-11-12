@@ -94,11 +94,29 @@ msgstr "Adresi kopyala"
 msgid "Check file (SHA-256)"
 msgstr "Dosyayı denetle (SHA-256)"
 
+msgid "Cut a part of this video…"
+msgstr "Cut a part of this video…"
+
 msgid "Properties"
 msgstr "Özellikler"
 
 msgid "Remove"
 msgstr "Kaldır"
+
+msgid "Joining video and audio…"
+msgstr "Joining video and audio…"
+
+msgid "Converting to MP4…"
+msgstr "Converting to MP4…"
+
+msgid "Converting to MP3…"
+msgstr "Converting to MP3…"
+
+msgid "Moving file…"
+msgstr "Moving file…"
+
+msgid "Cutting video…"
+msgstr "Cutting video…"
 
 msgid "Start queue"
 msgstr "Kuyruğu başlat"
@@ -124,8 +142,8 @@ msgstr "Kategoriyi sil"
 msgid "Properties…"
 msgstr "Özellikler…"
 
-msgid "Ezoo Download"
-msgstr "Ezoo Download"
+msgid "Ezoo Download Manager"
+msgstr "Ezoo Download Manager"
 
 msgid "File Name"
 msgstr "Dosya adı"
@@ -262,8 +280,8 @@ msgstr "Uyku"
 msgid "Hibernate"
 msgstr "Hazırda beklet"
 
-msgid "Exit Ezoo Download"
-msgstr "Ezoo Download'dan çık"
+msgid "Exit Ezoo Download Manager"
+msgstr "Ezoo Download Manager'dan çık"
 
 msgid "Scheduler…"
 msgstr "Zamanlayıcı…"
@@ -346,8 +364,8 @@ msgstr "Görünüm…"
 msgid "Help"
 msgstr "Yardım"
 
-msgid "Add Ezoo Download to my browser…"
-msgstr "Ezoo Download'u tarayıcıma ekle…"
+msgid "Add Ezoo Download Manager to my browser…"
+msgstr "Ezoo Download Manager'u tarayıcıma ekle…"
 
 msgid "Tip of the day…"
 msgstr "Günün ipucu…"
@@ -358,8 +376,8 @@ msgstr "Güncellemeleri denetle"
 msgid "Check for updates (video downloader)"
 msgstr "Güncellemeleri denetle (video indirici)"
 
-msgid "About Ezoo Download"
-msgstr "Ezoo Download hakkında"
+msgid "About Ezoo Download Manager"
+msgstr "Ezoo Download Manager hakkında"
 
 msgid "Add URL"
 msgstr "URL ekle"
@@ -757,8 +775,8 @@ msgstr "Bu soruyu bir daha gösterme"
 msgid "All downloads are finished."
 msgstr "Tüm indirmeler bitti."
 
-msgid "Ezoo Download will {} in {} seconds."
-msgstr "Ezoo Download {} – {} saniye içinde."
+msgid "Ezoo Download Manager will {} in {} seconds."
+msgstr "Ezoo Download Manager {} – {} saniye içinde."
 
 msgid "Now"
 msgstr "Şimdi"
@@ -805,8 +823,8 @@ msgstr "Cmt"
 msgid "Sun"
 msgstr "Paz"
 
-msgid "Start the queue when Ezoo Download starts"
-msgstr "Ezoo Download açılınca kuyruğu başlat"
+msgid "Start the queue when Ezoo Download Manager starts"
+msgstr "Ezoo Download Manager açılınca kuyruğu başlat"
 
 msgid "Stop the queue at"
 msgstr "Kuyruğu şu saatte durdur"
@@ -862,8 +880,8 @@ msgstr "https://example.com/gallery/"
 msgid "Start exploring"
 msgstr "Taramayı başlat"
 
-msgid "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \"Download all links with Ezoo Download\": every link you see there is collected."
-msgstr "Bazı sayfalar bağlantılarını yalnızca tarayıcıda oluşturur (betiklerle ya da düz metin olarak). Bunlar için: sayfayı tarayıcıda açın, sağ tıklayın ve \"Download all links with Ezoo Download\" seçin: orada gördüğünüz her bağlantı toplanır."
+msgid "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \"Download all links with Ezoo Download Manager\": every link you see there is collected."
+msgstr "Bazı sayfalar bağlantılarını yalnızca tarayıcıda oluşturur (betiklerle ya da düz metin olarak). Bunlar için: sayfayı tarayıcıda açın, sağ tıklayın ve \"Download all links with Ezoo Download Manager\" seçin: orada gördüğünüz her bağlantı toplanır."
 
 msgid "Get"
 msgstr "Al"
@@ -976,8 +994,8 @@ msgstr "Sonraki ipucu"
 msgid "Refresh download address"
 msgstr "İndirme adresini yenile"
 
-msgid "1. Open the web page where you got this file.\n2. Click the download link there again (or start the video).\n3. Ezoo Download takes the new address and continues from where it stopped."
-msgstr "1. Bu dosyayı aldığınız web sayfasını açın.\n2. Oradaki indirme bağlantısına yeniden tıklayın (veya videoyu başlatın).\n3. Ezoo Download yeni adresi alır ve kaldığı yerden devam eder."
+msgid "1. Open the web page where you got this file.\n2. Click the download link there again (or start the video).\n3. Ezoo Download Manager takes the new address and continues from where it stopped."
+msgstr "1. Bu dosyayı aldığınız web sayfasını açın.\n2. Oradaki indirme bağlantısına yeniden tıklayın (veya videoyu başlatın).\n3. Ezoo Download Manager yeni adresi alır ve kaldığı yerden devam eder."
 
 msgid "Open the page"
 msgstr "Sayfayı aç"
@@ -1000,8 +1018,8 @@ msgstr "Beklemeyi bırak"
 msgid "Play"
 msgstr "Oynat"
 
-msgid "Ezoo Download – Options"
-msgstr "Ezoo Download – Seçenekler"
+msgid "Ezoo Download Manager – Options"
+msgstr "Ezoo Download Manager – Seçenekler"
 
 msgid "General"
 msgstr "Genel"
@@ -1051,8 +1069,8 @@ msgstr "Gözat…"
 msgid "Picture visibility"
 msgstr "Resim görünürlüğü"
 
-msgid "Launch Ezoo Download on Windows startup"
-msgstr "Ezoo Download'u Windows açılışında başlat"
+msgid "Launch Ezoo Download Manager on Windows startup"
+msgstr "Ezoo Download Manager'u Windows açılışında başlat"
 
 msgid "Keep running next to the clock when the window is closed"
 msgstr "Pencere kapatılınca saatin yanında çalışmaya devam et"
@@ -1084,8 +1102,8 @@ msgstr "Özellikleri göster"
 msgid "Browser integration"
 msgstr "Tarayıcı entegrasyonu"
 
-msgid "Chrome and Edge: load the \"extension\" folder in chrome://extensions (Developer mode > Load unpacked). Downloads, videos and the right click menu then go to Ezoo Download."
-msgstr "Chrome ve Edge: \"extension\" klasörünü chrome://extensions içinde yükleyin (Geliştirici modu > Paketlenmemiş öğe yükle). İndirmeler, videolar ve sağ tık menüsü Ezoo Download'a gider."
+msgid "Chrome and Edge: load the \"extension\" folder in chrome://extensions (Developer mode > Load unpacked). Downloads, videos and the right click menu then go to Ezoo Download Manager."
+msgstr "Chrome ve Edge: \"extension\" klasörünü chrome://extensions içinde yükleyin (Geliştirici modu > Paketlenmemiş öğe yükle). İndirmeler, videolar ve sağ tık menüsü Ezoo Download Manager'a gider."
 
 msgid "Hold this key to let the browser download by itself"
 msgstr "Tarayıcının kendisi indirsin diye bu tuşu basılı tut"
@@ -1102,8 +1120,8 @@ msgstr "Shift"
 msgid "None"
 msgstr "Yok"
 
-msgid "Hold this key to force Ezoo Download to take a link"
-msgstr "Ezoo Download'un bağlantıyı almasını zorlamak için bu tuşu basılı tut"
+msgid "Hold this key to force Ezoo Download Manager to take a link"
+msgstr "Ezoo Download Manager'un bağlantıyı almasını zorlamak için bu tuşu basılı tut"
 
 msgid "Browser extension port"
 msgstr "Tarayıcı eklentisi bağlantı noktası"
@@ -1324,8 +1342,8 @@ msgstr ".wav dosyaları. Boş = o olay için ses yok."
 msgid "Turn the speed limiter on"
 msgstr "Hız sınırlayıcıyı aç"
 
-msgid "Always turn on the speed limiter when Ezoo Download starts"
-msgstr "Ezoo Download açılınca hız sınırlayıcıyı her zaman aç"
+msgid "Always turn on the speed limiter when Ezoo Download Manager starts"
+msgstr "Ezoo Download Manager açılınca hız sınırlayıcıyı her zaman aç"
 
 msgid "Every download can also have its own limit: its progress window > Speed Limiter tab."
 msgstr "Her indirmenin kendi sınırı da olabilir: ilerleme penceresi > Hız sınırlayıcı sekmesi."
@@ -1417,14 +1435,20 @@ msgstr "Ses MP3"
 msgid "Files at the same time"
 msgstr "Aynı anda dosya"
 
+msgid "Number from the oldest video"
+msgstr "Number from the oldest video"
+
+msgid "Skip videos already downloaded"
+msgstr "Skip videos already downloaded"
+
 msgid "Number the files"
 msgstr "Dosyaları numaralandır"
 
 msgid "Not installed on this computer"
 msgstr "Bu bilgisayarda yüklü değil"
 
-msgid "Add Ezoo Download to your browser"
-msgstr "Ezoo Download'u tarayıcınıza ekleyin"
+msgid "Add Ezoo Download Manager to your browser"
+msgstr "Ezoo Download Manager'u tarayıcınıza ekleyin"
 
 msgid "Click your browser:"
 msgstr "Tarayıcınıza tıklayın:"
@@ -1435,14 +1459,68 @@ msgstr "Neredeyse bitti:"
 msgid "Copy folder path"
 msgstr "Klasör yolunu kopyala"
 
+msgid "Repair extension files"
+msgstr "Repair extension files"
+
 msgid "Version {}"
 msgstr "Sürüm {}"
 
 msgid "Coded by Ahmed Ezzat"
 msgstr "Kodlayan: Ahmed Ezzat"
 
-msgid "What's new in Ezoo Download"
-msgstr "Ezoo Download’da yenilikler"
+msgid "Ezoo Download Manager (EDM) is an independent fork of Ezoo Download by Ahmed Ezzat (Ezoo Tech), maintained and extended by kerlif."
+msgstr "Ezoo Download Manager (EDM) is an independent fork of Ezoo Download by Ahmed Ezzat (Ezoo Tech), maintained and extended by kerlif."
+
+msgid "Special thanks to Ahmed Ezzat for the original program, and to kerlif for the additional improvements."
+msgstr "Special thanks to Ahmed Ezzat for the original program, and to kerlif for the additional improvements."
+
+msgid "What's new in Ezoo Download Manager"
+msgstr "Ezoo Download Manager’da yenilikler"
+
+msgid "Update available"
+msgstr "Update available"
+
+msgid "See the full release notes"
+msgstr "See the full release notes"
+
+msgid "Later"
+msgstr "Later"
+
+msgid "Update now"
+msgstr "Update now"
 
 msgid "Hide"
 msgstr "Gizle"
+
+msgid "Cut a part of a video"
+msgstr "Cut a part of a video"
+
+msgid "Video file or web address:"
+msgstr "Video file or web address:"
+
+msgid "movie.mp4 or https://…"
+msgstr "movie.mp4 or https://…"
+
+msgid "From:"
+msgstr "From:"
+
+msgid "mm:ss"
+msgstr "mm:ss"
+
+msgid "To:"
+msgstr "To:"
+
+msgid "Read length"
+msgstr "Read length"
+
+msgid "Exact cut (re-encode, frame-accurate)"
+msgstr "Exact cut (re-encode, frame-accurate)"
+
+msgid "The part starts on the very second asked. Slower, and it works the processor."
+msgstr "The part starts on the very second asked. Slower, and it works the processor."
+
+msgid "Quick cut: stream copy, takes seconds and keeps the quality — but it starts at the nearest keyframe at or before the start time, so it may begin a second or two early."
+msgstr "Quick cut: stream copy, takes seconds and keeps the quality — but it starts at the nearest keyframe at or before the start time, so it may begin a second or two early."
+
+msgid "Cut part"
+msgstr "Cut part"

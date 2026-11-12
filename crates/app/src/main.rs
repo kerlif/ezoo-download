@@ -1,18 +1,21 @@
-// Ezoo Download — desktop app.
+// Ezoo Download Manager — desktop app.
 // No console window in release builds on Windows.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 slint::include_modules!();
 
 mod api;
+mod api_sign;
 mod autostart;
 mod browser;
 mod clipboard;
+mod clipui;
 mod extra;
 mod fonts;
 mod grab;
 mod i18n;
 mod local_token;
+mod native_dialog;
 mod options;
 mod playlist;
 mod preview;
@@ -36,10 +39,10 @@ use swiftget_engine::filename;
 use swiftget_engine::stream_meta::{SizeSource, StreamMeta, VariantInfo};
 use swiftget_engine::{
     default_data_dir, fmt_duration, fmt_size, AfterDone, DownloadKind, DownloadView, Event,
-    Manager, NewDownload, ProbeResult, RequestHeaders, Settings, Status,
+    Manager, NewDownload, ProbeResult, RequestHeaders, Settings, Status, Step,
 };
 
-pub(crate) const APP: &str = "Ezoo Download";
+pub(crate) const APP: &str = "Ezoo Download Manager";
 
 /// What the browser extension sends along with a video link.
 #[derive(Default, Clone)]
@@ -88,7 +91,7 @@ pub(crate) struct PendingOpen {
 
 /// A dialog window that is created only when first opened.
 ///
-/// The Wayland fix (docs/BASELINE.md §4): a Slint `Window` component that
+/// The Wayland fix: a Slint `Window` component that
 /// exists at startup gets a native winit window on Wayland even though it
 /// was never shown, so every eagerly created dialog appeared as a flat
 /// tab. A dialog that does not exist cannot be registered, so each dialog
@@ -200,6 +203,8 @@ pub(crate) struct Ui {
     refresh_dlg: LazyWeak<RefreshDialog>,
     /// download waiting for a new address from the browser
     refresh_id: Rc<Cell<Option<u64>>>,
+    /// "Cut a part of a video" window
+    clip_dlg: LazyWeak<ClipDialog>,
     /// a refresh-link probe is in flight; links are ignored until it lands
     refresh_busy: Rc<Cell<bool>>,
     options_lists: Rc<RefCell<options::Lists>>,
@@ -313,11 +318,11 @@ fn main() {
             s.gpu_drawing = false;
             let _ = s.save(&path);
         }
-        let _ = rfd::MessageDialog::new()
-            .set_title("Ezoo Download")
-            .set_level(rfd::MessageLevel::Error)
+        let _ = crate::winfx::msg_box()
+            .set_title("Ezoo Download Manager")
+            .set_level(crate::winfx::MessageLevel::Error)
             .set_description(format!(
-                "Ezoo Download could not start:\n\n{text}\n\nتعذّر تشغيل Ezoo Download. أعد تشغيل الجهاز ثم جرّب مرة أخرى."
+                "Ezoo Download Manager could not start:\n\n{text}\n\nتعذّر تشغيل Ezoo Download Manager. أعد تشغيل الجهاز ثم جرّب مرة أخرى."
             ))
             .show();
         std::process::exit(1);
@@ -364,9 +369,12 @@ fn run() -> anyhow::Result<()> {
     // started by Windows at sign-in: stay next to the clock, no window
     let background = std::env::args().any(|a| a == "--background");
     let data_dir = default_data_dir();
-    // the per-install secret the browser add-in shows on every POST (Q29)
+    // the per-install secret the browser add-in signs every POST with (Q53)
     let local_token = local_token::load_or_create(&data_dir);
     let port = Settings::load(&data_dir.join("settings.json")).browser_port;
+    // the extension folders are complete before the browser asks for
+    // them (P3: the data-folder copy on Linux, never a system copy)
+    browser::prepare_extension_folders();
     if std::env::args().any(|a| a == "--quit") {
         // run by the setup: the open copy closes (saving everything), this one too
         api::notify_quit(port, &local_token);
@@ -393,7 +401,7 @@ fn run() -> anyhow::Result<()> {
             }
         }
     }
-    // a .torrent file / magnet link opened with Ezoo Download (double click)
+    // a .torrent file / magnet link opened with Ezoo Download Manager (double click)
     let open_torrent = std::env::args().skip(1).find(|a| api::torrent_source_ok(a));
     // One instance only: if the port is taken by us, bring that one to front.
     let server = match first {
@@ -412,16 +420,16 @@ fn run() -> anyhow::Result<()> {
                 api::Existing::Hangs(pid) => {
                     note(&format!("already open but not answering (process {pid})"));
                     let yes = matches!(
-                        rfd::MessageDialog::new()
+                        crate::winfx::msg_box()
                             .set_title(APP)
-                            .set_level(rfd::MessageLevel::Warning)
+                            .set_level(crate::winfx::MessageLevel::Warning)
                             .set_description(
-                                "Ezoo Download is already open but does not answer.\nClose it and open it again?\n\n\
-                                 Ezoo Download مفتوح بالفعل لكنه لا يستجيب.\nهل تريد إغلاقه وفتحه من جديد؟",
+                                "Ezoo Download Manager is already open but does not answer.\nClose it and open it again?\n\n\
+                                 Ezoo Download Manager مفتوح بالفعل لكنه لا يستجيب.\nهل تريد إغلاقه وفتحه من جديد؟",
                             )
-                            .set_buttons(rfd::MessageButtons::YesNo)
+                            .set_buttons(crate::winfx::MessageButtons::YesNo)
                             .show(),
-                        rfd::MessageDialogResult::Yes
+                        crate::winfx::MessageDialogResult::Yes
                     );
                     if !yes || pid == 0 || pid == std::process::id() {
                         return Ok(());
@@ -501,6 +509,7 @@ fn run() -> anyhow::Result<()> {
         grab_state: Rc::new(RefCell::new(grab::GrabUi::default())),
         tips: LazyWeak::default(),
         refresh_dlg: LazyWeak::default(),
+        clip_dlg: LazyWeak::default(),
         refresh_id: Rc::new(Cell::new(None)),
         refresh_busy: Rc::new(Cell::new(false)),
         options_lists: Rc::new(RefCell::new(options::Lists::default())),
@@ -567,6 +576,7 @@ fn run() -> anyhow::Result<()> {
                 let _ = slint::invoke_from_event_loop(|| {});
             },
             local_token,
+            rt.handle().clone(),
         );
         let ui2 = ui.clone();
         let api_timer = Timer::default();
@@ -1164,6 +1174,10 @@ fn wire_main(ui: &Ui) {
             }
         });
     }
+    // dragging a finished file out of the list is Windows only (the
+    // shell takes it from there); on Linux there is no such tool — the
+    // gesture stays unwired instead of a visible no-op
+    #[cfg(windows)]
     {
         let ui = ui.clone();
         main.on_row_drag_out(move |id| {
@@ -1279,7 +1293,7 @@ fn wire_main(ui: &Ui) {
         std::thread::spawn(|| {
             let text = match swiftget_engine::ytdlp::update_now() {
                 Ok(out) => tf(
-                    "Ezoo Download {}\n\nThe video downloader (yt-dlp) is up to date.\n\n{}",
+                    "Ezoo Download Manager {}\n\nThe video downloader (yt-dlp) is up to date.\n\n{}",
                     &[&env!("CARGO_PKG_VERSION"), &out],
                 ),
                 Err(e) => tf("Could not update yt-dlp:\n\n{}", &[&format!("{e:#}")]),
@@ -1518,10 +1532,21 @@ fn handle_events(ui: &Ui) {
     let early = early_download(&ui.ctx);
     // a finished file: the preview names of it are not needed any more
     preview::clean_up();
+    let mut done = Vec::new();
     for ev in events {
         match ev {
+            // refused at once (the site lets only the browser in): the
+            // browser is asked for it, with the site's sign-in, and hands
+            // it back — no "failed" sound for a handover. Not the
+            // download the "Download File Info" window is still open for.
+            Event::Failed(id) if Some(id) != early && relay_refused(ui, id) => {}
             Event::Completed(id) | Event::Failed(id) if Some(id) == early => {}
-            Event::Completed(_) if s.sounds_on => sound::play(&s.sound_complete),
+            Event::Completed(id) => {
+                done.push(id);
+                if s.sounds_on {
+                    sound::play(&s.sound_complete);
+                }
+            }
             Event::Failed(_) if s.sounds_on => sound::play(&s.sound_failed),
             Event::QueueStarted(_) if s.sounds_on => sound::play(&s.sound_queue_start),
             Event::QueueDone(_) if s.sounds_on => sound::play(&s.sound_queue_done),
@@ -1537,6 +1562,98 @@ fn handle_events(ui: &Ui) {
             _ => {}
         }
     }
+    extra::av1_tip(ui, &done);
+}
+
+thread_local! {
+    // downloads the server refused (403 / 401) and handed to the
+    // browser: address -> (download, when, times)
+    static RELAYED: RefCell<HashMap<String, (u64, std::time::Instant, u32)>> =
+        RefCell::new(HashMap::new());
+}
+
+/// The server refused a download before its first byte (HTTP 403 / 401):
+/// many sites let only the browser in (its sign-in, its exact request).
+/// The first time, the address is opened in the browser: the extension
+/// takes that download with everything the browser sent and it comes
+/// back to this same download (see `relayed_download`). Refused again:
+/// the browser keeps it and downloads it itself. true = handled (no
+/// "failed" sound or message). Only plain HTTP downloads with zero
+/// bytes: a stream or a half-downloaded file is not handed over.
+fn relay_refused(ui: &Ui, id: u64) -> bool {
+    let Some(v) = ui.ctx.mgr.get(id) else {
+        return false;
+    };
+    let err = v.error.clone().unwrap_or_default();
+    let refused = err.contains("HTTP 403") || err.contains("HTTP 401");
+    if v.kind != DownloadKind::Http || v.downloaded > 0 || !refused || !v.url.starts_with("http") {
+        return false;
+    }
+    let times = RELAYED.with(|r| {
+        let mut r = r.borrow_mut();
+        r.retain(|_, (_, at, _)| at.elapsed() < Duration::from_secs(1800));
+        let e = r
+            .entry(v.url.clone())
+            .or_insert((id, std::time::Instant::now(), 0));
+        e.0 = id;
+        e.1 = std::time::Instant::now();
+        e.2 += 1;
+        e.2
+    });
+    if times > 2 {
+        return false;
+    }
+    if times == 2 {
+        // refused with the browser's own request too: the browser downloads it
+        api::leave_to_browser(&v.url);
+        note(&t(
+            "The site refused the download again, so the browser keeps it.",
+        ));
+    } else {
+        note(&t(
+            "The site refused the download, so it was opened in the browser.",
+        ));
+    }
+    let _ = open::that_detached(&v.url);
+    true
+}
+
+/// The extension sent a download the program asked the browser for: it
+/// belongs to the refused one, which goes on with the browser's request.
+/// Only the exact address the program opened, once, within five
+/// minutes: anything else is an ordinary new download, never a
+/// handover — a page cannot smuggle another address into the engine
+/// through this path. (A redirected final address does not match: then
+/// the browser simply keeps its own download.)
+fn relayed_download(url: &str) -> Option<u64> {
+    RELAYED.with(|r| {
+        r.borrow()
+            .get(url)
+            .filter(|(_, at, times)| *times == 1 && at.elapsed() < Duration::from_secs(300))
+            .map(|(id, _, _)| *id)
+    })
+}
+
+/// A handover is done (or abandoned): forget it, so a later download of
+/// the same address is an ordinary new download, not a second handover.
+pub(crate) fn relay_forget(url: &str) {
+    RELAYED.with(|r| {
+        r.borrow_mut().remove(url);
+    });
+}
+
+#[cfg(test)]
+fn relay_test_insert(url: &str, id: u64, times: u32, age_secs: u64) {
+    RELAYED.with(|r| {
+        r.borrow_mut().insert(
+            url.to_string(),
+            (
+                id,
+                std::time::Instant::now() - Duration::from_secs(age_secs),
+                times,
+            ),
+        );
+    });
 }
 
 thread_local! {
@@ -1592,6 +1709,18 @@ fn handle_api(ui: &Ui, event: api::ApiEvent) {
                 torrent_ui::fetch_and_open(&ui.ctx, req.url, headers, req.file_name);
                 return;
             }
+            // a 403 handover came back from the browser: the same
+            // address, with the browser's sign-in — checked as the same
+            // file first, then the download goes on from where it
+            // stopped (see `extra::relay_received`)
+            if req.audio_url.is_none() {
+                if let Some(id) = relayed_download(&req.url)
+                    .filter(|id| ui.ctx.mgr.get(*id).is_some_and(|v| v.url == req.url))
+                {
+                    extra::relay_received(ui, id, &req.url, headers);
+                    return;
+                }
+            }
             // "Refresh download address": this is the new link we waited for
             if let Some(id) = ui.refresh_id.get() {
                 if req.audio_url.is_none() {
@@ -1606,7 +1735,12 @@ fn handle_api(ui: &Ui, event: api::ApiEvent) {
                 quality_key: req.quality_key,
             };
             let s = ui.ctx.mgr.settings();
-            if !s.show_start_dialog && ui.ctx.mgr.find_url(&req.url).is_none() {
+            // a part from the extension already has its parameters:
+            // it goes straight to the list, never through the
+            // "Download File Info" window (which has no clip fields)
+            if (!s.show_start_dialog && ui.ctx.mgr.find_url(&req.url).is_none())
+                || req.clip.is_some()
+            {
                 // straight to the list, without the "Download File Info" window
                 let id = ui.ctx.mgr.add(NewDownload {
                     url: req.url,
@@ -1616,6 +1750,7 @@ fn handle_api(ui: &Ui, event: api::ApiEvent) {
                     source_page: extra.source_page,
                     source_key: extra.source_key,
                     quality_key: extra.quality_key,
+                    clip: req.clip,
                     start: true,
                     ..Default::default()
                 });
@@ -2098,7 +2233,7 @@ pub(crate) fn message(text: &str) {
 }
 
 pub(crate) fn ask(text: &str) -> bool {
-    use rfd::{MessageButtons, MessageDialogResult};
+    use crate::winfx::{MessageButtons, MessageDialogResult};
     let _g = ModalGuard::new();
     matches!(
         crate::winfx::msg_box()
@@ -2297,7 +2432,7 @@ pub(crate) fn change_language(ui: &Ui, lang: &str) {
     if was_rtl != i18n::is_rtl() {
         // after the menu / Options window is gone
         Timer::single_shot(Duration::from_millis(200), move || {
-            if ask(&t("Ezoo Download will restart now to show its windows in the direction of the new language. Downloads continue after it opens.\n\nRestart now?")) {
+            if ask(&t("Ezoo Download Manager will restart now to show its windows in the direction of the new language. Downloads continue after it opens.\n\nRestart now?")) {
                 RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
                 let _ = slint::quit_event_loop();
             }
@@ -2841,6 +2976,29 @@ fn apply_stream_selection(ctx: &Ctx, d: &AddDialog, index: usize) {
     d.set_stream_size_text(stream_size_label(v).into());
 }
 
+/// Whole-size text for Download File Info: when picture and sound come
+/// apart, the first line is their total, then each part's size; when the
+/// sound size is unknown it falls back to the old "+ audio" line, and a
+/// size the server only hinted at keeps its "≈" mark (1.0.10 port).
+fn whole_size_text(
+    has_audio: bool,
+    total_size: Option<u64>,
+    audio_size: Option<u64>,
+    unverified: bool,
+    size: &str,
+) -> String {
+    match (has_audio, total_size, audio_size) {
+        (true, Some(v), Some(a)) if !unverified => format!(
+            "{}\n{}\n{}",
+            fmt_size(v + a),
+            tf("picture {}", &[&fmt_size(v)]),
+            tf("sound {}", &[&fmt_size(a)])
+        ),
+        (true, _, _) => format!("{size}\n{}", t("+ audio")),
+        _ => size.to_string(),
+    }
+}
+
 /// Ask the server about the file in the background, then show the result.
 /// The probe (and, for streams, the metadata probe after it) must not
 /// keep the window waiting: each stage is bounded to ~5 seconds, the
@@ -2848,13 +3006,14 @@ fn apply_stream_selection(ctx: &Ctx, d: &AddDialog, index: usize) {
 /// reused meanwhile) is dropped by the sequence check.
 fn start_probe(ctx: &Ctx, url: String) {
     let Some(d) = ctx.add.upgrade() else { return };
-    let (seq, mut headers) = {
+    let (seq, mut headers, audio_url) = {
         let mut st = ctx.add_state.lock().unwrap();
         st.probe_seq += 1;
         st.probe = None;
         st.stream_meta = None;
         st.stream_url.clear();
-        (st.probe_seq, st.headers.clone())
+        let audio = st.extra.audio_url.clone().filter(|_| st.origin_url == url);
+        (st.probe_seq, st.headers.clone(), audio)
     };
     if d.get_use_login() && !d.get_user().trim().is_empty() {
         headers.auth = Some((
@@ -2868,9 +3027,27 @@ fn start_probe(ctx: &Ctx, url: String) {
     d.set_drm_blocked(false);
     let ctx2 = ctx.clone();
     ctx.rt.spawn(async move {
-        // The plain probe, bounded: a slow server yields an error, not a hang.
-        let probed = tokio::time::timeout(Duration::from_secs(5), ctx2.mgr.probe(&url, &headers)).await;
-        let result: anyhow::Result<(ProbeResult, Option<StreamMeta>)> = match probed {
+        // Picture and sound come apart: probe both at once, so the window
+        // shows the whole size (as the browser add-in does). The audio size
+        // is a nicety — a slow audio server must not hold up the window, so
+        // it shares the same 5 s bound as the main probe.
+        let video_fut =
+            tokio::time::timeout(Duration::from_secs(5), ctx2.mgr.probe(&url, &headers));
+        let audio_fut = async {
+            match &audio_url {
+                Some(a) => {
+                    match tokio::time::timeout(Duration::from_secs(5), ctx2.mgr.probe(a, &headers))
+                        .await
+                    {
+                        Ok(Ok(p)) => p.total_size,
+                        _ => None,
+                    }
+                }
+                None => None,
+            }
+        };
+        let (probed, audio_size) = tokio::join!(video_fut, audio_fut);
+        let result: anyhow::Result<(ProbeResult, Option<StreamMeta>, Option<u64>)> = match probed {
             Ok(Ok(p)) => {
                 // Streams get their metadata (duration, qualities, sizes)
                 // from the playlist/manifest, with the captured headers.
@@ -2881,7 +3058,7 @@ fn start_probe(ctx: &Ctx, url: String) {
                 } else {
                     None
                 };
-                Ok((p, meta))
+                Ok((p, meta, audio_size))
             }
             Ok(Err(e)) => Err(e),
             Err(_) => Err(anyhow::anyhow!("__PROBE_TIMEOUT__")),
@@ -2895,7 +3072,7 @@ fn start_probe(ctx: &Ctx, url: String) {
             d.set_probing(false);
             drop(st);
             match result {
-                Ok((p, meta)) => {
+                Ok((p, meta, audio_size)) => {
                     // The window fills its own "Save As" from the probe
                     // name, unless the user already typed their own.
                     {
@@ -2923,7 +3100,8 @@ fn start_probe(ctx: &Ctx, url: String) {
                         Some(size) => fmt_size(size),
                         None => t("Unknown size"),
                     };
-                    let size_text = if has_audio { format!("{size}\n{}", t("+ audio")) } else { size };
+                    let size_text =
+                        whole_size_text(has_audio, p.total_size, audio_size, p.total_size_unverified, &size);
                     d.set_size_text(size_text.into());
                     let kind = match (p.kind, p.resumable) {
                         _ if has_audio => "Video + audio, joined after download",
@@ -3214,6 +3392,7 @@ fn confirm_add(ui: &Ui, start: bool) {
             early: false,
             start,
             torrent_select: None,
+            clip: None,
         };
         (nd, picked_best)
     };
@@ -3410,6 +3589,7 @@ fn row_action(ui: &Ui, id: u64, action: &str) {
             }
         }
         "refresh" => extra::open_refresh(ui, id),
+        "cut-part" => clipui::open_for_download(ui, id),
         "copy" => {
             if let Ok(mut c) = arboard::Clipboard::new() {
                 let _ = c.set_text(v.url.clone());
@@ -3792,11 +3972,13 @@ pub(crate) fn open_download(path: &std::path::Path) {
 /// An error of the engine in words the user understands, in their language.
 pub(crate) fn err_text(e: &str) -> String {
     if e.contains("needs a login or an age check") {
-        t("This video needs a login or an age check. Open it once in the browser where you are signed in (with the Ezoo Download extension), then try again.")
+        t("This video needs a login or an age check. Open it once in the browser where you are signed in (with the Ezoo Download Manager extension), then try again.")
     } else if e.contains("BitLocker") || e.contains("-2144272384") {
         t("The drive of the download folder is locked by BitLocker. Unlock it in Windows, or choose another folder (right-click the download > Properties).")
     } else if e.contains("is already registered") {
-        t("This torrent is already running (it may still be sharing its files). Wait a little, or exit Ezoo Download and open it again.")
+        t("This torrent is already running (it may still be sharing its files). Wait a little, or exit Ezoo Download Manager and open it again.")
+    } else if e.contains("nobody shares this torrent right now") {
+        t("Nobody shares this torrent right now. It keeps looking and starts by itself as soon as someone does. If it stays like this, the torrent has no sharers left, or your internet provider or firewall blocks torrents.")
     } else if let Some(rest) = e
         .split("the link stopped working - getting a new one in ")
         .nth(1)
@@ -3804,13 +3986,28 @@ pub(crate) fn err_text(e: &str) -> String {
         let secs = rest.split(' ').next().unwrap_or("?");
         tf("The link stopped working. A new one is fetched in {} s and checked before the download goes on.", &[&secs])
     } else if e.contains("ffmpeg.exe is missing") {
-        t("ffmpeg.exe (it joins the video and the sound) is missing and could not be downloaded again. Allow it in your antivirus or install Ezoo Download again, then click Resume: nothing downloaded is lost.")
+        t("ffmpeg.exe (it joins the video and the sound) is missing and could not be downloaded again. Allow it in your antivirus or install Ezoo Download Manager again, then click Resume: nothing downloaded is lost.")
     } else if e.contains("the new link is not the same file") {
         t("The new link gives another file, so nothing more was written. Right-click the download and use \"Refresh download address\".")
     } else if e.contains("the link has expired or the file was removed") {
         t("The link has expired or the file was removed. Right-click the download and use \"Refresh download address\".")
     } else {
         e.to_string()
+    }
+}
+
+/// The post-download step as a short code for the Slint views ("join",
+/// "tomp4", "tomp3", "move", "cut"), "" when no step is running. The views
+/// translate the code into the shown label, so the label stays translatable
+/// through the Slint @tr strings instead of the Rust ones.
+fn step_code(step: Option<(Step, f32)>) -> &'static str {
+    match step.map(|(s, _)| s) {
+        Some(Step::Join) => "join",
+        Some(Step::ToMp4) => "tomp4",
+        Some(Step::ToMp3) => "tomp3",
+        Some(Step::Move) => "move",
+        Some(Step::Cut) => "cut",
+        None => "",
     }
 }
 
@@ -3849,7 +4046,17 @@ fn row_of(v: &DownloadView, sel: bool) -> DownloadRow {
         (_, _, DownloadKind::Dash) => tf("{}: video + audio", &[&t(&v.category)]),
         (_, _, DownloadKind::Hls) => tf("{}: stream", &[&t(&v.category)]),
         (_, _, DownloadKind::Torrent) if v.status.is_running() => {
-            tf("Torrent: {} peers", &[&v.active_connections])
+            // a torrent alone for a minute and a half says so, plainly
+            if let Some(e) = &v.error {
+                err_text(e)
+            } else if v.seeders > 0 {
+                tf(
+                    "Torrent: {} peers, {} seeders",
+                    &[&v.active_connections, &v.seeders],
+                )
+            } else {
+                tf("Torrent: {} peers", &[&v.active_connections])
+            }
         }
         (_, _, DownloadKind::Torrent) => t("Torrent"),
         _ => t(&v.category),
@@ -3868,6 +4075,9 @@ fn row_of(v: &DownloadView, sel: bool) -> DownloadRow {
         size: size.into(),
         status: status.into(),
         progress: pct,
+        // the second bar: what the download does after the data is here
+        step: step_code(v.step).into(),
+        step_progress: v.step.map(|(_, f)| f).unwrap_or(0.0),
         eta: v.eta_secs.map(fmt_duration).unwrap_or_default().into(),
         speed: speed.into(),
         last_try: fmt_time(v.finished_at.or(v.last_try).unwrap_or(v.added_at)).into(),
@@ -4374,6 +4584,9 @@ fn fill_details(d: &DetailsDialog, model: &VecModel<SegView>, v: &DownloadView) 
     d.set_error(err_text(v.error.as_deref().unwrap_or_default()).into());
     d.set_progress(pct);
     d.set_state(state_of(v.status));
+    // the second bar (join / convert / move / cut) of the progress window
+    d.set_step(step_code(v.step).into());
+    d.set_step_progress(v.step.map(|(_, f)| f).unwrap_or(0.0));
 
     // connections, in file order, each with its state from the engine's
     // segment table (read-only: finished / stalled / downloading / idle)
@@ -4423,6 +4636,50 @@ fn fill_details(d: &DetailsDialog, model: &VecModel<SegView>, v: &DownloadView) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn step_code_names_every_step() {
+        assert_eq!(step_code(None), "");
+        assert_eq!(step_code(Some((Step::Join, 0.0))), "join");
+        assert_eq!(step_code(Some((Step::ToMp4, 0.5))), "tomp4");
+        assert_eq!(step_code(Some((Step::ToMp3, 1.0))), "tomp3");
+        assert_eq!(step_code(Some((Step::Move, 0.25))), "move");
+        assert_eq!(step_code(Some((Step::Cut, 0.75))), "cut");
+    }
+
+    #[test]
+    fn whole_size_text_shows_total_and_parts() {
+        // the size words are translated, so only the numbers are asserted:
+        // they read the same in every language
+        let text = whole_size_text(true, Some(100_000_000), Some(5_000_000), false, "95.37 MB");
+        let mut lines = text.lines();
+        assert_eq!(lines.next(), Some(fmt_size(105_000_000).as_str()));
+        assert!(lines.next().unwrap().contains(&fmt_size(100_000_000)));
+        assert!(lines.next().unwrap().contains(&fmt_size(5_000_000)));
+        assert_eq!(lines.next(), None);
+    }
+
+    #[test]
+    fn whole_size_text_falls_back() {
+        let text = whole_size_text(true, Some(100_000_000), None, false, "95.37 MB");
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.starts_with("95.37 MB\n+"));
+        let text = whole_size_text(true, None, None, false, "Unknown size");
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.starts_with("Unknown size\n+"));
+        // a size the server only hinted at keeps its "≈" mark, no plain total
+        let text = whole_size_text(
+            true,
+            Some(100_000_000),
+            Some(5_000_000),
+            true,
+            "≈ 95.37 MB (from server headers, unverified)",
+        );
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.starts_with("≈ 95.37 MB (from server headers, unverified)\n+"));
+        let text = whole_size_text(false, Some(100_000_000), Some(5_000_000), false, "95.37 MB");
+        assert_eq!(text, "95.37 MB");
+    }
+
     #[test]
     fn header_points_to_columns() {
         let w = [280.0, 30.0, 82.0];
@@ -4517,6 +4774,7 @@ mod tests {
 #[cfg(test)]
 mod name_tests {
     use super::with_extension_of;
+    use super::{relay_test_insert, relayed_download};
     #[test]
     fn typed_names_keep_the_extension() {
         assert_eq!(
@@ -4533,5 +4791,20 @@ mod name_tests {
         );
         assert_eq!(with_extension_of("setup", ""), "setup");
         assert_eq!(with_extension_of("v1.2", "x.zip"), "v1.2");
+    }
+
+    #[test]
+    fn relayed_download_only_matches_a_fresh_first_handover() {
+        let url = "https://example.com/file.zip";
+        relay_test_insert(url, 7, 1, 0);
+        assert_eq!(relayed_download(url), Some(7));
+        // another address is not the handover
+        assert_eq!(relayed_download("https://example.com/other.zip"), None);
+        // a second refusal is the browser's own download, not a handover
+        relay_test_insert(url, 7, 2, 0);
+        assert_eq!(relayed_download(url), None);
+        // an old entry (over five minutes) is not a handover either
+        relay_test_insert(url, 7, 1, 301);
+        assert_eq!(relayed_download(url), None);
     }
 }

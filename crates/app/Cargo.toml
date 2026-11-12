@@ -3,7 +3,7 @@ name = "swiftget"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Ezoo Download – download manager (desktop app)"
+description = "Ezoo Download Manager – download manager (desktop app)"
 build = "build.rs"
 
 # The renderer set is per-OS: Windows keeps the defaults (femtovg OpenGL),

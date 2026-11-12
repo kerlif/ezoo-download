@@ -1,8 +1,8 @@
-/* Ezoo Download — project page styles. Original design, written from scratch.
+/* Ezoo Download Manager — project page styles. Original design, written from scratch.
    Framework-free, vanilla CSS. Light + dark themes via [data-theme] on <html>.
    Site type: Carlito (Latin) + Noto Sans Arabic, shipped in assets/fonts/
    (SIL OFL 1.1); system-font fallbacks keep the page readable until the
-   font files are uploaded (see docs/README.md). */
+   font files are uploaded. */
 @font-face {
   font-family: "Carlito";
   src: url("assets/fonts/Carlito-Regular.woff2") format("woff2");
@@ -33,27 +33,27 @@
 }
 
 :root {
-  --violet: #6d28d9;
-  --blue: #1d4ed8;
+  --violet: #4687C7;
+  --blue: #2E6DA8;
   --ink: #16182d;
   --muted: #565a70;
   --line: #e0e2ee;
   --bg: #ffffff;
   --panel: #ffffff;
   --soft: #f5f6fb;
-  --link: #1d4ed8;
-  --badge-fg: #6d28d9;
+  --link: #2E6DA8;
+  --badge-fg: #4687C7;
   --code-bg: #16182d;
   --code-fg: #e8eaf6;
   --result-bg: #ecfdf3;
   --result-fg: #14532d;
   --result-line: #bbf7d0;
-  --hero-1: #f3efff;
-  --hero-2: #eef4ff;
-  --hero-3: #e8f6ff;
+  --hero-1: #EBF3FA;
+  --hero-2: #E7EFF7;
+  --hero-3: #E2EDF6;
   --step-bg: #16182d;
   --step-fg: #ffffff;
-  --focus: #1d4ed8;
+  --focus: #2E6DA8;
   --radius: 16px;
   --shadow: 0 10px 30px rgba(22, 24, 45, .08);
 }
@@ -64,19 +64,19 @@ html[data-theme="dark"] {
   --bg: #101124;
   --panel: #1a1c33;
   --soft: #20223c;
-  --link: #a9bdff;
-  --badge-fg: #c4b5fd;
+  --link: #7FB3E0;
+  --badge-fg: #8FBFE8;
   --code-bg: #0b0c1a;
   --code-fg: #e8eaf6;
   --result-bg: #0f2c1a;
   --result-fg: #bbf7d0;
   --result-line: #166534;
-  --hero-1: #232347;
-  --hero-2: #1a2140;
-  --hero-3: #14273a;
+  --hero-1: #1D283A;
+  --hero-2: #253149;
+  --hero-3: #1A2433;
   --step-bg: #eceef7;
   --step-fg: #101124;
-  --focus: #a9bdff;
+  --focus: #7FB3E0;
   --shadow: 0 10px 30px rgba(0, 0, 0, .35);
 }
 
@@ -162,7 +162,7 @@ code { font-family: "Carlito", Consolas, monospace; }
   position: relative; overflow: hidden;
 }
 .btn:hover { transform: translateY(-1px); }
-.btn-primary { background: linear-gradient(135deg, var(--violet), var(--blue)); color: #fff; box-shadow: 0 8px 20px rgba(106, 92, 246, .35); }
+.btn-primary { background: linear-gradient(135deg, var(--violet), var(--blue)); color: #fff; box-shadow: 0 8px 20px rgba(70, 135, 199, .35); }
 .btn-ghost { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
 .browser-frame {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);

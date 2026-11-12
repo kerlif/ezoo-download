@@ -94,11 +94,29 @@ msgstr "نسخ الرابط"
 msgid "Check file (SHA-256)"
 msgstr "فحص الملف (SHA-256)"
 
+msgid "Cut a part of this video…"
+msgstr "قصّ جزء من هذا الفيديو…"
+
 msgid "Properties"
 msgstr "الخصائص"
 
 msgid "Remove"
 msgstr "حذف"
+
+msgid "Joining video and audio…"
+msgstr "جارٍ دمج الفيديو والصوت…"
+
+msgid "Converting to MP4…"
+msgstr "جارٍ التحويل إلى MP4…"
+
+msgid "Converting to MP3…"
+msgstr "جارٍ التحويل إلى MP3…"
+
+msgid "Moving file…"
+msgstr "جارٍ نقل الملف…"
+
+msgid "Cutting video…"
+msgstr "جارٍ قصّ الفيديو…"
 
 msgid "Start queue"
 msgstr "بدء قائمة الانتظار"
@@ -124,8 +142,8 @@ msgstr "حذف التصنيف"
 msgid "Properties…"
 msgstr "الخصائص…"
 
-msgid "Ezoo Download"
-msgstr "Ezoo Download"
+msgid "Ezoo Download Manager"
+msgstr "Ezoo Download Manager"
 
 msgid "File Name"
 msgstr "اسم الملف"
@@ -262,8 +280,8 @@ msgstr "سكون"
 msgid "Hibernate"
 msgstr "إسبات"
 
-msgid "Exit Ezoo Download"
-msgstr "الخروج من Ezoo Download"
+msgid "Exit Ezoo Download Manager"
+msgstr "الخروج من Ezoo Download Manager"
 
 msgid "Scheduler…"
 msgstr "المجدول…"
@@ -346,8 +364,8 @@ msgstr "المظهر…"
 msgid "Help"
 msgstr "مساعدة"
 
-msgid "Add Ezoo Download to my browser…"
-msgstr "إضافة Ezoo Download إلى متصفحي…"
+msgid "Add Ezoo Download Manager to my browser…"
+msgstr "إضافة Ezoo Download Manager إلى متصفحي…"
 
 msgid "Tip of the day…"
 msgstr "نصيحة اليوم…"
@@ -358,8 +376,8 @@ msgstr "البحث عن تحديثات"
 msgid "Check for updates (video downloader)"
 msgstr "البحث عن تحديثات (أداة الفيديو)"
 
-msgid "About Ezoo Download"
-msgstr "حول Ezoo Download"
+msgid "About Ezoo Download Manager"
+msgstr "حول Ezoo Download Manager"
 
 msgid "Add URL"
 msgstr "إضافة رابط"
@@ -757,8 +775,8 @@ msgstr "عدم إظهار هذا السؤال مرة أخرى"
 msgid "All downloads are finished."
 msgstr "انتهت كل التحميلات."
 
-msgid "Ezoo Download will {} in {} seconds."
-msgstr "سيقوم Ezoo Download بـ{} خلال {} ثانية."
+msgid "Ezoo Download Manager will {} in {} seconds."
+msgstr "سيقوم Ezoo Download Manager بـ{} خلال {} ثانية."
 
 msgid "Now"
 msgstr "الآن"
@@ -805,8 +823,8 @@ msgstr "السبت"
 msgid "Sun"
 msgstr "الأحد"
 
-msgid "Start the queue when Ezoo Download starts"
-msgstr "بدء القائمة عند تشغيل Ezoo Download"
+msgid "Start the queue when Ezoo Download Manager starts"
+msgstr "بدء القائمة عند تشغيل Ezoo Download Manager"
 
 msgid "Stop the queue at"
 msgstr "إيقاف القائمة في"
@@ -862,8 +880,8 @@ msgstr "https://example.com/gallery/"
 msgid "Start exploring"
 msgstr "بدء الاستكشاف"
 
-msgid "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \"Download all links with Ezoo Download\": every link you see there is collected."
-msgstr "بعض الصفحات تصنع روابطها داخل المتصفح فقط (بالسكربتات، أو كنص عادي). لهذه الصفحات: افتح الصفحة في المتصفح، واضغط عليها بزر الفأرة الأيمن واختر \"Download all links with Ezoo Download\": كل رابط تراه هناك يُجمع."
+msgid "Some pages make their links only in the browser (with scripts, or as plain text). For them: open the page in the browser, right-click it and choose \"Download all links with Ezoo Download Manager\": every link you see there is collected."
+msgstr "بعض الصفحات تصنع روابطها داخل المتصفح فقط (بالسكربتات، أو كنص عادي). لهذه الصفحات: افتح الصفحة في المتصفح، واضغط عليها بزر الفأرة الأيمن واختر \"Download all links with Ezoo Download Manager\": كل رابط تراه هناك يُجمع."
 
 msgid "Get"
 msgstr "جلب"
@@ -976,8 +994,8 @@ msgstr "النصيحة التالية"
 msgid "Refresh download address"
 msgstr "تحديث رابط التحميل"
 
-msgid "1. Open the web page where you got this file.\n2. Click the download link there again (or start the video).\n3. Ezoo Download takes the new address and continues from where it stopped."
-msgstr "1. افتح صفحة الويب التي حصلت منها على هذا الملف.\n2. اضغط رابط التحميل هناك مرة أخرى (أو شغّل الفيديو).\n3. يأخذ Ezoo Download الرابط الجديد ويكمل من حيث توقف."
+msgid "1. Open the web page where you got this file.\n2. Click the download link there again (or start the video).\n3. Ezoo Download Manager takes the new address and continues from where it stopped."
+msgstr "1. افتح صفحة الويب التي حصلت منها على هذا الملف.\n2. اضغط رابط التحميل هناك مرة أخرى (أو شغّل الفيديو).\n3. يأخذ Ezoo Download Manager الرابط الجديد ويكمل من حيث توقف."
 
 msgid "Open the page"
 msgstr "فتح الصفحة"
@@ -1000,8 +1018,8 @@ msgstr "إيقاف الانتظار"
 msgid "Play"
 msgstr "تشغيل"
 
-msgid "Ezoo Download – Options"
-msgstr "Ezoo Download – الخيارات"
+msgid "Ezoo Download Manager – Options"
+msgstr "Ezoo Download Manager – الخيارات"
 
 msgid "General"
 msgstr "عام"
@@ -1051,8 +1069,8 @@ msgstr "استعراض…"
 msgid "Picture visibility"
 msgstr "وضوح الصورة"
 
-msgid "Launch Ezoo Download on Windows startup"
-msgstr "تشغيل Ezoo Download مع بدء ويندوز"
+msgid "Launch Ezoo Download Manager on Windows startup"
+msgstr "تشغيل Ezoo Download Manager مع بدء ويندوز"
 
 msgid "Keep running next to the clock when the window is closed"
 msgstr "الاستمرار بجانب الساعة عند إغلاق النافذة"
@@ -1084,8 +1102,8 @@ msgstr "إظهار الخصائص"
 msgid "Browser integration"
 msgstr "التكامل مع المتصفح"
 
-msgid "Chrome and Edge: load the \"extension\" folder in chrome://extensions (Developer mode > Load unpacked). Downloads, videos and the right click menu then go to Ezoo Download."
-msgstr "كروم وإيدج: حمّل مجلد \"extension\" من chrome://extensions (وضع المطوّر > Load unpacked). بعدها تذهب التحميلات والفيديوهات وقائمة الكليك يمين إلى Ezoo Download."
+msgid "Chrome and Edge: load the \"extension\" folder in chrome://extensions (Developer mode > Load unpacked). Downloads, videos and the right click menu then go to Ezoo Download Manager."
+msgstr "كروم وإيدج: حمّل مجلد \"extension\" من chrome://extensions (وضع المطوّر > Load unpacked). بعدها تذهب التحميلات والفيديوهات وقائمة الكليك يمين إلى Ezoo Download Manager."
 
 msgid "Hold this key to let the browser download by itself"
 msgstr "اضغط هذا المفتاح ليحمّل المتصفح بنفسه"
@@ -1102,8 +1120,8 @@ msgstr "Shift"
 msgid "None"
 msgstr "لا شيء"
 
-msgid "Hold this key to force Ezoo Download to take a link"
-msgstr "اضغط هذا المفتاح لإجبار Ezoo Download على أخذ الرابط"
+msgid "Hold this key to force Ezoo Download Manager to take a link"
+msgstr "اضغط هذا المفتاح لإجبار Ezoo Download Manager على أخذ الرابط"
 
 msgid "Browser extension port"
 msgstr "منفذ إضافة المتصفح"
@@ -1324,8 +1342,8 @@ msgstr "ملفات ‎.wav‎. فارغ = بلا صوت لهذا الحدث."
 msgid "Turn the speed limiter on"
 msgstr "تشغيل محدد السرعة"
 
-msgid "Always turn on the speed limiter when Ezoo Download starts"
-msgstr "تشغيل محدد السرعة دائماً عند بدء Ezoo Download"
+msgid "Always turn on the speed limiter when Ezoo Download Manager starts"
+msgstr "تشغيل محدد السرعة دائماً عند بدء Ezoo Download Manager"
 
 msgid "Every download can also have its own limit: its progress window > Speed Limiter tab."
 msgstr "يمكن أن يكون لكل تحميل حد خاص: نافذة تقدّمه > تبويب محدد السرعة."
@@ -1417,14 +1435,20 @@ msgstr "صوت MP3"
 msgid "Files at the same time"
 msgstr "ملفات في نفس الوقت"
 
+msgid "Number from the oldest video"
+msgstr "Number from the oldest video"
+
+msgid "Skip videos already downloaded"
+msgstr "Skip videos already downloaded"
+
 msgid "Number the files"
 msgstr "ترقيم الملفات"
 
 msgid "Not installed on this computer"
 msgstr "غير مثبّت على هذا الكمبيوتر"
 
-msgid "Add Ezoo Download to your browser"
-msgstr "إضافة Ezoo Download إلى متصفحك"
+msgid "Add Ezoo Download Manager to your browser"
+msgstr "إضافة Ezoo Download Manager إلى متصفحك"
 
 msgid "Click your browser:"
 msgstr "اضغط على متصفحك:"
@@ -1435,14 +1459,68 @@ msgstr "خطوة أخيرة:"
 msgid "Copy folder path"
 msgstr "نسخ مسار المجلد"
 
+msgid "Repair extension files"
+msgstr "Repair extension files"
+
 msgid "Version {}"
 msgstr "الإصدار {}"
 
 msgid "Coded by Ahmed Ezzat"
 msgstr "Coded by Ahmed Ezzat"
 
-msgid "What's new in Ezoo Download"
-msgstr "الجديد في Ezoo Download"
+msgid "Ezoo Download Manager (EDM) is an independent fork of Ezoo Download by Ahmed Ezzat (Ezoo Tech), maintained and extended by kerlif."
+msgstr "«Ezoo Download Manager (EDM)» فرع مستقل من برنامج «Ezoo Download» للمطوّر أحمد عزت (Ezoo Tech)، يصونه ويطوّره kerlif."
+
+msgid "Special thanks to Ahmed Ezzat for the original program, and to kerlif for the additional improvements."
+msgstr "شكر خاص لأحمد عزت على البرنامج الأصلي، ولكيرليف على التحسينات الإضافية."
+
+msgid "What's new in Ezoo Download Manager"
+msgstr "الجديد في Ezoo Download Manager"
+
+msgid "Update available"
+msgstr "Update available"
+
+msgid "See the full release notes"
+msgstr "See the full release notes"
+
+msgid "Later"
+msgstr "Later"
+
+msgid "Update now"
+msgstr "Update now"
 
 msgid "Hide"
 msgstr "إخفاء"
+
+msgid "Cut a part of a video"
+msgstr "قصّ جزء من فيديو"
+
+msgid "Video file or web address:"
+msgstr "ملف فيديو أو عنوان ويب:"
+
+msgid "movie.mp4 or https://…"
+msgstr "movie.mp4 أو https://…"
+
+msgid "From:"
+msgstr "من:"
+
+msgid "mm:ss"
+msgstr "mm:ss"
+
+msgid "To:"
+msgstr "إلى:"
+
+msgid "Read length"
+msgstr "قراءة المدة"
+
+msgid "Exact cut (re-encode, frame-accurate)"
+msgstr "قصّ دقيق (إعادة ترميز، مطابق للإطار)"
+
+msgid "The part starts on the very second asked. Slower, and it works the processor."
+msgstr "يبدأ الجزء في الثانية المطلوبة تمامًا. أبطأ، ويُجهد المعالج."
+
+msgid "Quick cut: stream copy, takes seconds and keeps the quality — but it starts at the nearest keyframe at or before the start time, so it may begin a second or two early."
+msgstr "قصّ سريع: نسخ للبث، يستغرق ثوانٍ ويحافظ على الجودة — لكنه يبدأ عند أقرب إطار مفتاحي عند وقت البدء أو قبله، فقد يبدأ ثانية أو ثانيتين مبكرًا."
+
+msgid "Cut part"
+msgstr "قصّ الجزء"

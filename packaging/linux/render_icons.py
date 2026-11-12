@@ -10,6 +10,25 @@ Outputs (defaults): packaging/linux/icons-out/
   icons-out/tray32.rgba               raw RGBA for the Windows tray (kept in sync)
   icons-out/ezoo-preview.png          512 px preview for README
 
+EDM branding (2026-11-05): the SVG sources are hand-built vectors of
+the supplied logo (navy tile + EDM letters, D with download-arrow
+stem). Sizes below 32 px use the SIMPLIFIED mark instead
+(ezoo-download-simple.svg: navy tile + green D-arrow only) — the full
+EDM wordmark is illegible that small; see docs/assets/edm-tile-master.png
+(the master tile crop) and docs/branding-generate.py (the Pillow path
+that produced the committed PNGs from the crop).
+
+NOTE on the committed PNGs: the hicolor PNGs in the tree were generated
+from the master tile crop with Pillow Lanczos (docs/branding-generate.py),
+NOT from this script, so they are close to — but not pixel-identical with
+— a fresh render of the SVGs below (hand-built vector vs JPEG crop).
+The SVGs are the reproducible vector source; re-render and compare with
+the committed PNGs before changing either side. icons-out/icon.png and
+icon-window.png here are full-bleed 256 px renders; the committed Slint
+rasters (crates/app/ui/icon.png, icon-window.png) are padded crops of
+the master tile (bboxes (7,7,249,249) and (36,36,220,220)) — same
+convention as P7, kept deliberately.
+
 Set EZOO_ICONS_SRC / EZOO_ICONS_OUT to render from / to other directories.
 """
 import cairosvg, os
@@ -26,23 +45,24 @@ os.makedirs(OUT, exist_ok=True)
 
 APP = f"{SRC}/ezoo-download.svg"
 TRAY = f"{SRC}/ezoo-download-tray.svg"
+SIMPLE = f"{SRC}/ezoo-download-simple.svg"
 SYM = f"{SYM_SRC}/ezoo-download-symbolic.svg"
 
 def render(svg, size, name):
     cairosvg.svg2png(url=svg, write_to=f"{OUT}/{name}", output_width=size, output_height=size)
     print(f"  {name} ({size}px)")
 
-# hicolor app icons
+# hicolor app icons — 16/22/24 use the simplified D-arrow mark
 for s in [16, 22, 24, 32, 48, 64, 128, 256, 512]:
-    render(APP, s, f"app-{s}.png")
+    render(SIMPLE if s < 32 else APP, s, f"app-{s}.png")
 
-# tray pixmaps (StatusNotifierItem: 16..64)
+# tray pixmaps (StatusNotifierItem: 16..64) — 16/22/24 simplified
 for s in [16, 22, 24, 32, 48, 64]:
-    render(TRAY, s, f"tray-{s}.png")
+    render(SIMPLE if s < 32 else TRAY, s, f"tray-{s}.png")
 
-# extension icons (Chrome/Firefox want 16/32/48/128)
+# extension icons (Chrome/Firefox want 16/32/48/128) — 16/32 simplified
 for s in [16, 32, 48, 128]:
-    render(TRAY, s, f"ext{s}.png")
+    render(SIMPLE if s <= 32 else TRAY, s, f"ext{s}.png")
 
 # symbolic previews
 for s in [16, 24]:

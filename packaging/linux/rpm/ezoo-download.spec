@@ -17,11 +17,11 @@ URL:            https://github.com/kerlif/ezoo-download
 Source0:        root.tar.gz
 BuildArch:      x86_64
 # Runtime libraries: the same closure as the .deb's Depends, Fedora names.
-Requires:       fontconfig, freetype, libxkbcommon, libxkbcommon-x11, libX11, libxcb, openssl-libs, zlib
+Requires:       fontconfig, freetype, libxkbcommon, libxkbcommon-x11, libX11, libxcb, openssl-libs, zlib, libsecret
 Recommends:     xdg-desktop-portal
 
 %description
-Ezoo Download is a desktop download manager written in Rust (Slint UI).
+Ezoo Download Manager is a desktop download manager written in Rust (Slint UI).
 It splits files over up to 32 simultaneous connections, resumes
 interrupted downloads, saves video and audio through yt-dlp + ffmpeg,
 and ships a browser extension that sends links from Chrome and Firefox.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Ezoo Download's own small ffmpeg.exe for 64-bit Windows: only what the
+# Builds Ezoo Download Manager's own small ffmpeg.exe for 64-bit Windows: only what the
 # program uses (joining video + sound without re-encoding, the "play while
 # downloading" preview, turning streams into MP4, and MP3 files with LAME).
 # Nothing else is built: no network, no video encoders, no filters for video,
@@ -52,7 +52,7 @@ mkdir -p "$WORK/ff" && cd "$WORK/ff"
 make -j"$JOBS" ffmpeg.exe >"$WORK/make.log" 2>&1 || { tail -40 "$WORK/make.log"; exit 1; }
 $HOST-strip -o "$OUT/ffmpeg.exe" ffmpeg.exe
 # what the build contains, next to the program (and the licences)
-{ echo "Ezoo Download's own ffmpeg build"; echo "ffmpeg $(cat "$FF_SRC/RELEASE" 2>/dev/null)"; echo; grep -m1 "^  *--" "$WORK/configure.log" >/dev/null || true; ./ffmpeg.exe -version 2>/dev/null | head -1 || true; } >/dev/null
+{ echo "Ezoo Download Manager's own ffmpeg build"; echo "ffmpeg $(cat "$FF_SRC/RELEASE" 2>/dev/null)"; echo; grep -m1 "^  *--" "$WORK/configure.log" >/dev/null || true; ./ffmpeg.exe -version 2>/dev/null | head -1 || true; } >/dev/null
 cp "$FF_SRC/COPYING.LGPLv3" "$OUT/ffmpeg-LICENSE.txt"
 cp "$LAME_SRC/COPYING" "$OUT/lame-COPYING.txt"
 sed -n '/^License:/,$p' "$WORK/configure.log" | head -3 >"$OUT/ffmpeg-build.txt" || true

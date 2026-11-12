@@ -1,4 +1,4 @@
-//! Ezoo Download engine.
+//! Ezoo Download Manager engine.
 //!
 //! * `segments`       – splitting a file between connections (dynamic segmentation)
 //! * `http_download`  – multi-connection downloader with resume and retries
@@ -10,6 +10,8 @@
 
 pub mod adaptive;
 pub mod category;
+pub mod clip;
+pub mod clipserve;
 pub mod config;
 pub mod ef2;
 pub mod fileio;

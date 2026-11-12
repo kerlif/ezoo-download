@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ezoo Download — browser extension packaging (Linux workflow / by hand)
+# Ezoo Download Manager — browser extension packaging (Linux workflow / by hand)
 #
 # Usage:  ./packaging/linux/build-extensions.sh [out-dir]
 # Result: <out-dir>/ezoo-download-chrome-<version>.zip   (unsigned, always)

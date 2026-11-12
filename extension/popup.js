@@ -85,9 +85,9 @@ async function init() {
   const showOn = (v) => {
     on.checked = v;
     document.body.classList.toggle("off", !v);
-    document.getElementById("onText").textContent = v ? "Ezoo Download is on" : "Ezoo Download is paused";
+    document.getElementById("onText").textContent = v ? "Ezoo Download Manager is on" : "Ezoo Download Manager is paused";
     document.getElementById("onHint").textContent = v
-      ? "Downloads and videos of this browser go to Ezoo Download"
+      ? "Downloads and videos of this browser go to Ezoo Download Manager"
       : "The browser keeps its downloads, no buttons on videos";
   };
   chrome.storage.local.get({ enabled: true }, (o) => showOn(o.enabled !== false));
@@ -146,7 +146,7 @@ async function init() {
       const open = document.createElement("a");
       open.href = "ezoo-download://open";
       open.className = "open";
-      open.textContent = "Open Ezoo Download";
+      open.textContent = "Open Ezoo Download Manager";
       open.addEventListener("click", () => setTimeout(() => window.close(), 300));
       document.querySelector("section").appendChild(open);
     }

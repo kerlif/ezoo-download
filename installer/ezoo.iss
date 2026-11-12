@@ -1,14 +1,16 @@
-; Ezoo Download — Windows installer (Inno Setup 6)
+; Ezoo Download Manager — Windows installer (Inno Setup 6)
 ; Built automatically by BUILD.bat -> dist\EzooDownload-Setup.exe
 ;
 ; Installs for the current user (no admin needed) into
-;   %LOCALAPPDATA%\Programs\Ezoo Download
+;   %LOCALAPPDATA%\Programs\Ezoo Download Manager
 ; so yt-dlp can update itself. Adds a Start Menu folder, an optional desktop
 ; shortcut, "start with Windows", and a normal uninstaller.
 
-#define MyAppName "Ezoo Download"
+#define MyAppName "Ezoo Download Manager"
 #define MyAppExe "EzooDownload.exe"
-; BUILD.bat passes the version of Cargo.toml: /DMyAppVersion=1.0.1
+; build-windows.ps1 reads the version from Cargo.toml and passes
+; /DMyAppVersion=<version> to the compiler; the fallback below is
+; only used when it is not passed.
 ; the files that go into the setup (gathered by BUILD.bat / the CI)
 #ifndef Stage
   #define Stage "..\build-cache\stage"
@@ -23,7 +25,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher=Ahmed Ezzat
-DefaultDirName={localappdata}\Programs\Ezoo Download
+DefaultDirName={localappdata}\Programs\Ezoo Download Manager
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -35,7 +37,7 @@ SetupIconFile=..\crates\app\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExe}
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany=Ezoo
-VersionInfoDescription=Ezoo Download Setup
+VersionInfoDescription=Ezoo Download Manager Setup
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 VersionInfoCopyright=Copyright (C) 2026 Ahmed Ezzat
@@ -54,8 +56,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
-Name: "autostart"; Description: "Start Ezoo Download when Windows starts (recommended)"; GroupDescription: "Startup:"
-Name: "torrents"; Description: "Open .torrent files and magnet links with Ezoo Download"; GroupDescription: "Torrents:"
+Name: "autostart"; Description: "Start Ezoo Download Manager when Windows starts (recommended)"; GroupDescription: "Startup:"
+Name: "torrents"; Description: "Open .torrent files and magnet links with Ezoo Download Manager"; GroupDescription: "Torrents:"
 
 [Files]
 Source: "{#Stage}\{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
@@ -88,6 +90,9 @@ Type: filesandordirs; Name: "{app}\extension-firefox\test"
 Type: files; Name: "{app}\extension-firefox\manifest.firefox.json"
 Type: files; Name: "{app}\extension\*.ezoo-new"
 Type: files; Name: "{app}\extension-firefox\*.ezoo-new"
+; the Firefox add-on of an older version never stays: only this setup's own
+; one (or none) is there to be added to Firefox
+Type: files; Name: "{app}\ezoo-download-firefox.xpi"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
@@ -100,9 +105,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: deskto
 Root: HKCU; Subkey: "Software\Ezoo\EzooDownload"; ValueType: string; ValueName: "Installed"; ValueData: "1"; Flags: uninsdeletekey
 ; start in the background (next to the clock) when the user signs in
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "EzooDownload"; ValueData: """{app}\{#MyAppExe}"" --background"; Flags: uninsdeletevalue; Tasks: autostart
-; "Open Ezoo Download" in the browser add-in (ezoo-download://open). The
+; "Open Ezoo Download Manager" in the browser add-in (ezoo-download://open). The
 ; address given by the browser is never passed to the program.
-Root: HKCU; Subkey: "Software\Classes\ezoo-download"; ValueType: string; ValueName: ""; ValueData: "URL:Ezoo Download"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\ezoo-download"; ValueType: string; ValueName: ""; ValueData: "URL:Ezoo Download Manager"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\ezoo-download"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\ezoo-download\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExe},0"
 Root: HKCU; Subkey: "Software\Classes\ezoo-download\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" --from-browser"
@@ -120,7 +125,7 @@ Root: HKCU; Subkey: "Software\Classes\magnet\DefaultIcon"; ValueType: string; Va
 Root: HKCU; Subkey: "Software\Classes\magnet\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: torrents
 
 [Run]
-Filename: "{app}\{#MyAppExe}"; Description: "Open Ezoo Download now"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExe}"; Description: "Open Ezoo Download Manager now"; Flags: nowait postinstall skipifsilent
 ; after an automatic update: start the new version again
 Filename: "{app}\{#MyAppExe}"; Flags: nowait; Check: IsAutoUpdate
 

@@ -1,4 +1,4 @@
-# Ezoo Download - one-click Windows build
+# Ezoo Download Manager - one-click Windows build
 # Installs what is missing (Visual Studio C++ Build Tools, Rust), builds
 # EzooDownload.exe, gets ffmpeg + yt-dlp and makes dist\EzooDownload-Setup.exe.
 
@@ -19,7 +19,7 @@ function Refresh-Path {
                 "$env:USERPROFILE\.cargo\bin"
 }
 
-Write-Host "Ezoo Download build" -ForegroundColor Green
+Write-Host "Ezoo Download Manager build" -ForegroundColor Green
 Write-Host "The first run downloads a few GB and can take 20-40 minutes. Later runs are fast."
 
 if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -134,7 +134,7 @@ if (-not (Test-Path "$cache\yt-dlp.exe")) {
         Invoke-WebRequest $ytExe.browser_download_url -OutFile "$cache\yt-dlp.exe"
         Assert-Sha256 "$cache\yt-dlp.exe" $ytSums.browser_download_url "yt-dlp.exe"
     } catch {
-        Write-Host "Could not download yt-dlp now. Ezoo Download gets it by itself later." -ForegroundColor Yellow
+        Write-Host "Could not download yt-dlp now. Ezoo Download Manager gets it by itself later." -ForegroundColor Yellow
     }
 }
 if (-not (Test-Path "$cache\aria2c.exe")) {
@@ -149,7 +149,7 @@ if (-not (Test-Path "$cache\aria2c.exe")) {
         Copy-Item (Get-ChildItem $tmp -Recurse -Filter COPYING | Select-Object -First 1).FullName "$cache\aria2-COPYING.txt" -Force
         Remove-Item $tmp -Recurse -Force
     } catch {
-        Write-Host "Could not download aria2 now. Ezoo Download gets it by itself later." -ForegroundColor Yellow
+        Write-Host "Could not download aria2 now. Ezoo Download Manager gets it by itself later." -ForegroundColor Yellow
     }
 }
 # Visual C++ runtime: the program already carries it (static CRT, see
@@ -180,7 +180,7 @@ if (Test-Path $pfx) {
 function Sign-File($file) {
     if (-not $signtool) { return }
     $pw = (Get-Content (Join-Path $PSScriptRoot "signing\password.txt") -Raw).Trim()
-    & $signtool sign /fd SHA256 /f $pfx /p $pw /tr "http://timestamp.digicert.com" /td SHA256 /d "Ezoo Download" $file | Out-Null
+    & $signtool sign /fd SHA256 /f $pfx /p $pw /tr "http://timestamp.digicert.com" /td SHA256 /d "Ezoo Download Manager" $file | Out-Null
     if ($LASTEXITCODE -eq 0) { Write-Host "Signed $file" } else { Write-Host "Could not sign $file" -ForegroundColor Yellow }
 }
 if ($signtool) {
@@ -240,7 +240,7 @@ Write-Host ""
 Write-Host "DONE!" -ForegroundColor Green
 if (Test-Path $setup) {
     Write-Host ""
-    Write-Host "  >> Double-click  dist\EzooDownload-Setup.exe  to install Ezoo Download <<" -ForegroundColor Green
+    Write-Host "  >> Double-click  dist\EzooDownload-Setup.exe  to install Ezoo Download Manager <<" -ForegroundColor Green
     Write-Host "     (Start Menu folder, desktop shortcut, starts with Windows, uninstall from Settings > Apps)"
 }
 if (Test-Path "$dist\version.json") {

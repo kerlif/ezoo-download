@@ -9,14 +9,13 @@
 //! PlayReady, FairPlay, ClearKey) are refused on purpose, and so are live
 //! ("dynamic") manifests.
 
-use crate::http::{request, ConnGuard, Progress, Shared};
+use crate::http::{request, ConnGuard, Progress, SendOrdered, Shared};
 use crate::http_download::Cancelled;
 use crate::model::RequestHeaders;
 use anyhow::{anyhow, bail, Context};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -959,7 +958,7 @@ async fn fetch_bytes(shared: &Shared, job: &MpdJob, seg: &Segment) -> anyhow::Re
     } else {
         rb
     };
-    let resp = rb.send().await?;
+    let resp = rb.send_ordered().await?;
     if !resp.status().is_success() {
         bail!("HTTP {} for {}", resp.status().as_u16(), seg.url);
     }
@@ -1083,8 +1082,13 @@ async fn download_track(
                             if attempt > job.retries {
                                 return Err(e);
                             }
-                            tokio::time::sleep(Duration::from_secs((attempt as u64 * 2).min(20)))
-                                .await;
+                            // one policy for every fetcher now: backoff
+                            // with a random spread, and the server's
+                            // `Retry-After` when it asked for one
+                            tokio::time::sleep(
+                                crate::adaptive::RetryPolicy::default().wait(attempt, None),
+                            )
+                            .await;
                         }
                     }
                 }

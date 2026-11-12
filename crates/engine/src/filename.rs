@@ -59,8 +59,14 @@ pub fn sanitize(name: &str) -> String {
         .map(|c| match c {
             '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
             c if (c as u32) < 32 => '_',
+            // bidirectional controls (U+202A..U+202E, U+2066..U+2069):
+            // a name with an override in it can look like a video and
+            // run as a program — removed entirely, not replaced, so
+            // nothing that looks like a letter can hide in the gap
+            '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' => '\u{0}',
             c => c,
         })
+        .filter(|c| *c != '\u{0}')
         .collect();
     // no trailing dots or spaces on Windows (".." alone strips to
     // nothing here and becomes "download" below)
@@ -90,18 +96,26 @@ pub fn sanitize(name: &str) -> String {
     } else {
         out
     };
-    truncate_keep_ext(&out, 180)
+    truncate_keep_ext(&out, 200)
 }
 
-fn truncate_keep_ext(name: &str, max_chars: usize) -> String {
-    if name.chars().count() <= max_chars {
+/// Shorten a name to `max_bytes` bytes, keeping the extension and
+/// never cutting a UTF-8 character in half. Filesystems and servers
+/// count bytes, not characters: 180 Latin letters fit, but 180 Arabic
+/// letters are 360 bytes and would fail to save.
+fn truncate_keep_ext(name: &str, max_bytes: usize) -> String {
+    if name.len() <= max_bytes {
         return name.to_string();
     }
     let (stem, ext) = split_ext(name);
-    let keep = max_chars.saturating_sub(ext.chars().count() + 1).max(1);
-    let stem: String = stem.chars().take(keep).collect();
+    let keep = max_bytes.saturating_sub(ext.len() + 1).max(1);
+    let mut end = keep.min(stem.len());
+    while end > 0 && !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    let stem = &stem[..end];
     if ext.is_empty() {
-        stem
+        stem.to_string()
     } else {
         format!("{stem}.{ext}")
     }
@@ -254,6 +268,10 @@ mod tests {
         assert_eq!(sanitize(".."), "download");
         assert_eq!(sanitize("..."), "download");
         assert_eq!(sanitize("a..b.zip"), "a_b.zip");
+        // bidirectional controls are stripped, not replaced: a name
+        // that looks like a video must not run as a program
+        assert_eq!(sanitize("movie\u{202E}exe.mp4"), "movieexe.mp4");
+        assert_eq!(sanitize("a\u{2066}b\u{2069}c.zip"), "abc.zip");
     }
 
     #[test]
@@ -284,7 +302,13 @@ mod tests {
         assert_eq!(safe_join(dir, "report.pdf"), dir.join("report.pdf"));
         // a reserved name is prefixed, a very long name is truncated
         assert_eq!(safe_join(dir, "CON.txt").file_name().unwrap(), "_CON.txt");
-        assert!(safe_join(dir, &"x".repeat(300)).file_name().unwrap().len() <= 180);
+        assert!(safe_join(dir, &"x".repeat(300)).file_name().unwrap().len() <= 200);
+        // the cap counts bytes, not characters: 150 Arabic letters are
+        // 300 bytes and must be cut to 200 bytes without splitting one
+        let long_ar = "م".repeat(150);
+        let capped = sanitize(&format!("{long_ar}.zip"));
+        assert!(capped.len() <= 200, "{}", capped.len());
+        assert!(capped.ends_with(".zip"));
     }
 
     #[test]

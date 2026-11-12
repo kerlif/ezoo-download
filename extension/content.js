@@ -288,14 +288,20 @@
   } catch (_) {
     // storage not reachable (add-in reloading): default size
   }
+  // EDM palette (from the supplied logo, 2026-11-05): navy #253149 / #1D283A,
+  // blue #4687C7, green #54AB64, red #C2453F, grey #B0B3B8. White text on
+  // raw #4687C7 is only 3.78:1, so every fill carrying white text uses the
+  // darker AA-safe variants: blue #3570A6 (5.22:1), blue hover #2F6395
+  // (6.29:1), green #2E7D3F (5.10:1). Hover/selected tints are the 12%
+  // blue tint #E9F1F8. All fills are flat — no gradient anywhere.
   const STYLE = `
     :host { all: initial; }
     .wrap { font: 11px/1.25 "Segoe UI", system-ui, sans-serif; color: #1f2733; display: inline-block; zoom: var(--z, 1); }
-    .btn { display: inline-flex; align-items: stretch; color: #fff; border: 1px solid #0f4fb5;
-           background: linear-gradient(#3f8cf5, #1d63d6); border-radius: 3px;
+    .btn { display: inline-flex; align-items: stretch; color: #fff; border: 1px solid #24567F;
+           background: #3570A6; border-radius: 4px;
            box-shadow: 0 1px 6px rgba(0,0,0,.35); font: inherit; font-weight: 600;
            opacity: var(--o, .9); transition: opacity .15s; user-select: none; white-space: nowrap; }
-    .btn:hover, .btn.open { opacity: 1; }
+    .btn:hover, .btn.open { opacity: 1; background: #2F6395; }
     .btn.drag { opacity: 1; }
     .part { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; cursor: grab; }
     .part:hover { background: rgba(255,255,255,.12); }
@@ -309,49 +315,72 @@
     @keyframes r { to { transform: rotate(360deg); } }
     .list { width: 330px; margin-top: 4px; background: #fff; border-radius: 6px; box-shadow: 0 6px 22px rgba(0,0,0,.28);
             overflow: hidden; max-height: 360px; overflow-y: auto; border: 1px solid #d5dbe4; }
-    .head { padding: 7px 10px; background: #f4f6fa; border-bottom: 1px solid #e3e8ef; font-weight: 600; color: #334;
+    .head { padding: 7px 10px; background: #f4f6fa; border-bottom: 1px solid #e3e8ef; font-weight: 600; color: #253149;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .item { padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #eef1f5; display: flex; gap: 6px; }
     .item:last-child { border-bottom: 0; }
-    .item:hover { background: #e8f0fe; }
+    .item:hover { background: #E9F1F8; }
     .num { color: #6b7686; min-width: 16px; text-align: right; }
     .body { flex: 1; min-width: 0; }
     .t { font-weight: 600; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
     .s { color: #6b7686; font-size: 10.5px; overflow-wrap: anywhere; }
     .tag { font-size: 9.5px; font-weight: 700; padding: 0 4px; border-radius: 3px; color: #fff; background: #5f6b7a; line-height: 14px; }
-    .tag.HD { background: #147a4b; } .tag.FullHD { background: #1d63d6; } .tag.K2 { background: #7b3fd6; }
+    .tag.HD { background: #2E7D3F; } .tag.FullHD { background: #3570A6; } .tag.K2 { background: #7b3fd6; }
     .tag.K4 { background: #b34d12; } .tag.K8 { background: #c0262d; }
     .codec { font-size: 9.5px; color: #4a5566; border: 1px solid #c9d1dc; border-radius: 3px; padding: 0 3px; line-height: 13px; }
-    .all { font-weight: 700; color: #1d63d6; }
-    .msg { padding: 8px 10px; color: #147a46; }
+    .all { font-weight: 700; color: #3570A6; }
+    .msg { padding: 8px 10px; color: #2E7D3F; }
     .help { padding: 8px 10px; color: #334; background: #fffbe6; border-bottom: 1px solid #f0e2a8; }
-    .act { margin-top: 6px; display: inline-block; background: #1d63d6; color: #fff; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
-    .act:hover { background: #1a56b8; }
+    .act { margin-top: 6px; display: inline-block; background: #3570A6; color: #fff; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+    .act:hover { background: #2F6395; }
     .off { cursor: default; opacity: .7; }
     .off:hover { background: #fff; }
-    .err { color: #d1342f; }
+    .err { color: #C2453F; }
     /* the count badge, the row size, and the per-row buttons */
     .count { background: #F5A524; color: #1f2733; font-weight: 700; font-size: 10px; line-height: 14px;
              padding: 0 5px; border-radius: 7px; margin-left: 2px; flex: none; }
     .sz { font-weight: 700; margin-left: auto; white-space: nowrap; padding-left: 8px; }
     .est { font-size: 9.5px; font-weight: 700; color: #57606e; background: #eef1f5; border-radius: 3px; padding: 0 4px; line-height: 14px; }
     .acts { display: flex; gap: 4px; align-items: center; flex: none; }
-    .mini { font: inherit; font-size: 10.5px; font-weight: 600; color: #1d63d6; background: #eef1f5;
+    .mini { font: inherit; font-size: 10.5px; font-weight: 600; color: #3570A6; background: #eef1f5;
             border: 1px solid #d5dbe4; border-radius: 4px; padding: 2px 7px; cursor: pointer; white-space: nowrap; }
-    .mini:hover { background: #e8f0fe; }
-    .mini:focus-visible { outline: 2px solid #1d63d6; outline-offset: 1px; }
+    .mini:hover { background: #E9F1F8; }
+    .mini:focus-visible { outline: 2px solid #3570A6; outline-offset: 1px; }
+    /* the two windows: "All qualities" and "Download part" — one
+       choice at a time, never a mixed panel. The selected tab is
+       marked by text colour AND an underline, never colour alone. */
+    .tabs { display: flex; border-bottom: 1px solid #e3e8ef; background: #f4f6fa; }
+    .tab { flex: 1; padding: 7px 6px; text-align: center; font: inherit; font-weight: 600; color: #334; background: none;
+           border: 0; border-bottom: 2px solid transparent; cursor: pointer; }
+    .tab:hover { background: #E9F1F8; }
+    .tab.on { color: #3570A6; border-bottom-color: #3570A6; background: #fff; }
+    .tab:focus-visible { outline: 2px solid #3570A6; outline-offset: -2px; }
+    /* "Download part": pick a quality, then the start and end */
+    .clipwin { padding: 10px; }
+    .chead { font-weight: 700; margin-bottom: 4px; color: #253149; }
+    .cnote { color: #4a5566; font-size: 11px; margin: 4px 0 8px; }
+    .qrow { display: flex; gap: 6px; padding: 6px 8px; cursor: pointer; border: 1px solid #e3e8ef; border-radius: 6px; margin-bottom: 6px; align-items: center; }
+    .qrow:hover { background: #E9F1F8; }
+    .qrow.sel { border-color: #3570A6; background: #E9F1F8; }
+    .selmark { color: #3570A6; font-weight: 700; flex: none; }
+    .clipform { display: flex; gap: 6px; align-items: center; padding: 6px 0 2px; flex-wrap: wrap; }
+    .clipform input[type=text] { width: 62px; font: inherit; font-size: 11px; padding: 2px 5px; border: 1px solid #d5dbe4; border-radius: 4px; }
+    .clipform input[type=text]:focus-visible { outline: 2px solid #3570A6; outline-offset: 1px; }
+    .clipform input[type=checkbox]:focus-visible { outline: 2px solid #3570A6; outline-offset: 1px; }
+    .clipform label { font-size: 11px; color: #334; display: inline-flex; gap: 3px; align-items: center; cursor: pointer; }
+    .back { margin-top: 8px; }
     @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
-    /* looks */
-    .dark .btn { background: linear-gradient(#3a3f47, #23272e); border-color: #15181c; }
-    .dark .btn:hover, .dark .btn.open { background: linear-gradient(#454b55, #2a2f37); }
-    .light .btn { background: linear-gradient(#ffffff, #e9eef5); border-color: #b8c3d1; color: #1f2733; }
-    .light .btn:hover, .light .btn.open { background: linear-gradient(#ffffff, #dfe7f1); }
+    /* looks — flat fills in the EDM palette, one per look */
+    .dark .btn { background: #253149; border-color: #1D283A; }
+    .dark .btn:hover, .dark .btn.open { background: #1D283A; }
+    .light .btn { background: #FFFFFF; border-color: #B0B3B8; color: #253149; }
+    .light .btn:hover, .light .btn.open { background: #E9F1F8; }
     .light .side { border-left-color: #c9d3df; }
-    .light .spin { border-color: rgba(29,99,214,.3); border-top-color: #1d63d6; }
-    .green .btn { background: linear-gradient(#35b36b, #1f8a4c); border-color: #176b3a; }
-    .green .btn:hover, .green .btn.open { background: linear-gradient(#3cc276, #1d8048); }
-    .compact .btn { border-radius: 7px; background: linear-gradient(#2f72dc, #1e56b9); border-color: #163f8a; }
-    .compact .btn:hover, .compact .btn.open { background: linear-gradient(#3a7deb, #1f5cc6); }
+    .light .spin { border-color: rgba(53,112,166,.3); border-top-color: #3570A6; }
+    .green .btn { background: #2E7D3F; border-color: #256B34; }
+    .green .btn:hover, .green .btn.open { background: #256B34; }
+    .compact .btn { border-radius: 6px; background: #3570A6; border-color: #24567F; }
+    .compact .btn:hover, .compact .btn.open { background: #2F6395; }
     .compact #label, .compact .caret, .compact #help { display: none; }
     .compact .part { padding: 4px 7px; }
     .compact .ico { width: 18px; height: 18px; }
@@ -396,37 +425,24 @@
     host.style.setProperty("--o", String(solid));
     const root = host.attachShadow({ mode: "closed" });
     const svgNs = "http://www.w3.org/2000/svg";
-    // the capture icon, drawn here (not copied from any other program):
-    // a rounded tile in the brand gradient (violet -> blue, as the logo),
-    // a white download arrow, and an amber dot in the corner
+    // the simplified EDM mark (decided 2026-11-05): a flat navy tile with
+    // the green D-arrow only — the D letterform whose stem runs down into
+    // a download arrowhead. No gradient, no E/M, no badge dot.
     const svg = document.createElementNS(svgNs, "svg");
     svg.setAttribute("class", "ico");
     svg.setAttribute("viewBox", "0 0 16 16");
-    const defs = document.createElementNS(svgNs, "defs");
-    const grad = document.createElementNS(svgNs, "linearGradient");
-    grad.setAttribute("id", "ezg");
-    grad.setAttribute("x1", "0");
-    grad.setAttribute("y1", "0");
-    grad.setAttribute("x2", "1");
-    grad.setAttribute("y2", "1");
-    for (const [o, c] of [["0", "#8A57F5"], ["0.55", "#6A5CF6"], ["1", "#2E7BF6"]]) {
-      const s = document.createElementNS(svgNs, "stop");
-      s.setAttribute("offset", o);
-      s.setAttribute("stop-color", c);
-      grad.appendChild(s);
-    }
-    defs.appendChild(grad);
-    svg.appendChild(defs);
     const tile = document.createElementNS(svgNs, "rect");
-    for (const [k, v] of [["x", "0.5"], ["y", "0.5"], ["width", "15"], ["height", "15"], ["rx", "4"], ["fill", "url(#ezg)"]]) tile.setAttribute(k, v);
+    for (const [k, v] of [["x", "0.5"], ["y", "0.5"], ["width", "15"], ["height", "15"], ["rx", "2.5"], ["fill", "#253149"]]) tile.setAttribute(k, v);
     svg.appendChild(tile);
     const arrow = document.createElementNS(svgNs, "path");
-    arrow.setAttribute("d", "M6.6 3.5h2.8v4.6h2.3L8 12 4.3 8.1h2.3z");
-    arrow.setAttribute("fill", "#fff");
+    arrow.setAttribute(
+      "d",
+      "M4.5 3 H8.6 C11.2 3 12.8 4.7 12.8 6.75 C12.8 8.8 11.2 10.5 8.6 10.5 H6.9 V11.6 H8 L5.7 14.6 L3.4 11.6 H4.5 Z " +
+        "M6.9 5.2 H8.4 C9.8 5.2 10.6 5.9 10.6 6.75 C10.6 7.6 9.8 8.3 8.4 8.3 H6.9 Z"
+    );
+    arrow.setAttribute("fill-rule", "evenodd");
+    arrow.setAttribute("fill", "#54AB64");
     svg.appendChild(arrow);
-    const dot = document.createElementNS(svgNs, "circle");
-    for (const [k, v] of [["cx", "12.4"], ["cy", "12.4"], ["r", "2.1"], ["fill", "#F5A524"], ["stroke", "#fff"], ["stroke-width", "0.8"]]) dot.setAttribute(k, v);
-    svg.appendChild(dot);
     const list = el("div", { class: "list", id: "list" });
     list.hidden = true;
     const spin = el("span", { class: "spin", id: "spin" });
@@ -448,7 +464,10 @@
         list
       )
     );
-    const b = { host, root, video, open: false, own: null, loading: false, dx: null, dy: null, help: false };
+    const b = { host, root, video, open: false, own: null, loading: false, dx: null, dy: null, help: false,
+      // the two windows: "all" (every quality) or "clip" (one part);
+      // the clip window keeps what the user typed when it re-renders
+      view: "all", clipItem: null, clipFrom: "", clipTo: "", clipExact: false };
     const grab = root.getElementById("grab");
     // drag: move it anywhere on the video; a short press is a click
     let down = null;
@@ -537,8 +556,8 @@
   // The app is closed: offer to open it, then do what the user wanted.
   function notRunning(b, retry) {
     b.open = true;
-    renderOne(b, "Ezoo Download is not running.", true, {
-      text: "Open Ezoo Download",
+    renderOne(b, "Ezoo Download Manager is not running.", true, {
+      text: "Open Ezoo Download Manager",
       run: () => {
         // the program registers "ezoo-download:" when it is installed
         const a = document.createElement("a");
@@ -547,7 +566,7 @@
         document.documentElement.appendChild(a);
         a.click();
         a.remove();
-        renderOne(b, "Opening Ezoo Download…");
+        renderOne(b, "Opening Ezoo Download Manager…");
         let tries = 0;
         const wait = setInterval(() => {
           tries++;
@@ -558,7 +577,7 @@
               retry();
             } else if (tries >= 25) {
               clearInterval(wait);
-              renderOne(b, "Ezoo Download did not start. Open it from the Start menu and try again.", true);
+              renderOne(b, "Ezoo Download Manager did not start. Open it from the Start menu and try again.", true);
             }
           });
         }, 1000);
@@ -651,7 +670,7 @@
   function sendPlaylist(b) {
     chrome.runtime.sendMessage({ type: "swiftget-playlist", url: location.href }, (res) => {
       if (chrome.runtime.lastError || !res || !res.ok) return notRunning(b, () => sendPlaylist(b));
-      flashOne(b, "The playlist is open in Ezoo Download ✔", false);
+      flashOne(b, "The playlist is open in Ezoo Download Manager ✔", false);
     });
   }
 
@@ -673,12 +692,13 @@
       box.appendChild(
         el("div", {
           class: "help",
-          text: "Click the button to choose a quality. Drag it to move it on the video. ✕ hides it for this video. Its size can be changed in the Ezoo Download add-in menu.",
+          text: "Click the button to choose a quality. Drag it to move it on the video. ✕ hides it for this video. Its size can be changed in the Ezoo Download Manager add-in menu.",
         })
       );
     }
     if (note) {
-      const d = el("div", { class: "msg" + (isError ? " err" : ""), text: note });
+      // dir "auto": a note in Arabic reads right to left (its full stop at the end)
+      const d = el("div", { class: "msg" + (isError ? " err" : ""), dir: "auto", text: note });
       if (action) {
         const a = el("div", { class: "act", text: action.text });
         a.addEventListener("click", action.run);
@@ -692,7 +712,24 @@
       return;
     }
     const title = (list.find((m) => m.yt && m.yt.title) || {}).yt;
-    box.appendChild(el("div", { class: "head", title: (title && title.title) || cleanTitle(), text: (title && title.title) || cleanTitle() }));
+    box.appendChild(el("div", { class: "head", dir: "auto", title: (title && title.title) || cleanTitle(), text: (title && title.title) || cleanTitle() }));
+    // the two windows, chosen up front: every quality, or one part
+    const tabs = el("div", { class: "tabs" });
+    for (const [view, label] of [["all", "All qualities"], ["clip", "Download part"]]) {
+      const tab = el("button", { type: "button", class: "tab" + (b.view === view ? " on" : ""), text: label });
+      tab.addEventListener("click", (e) => {
+        e.stopPropagation();
+        stashClipInputs(b);
+        b.view = view;
+        renderOne(b);
+      });
+      tabs.appendChild(tab);
+    }
+    box.appendChild(tabs);
+    if (b.view === "clip") {
+      renderClip(b, box);
+      return;
+    }
     const all = downloadAllOf(b, usable);
     if (all) {
       const row = el("div", { class: "item" }, el("span", { class: "num", text: "⇊" }), el("div", { class: "body" }, el("div", { class: "t all", text: all.text })));
@@ -737,6 +774,18 @@
             copyLink(cp, b2);
           });
           acts.append(b2);
+        }
+        // "Cut part…": only a direct video file — a stream playlist
+        // (.m3u8) is cut part-by-part, not through this panel yet.
+        // It opens the "Download part" window with this quality
+        // already chosen, instead of a cramped form under the row.
+        if (m.url && !/\.m3u8($|\?)/i.test(m.url)) {
+          const b3 = el("button", { type: "button", class: "mini", title: "Download only a part of this video", text: "Cut part…" });
+          b3.addEventListener("click", (e) => {
+            e.stopPropagation();
+            showClip(b, m);
+          });
+          acts.append(b3);
         }
         row.append(acts);
         row.addEventListener("click", () => download(b, m));
@@ -825,7 +874,177 @@
       { type: "swiftget-download", item: m, title: document.title, fileName, referrer: location.href },
       (res) => {
         if (chrome.runtime.lastError || !res || !res.ok) notRunning(b, () => download(b, m));
-        else flashOne(b, "Sent to Ezoo Download ✔", false);
+        else flashOne(b, "Sent to Ezoo Download Manager ✔", false);
+      }
+    );
+  }
+
+  // "mm:ss" or plain seconds -> seconds, or null when it does not
+  // parse. Mirrors the engine's parse_time: at most three parts
+  // ("1:2:3:4" is not a time), no negative part ("1:-30" is not
+  // 30 seconds), and the result must be a finite number ("inf"
+  // used to slip through as NaN and reach the app as null).
+  function parseClipTime(text) {
+    const t = String(text || "").trim().replace(",", ".");
+    if (!t) return null;
+    if (/^\d+(\.\d+)?$/.test(t)) {
+      const n = Number(t);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    }
+    const parts = t.split(":");
+    if (parts.length < 2 || parts.length > 3) return null;
+    let secs = 0;
+    for (let i = 0; i < parts.length; i++) {
+      if (!/^\d+(\.\d+)?$/.test(parts[i])) return null;
+      const v = Number(parts[i]);
+      if (i > 0 && v >= 60) return null;
+      secs = secs * 60 + v;
+    }
+    return Number.isFinite(secs) ? secs : null;
+  }
+
+  // What the "Download part" window can cut: direct files only.
+  // YouTube qualities have no direct file, .m3u8 is a stream
+  // playlist, and a "choose a quality" row has nothing to cut yet.
+  function clipItems(list) {
+    return list.filter((m) => !m.disabled && m.url && !m.yt && !m.resolve && !/\.m3u8($|\?)/i.test(m.url));
+  }
+
+  // Keep what the user typed in the clip window before a re-render
+  // (switching windows or picking another quality), so nothing
+  // they typed is lost.
+  function stashClipInputs(b) {
+    const box = b.root.getElementById("list");
+    if (!box) return;
+    const from = box.querySelector(".tin-from");
+    const to = box.querySelector(".tin-to");
+    const exact = box.querySelector(".exact-cb");
+    if (from) b.clipFrom = from.value;
+    if (to) b.clipTo = to.value;
+    if (exact) b.clipExact = !!exact.checked;
+  }
+
+  // Open the "Download part" window with this quality already
+  // chosen to cut from.
+  function showClip(b, m) {
+    stashClipInputs(b);
+    b.view = "clip";
+    b.clipItem = m;
+    b.open = true;
+    renderOne(b);
+  }
+
+  // Window B, "Download part": the quality to cut from, then the
+  // start and end of the part. Streams get a plain note that
+  // cutting them is not supported, never a button that pretends
+  // otherwise.
+  function renderClip(b, box) {
+    const list = itemsOf(b);
+    const usable = list.filter((i) => !i.disabled);
+    const picks = clipItems(list);
+    if (!picks.includes(b.clipItem)) b.clipItem = picks[0] || null;
+    const win = el("div", { class: "clipwin" });
+    win.appendChild(el("div", { class: "chead", text: "Download part of a video" }));
+    if (!picks.length) {
+      win.appendChild(
+        el("div", {
+          class: "cnote",
+          text: "Cutting a part is not supported for streams yet — YouTube videos and .m3u8 streams can only be downloaded whole in this version.",
+        })
+      );
+      win.appendChild(backButton(b));
+      box.appendChild(win);
+      return;
+    }
+    win.appendChild(el("div", { class: "cnote", text: "Choose the quality to cut from, then the start and end of the part." }));
+    for (const m of picks) {
+      const d = describe(m);
+      const row = el("div", { class: "qrow" + (m === b.clipItem ? " sel" : "") });
+      if (m === b.clipItem) row.appendChild(el("span", { class: "selmark", text: "✓" }));
+      const t = el("div", { class: "t" }, el("span", { text: d.main }));
+      if (d.size) {
+        t.appendChild(el("span", { class: "sz", text: d.size }));
+        if (d.sizeEstimated) t.appendChild(el("span", { class: "est", text: "estimated" }));
+      }
+      row.appendChild(el("div", { class: "body" }, t, el("div", { class: "s", text: d.sub })));
+      row.addEventListener("click", () => {
+        stashClipInputs(b);
+        b.clipItem = m;
+        renderOne(b);
+      });
+      win.appendChild(row);
+    }
+    if (usable.some((m) => !picks.includes(m))) {
+      win.appendChild(el("div", { class: "cnote", text: "YouTube videos and .m3u8 streams cannot be cut yet." }));
+    }
+    const from = el("input", { type: "text", class: "tin tin-from", placeholder: "from mm:ss" });
+    from.value = b.clipFrom || "";
+    const to = el("input", { type: "text", class: "tin tin-to", placeholder: "to mm:ss" });
+    to.value = b.clipTo || "";
+    const exact = el("input", { type: "checkbox", class: "exact-cb" });
+    exact.checked = !!b.clipExact;
+    const cut = el("button", { type: "button", class: "mini", text: "Cut part" });
+    const err = el("span", { class: "err", text: "" });
+    const form = el("div", { class: "clipform" }, from, to, el("label", {}, exact, el("span", { text: "Exact" })), cut, err);
+    cut.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const a = parseClipTime(from.value);
+      const z = parseClipTime(to.value);
+      if (a === null || z === null) {
+        // inline, so the user keeps what they typed
+        err.textContent = "Write the start and end as mm:ss or seconds.";
+        return;
+      }
+      if (a < 0 || z - a < 0.5) {
+        err.textContent = "End must be after start, at least half a second (mm:ss).";
+        return;
+      }
+      if (z > 24 * 3600) {
+        err.textContent = "The end cannot be more than 24 hours.";
+        return;
+      }
+      stashClipInputs(b);
+      downloadClip(b, b.clipItem, { start: a, end: z, exact: !!exact.checked });
+    });
+    win.appendChild(form);
+    win.appendChild(
+      el("div", {
+        class: "cnote",
+        text: "Quick cut starts at the nearest keyframe, so it may begin a second or two early. Exact cut re-encodes and starts on the very second.",
+      })
+    );
+    win.appendChild(backButton(b));
+    box.appendChild(win);
+  }
+
+  function backButton(b) {
+    const back = el("button", { type: "button", class: "mini back", text: "← All qualities" });
+    back.addEventListener("click", (e) => {
+      e.stopPropagation();
+      stashClipInputs(b);
+      b.view = "all";
+      renderOne(b);
+    });
+    return back;
+  }
+
+  function downloadClip(b, m, clip) {
+    const fileName = `${cleanTitle()}.${m.ext || "mp4"}`;
+    chrome.runtime.sendMessage(
+      { type: "swiftget-download", item: m, title: document.title, fileName, referrer: location.href, clip },
+      (res) => {
+        if (chrome.runtime.lastError || !res) return notRunning(b, () => downloadClip(b, m, clip));
+        if (!res.ok) {
+          // the app refused the part (an invalid range, or a kind
+          // it cannot cut): say so, instead of claiming the app is
+          // not running. The window stays on "Download part" with
+          // what the user typed.
+          b.view = "clip";
+          flashOne(b, res.error || "Ezoo Download Manager refused the part.", true);
+          return;
+        }
+        b.view = "all";
+        flashOne(b, "Sent to Ezoo Download Manager ✔", false);
       }
     );
   }
@@ -844,7 +1063,7 @@
     for (const b of bubbles.values()) if (!b.own && !b.loading) renderOne(b);
   }
 
-  // File links (.zip, .exe, .mp4…): a click goes straight to Ezoo Download,
+  // File links (.zip, .exe, .mp4…): a click goes straight to Ezoo Download Manager,
   // so the browser never starts its own download (and never asks where to
   // save it). The rules are the program's own (Options > File Types).
   const wildcard = (pattern, text) =>
@@ -858,8 +1077,12 @@
     });
   refreshLinkRules();
   setInterval(refreshLinkRules, 60000);
-  // shown by the browser itself, not downloaded: never taken from a click
-  const VIEWED = /^(html?|xhtml|php\d?|aspx?|jsp|cgi|pl|cfm|do|action|json|xml|txt|css|js|jpe?g|png|gif|webp|svg|bmp|ico|avif|pdf)$/;
+  // shown by the browser itself, not downloaded: never taken from a click.
+  // Pages and pictures open in the browser; a PDF too, unless PDF is one of
+  // the file types the app takes (then a click on its link goes to the app:
+  // once it is open in the browser's PDF viewer, the viewer's own download
+  // button always asks where to save, and that can't be stopped)
+  const VIEWED = /^(html?|xhtml|php\d?|aspx?|jsp|cgi|pl|cfm|do|action|json|xml|txt|css|js|jpe?g|png|gif|webp|svg|bmp|ico|avif)$/;
   const keyHeld = (e, k) => (k === "alt" ? e.altKey : k === "ctrl" ? e.ctrlKey : k === "shift" ? e.shiftKey : false);
   function wantedLink(e, href) {
     const r = linkRules;
@@ -882,6 +1105,7 @@
     const dot = last.lastIndexOf(".");
     const ext = dot > 0 ? last.slice(dot + 1).toLowerCase() : "";
     if (!ext || VIEWED.test(ext)) return false;
+    if (ext === "pdf" && !(r.exts || []).some((x) => wildcard(x, ext))) return false;
     // a .torrent file opens in the program's torrent window
     if (forced || ext === "torrent") return true;
     return (r.exts || []).some((x) => wildcard(x, ext));
@@ -912,7 +1136,7 @@
     true
   );
 
-  // magnet links of torrents go to Ezoo Download (Alt + click: to the browser)
+  // magnet links of torrents go to Ezoo Download Manager (Alt + click: to the browser)
   addEventListener(
     "click",
     (e) => {

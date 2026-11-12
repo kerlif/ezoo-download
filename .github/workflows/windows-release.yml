@@ -1,9 +1,21 @@
 name: Windows release (Setup.exe + updater files)
 
 # The real Windows release: EzooDownload-Setup.exe (Inno Setup 6, per-user,
-# no admin) + version.json for the in-app updater, built from the same
-# proven steps as build.yml's windows job and uploaded to the GitHub
-# Release — automatically, on every tag and on manual dispatch.
+# no admin), built from the same proven steps as build.yml's windows job
+# and uploaded to the GitHub Release — automatically, on every tag.
+#
+# The release and the updater announcement are SEPARATE steps
+# (2026-11-08, the maintainer's decision): the tag run publishes
+# every file EXCEPT version.json, the manifest the in-app updater
+# reads. version.json is published later by the
+# publish-updater-manifest dispatch job in this file, and ONLY after
+# the 1.1.2 browser extension is approved in BOTH stores (Chrome Web
+# Store + AMO). Until then installed copies see no update at all: a
+# release without the manifest asset is a silent fail in the updater
+# (selfupdate.rs), never an offer and never an error. The manifest is
+# derived from the PUBLISHED Setup.exe (downloaded from the release
+# and hashed by the dispatch job) — never from a rebuild — so its
+# sha256 always matches the file users download.
 #
 # Triggers:
 #   - push to main or linux-support: build, upload artifacts (no release)
@@ -11,17 +23,33 @@ name: Windows release (Setup.exe + updater files)
 #     the release (the tag MUST match Cargo.toml's version). The release
 #     itself is created by the Linux workflow; this job waits for it
 #     (up to 10 minutes) and never deletes anything.
-#   - workflow_dispatch: manual run; if release v<version> exists, the
-#     files are uploaded to it (this is how v1.0.7 gets its Setup.exe
-#     after the fact).
+#   - workflow_dispatch: manual run from main only (any other ref fails
+#     fast below); the windows job builds and uploads run artifacts
+#     only — it NEVER touches a release. The old v1.0.7 backfill use
+#     case (dispatch uploading to an existing release with --clobber)
+#     is closed: it could silently replace published release files.
+#     The publish-updater-manifest job below is the ONLY dispatch that
+#     uploads to a release, and only version.json, only after both
+#     stores approve the extension.
 #
 # Secrets:
-#   - UPDATE_SIGNING_KEY: Ed25519 key signing version.json; installed
-#     copies accept only signed updates. REQUIRED on releases: a
-#     release build FAILS without it (docs/UPDATE-CHECKER.md §10)
-#     instead of shipping version.json with an empty signature.
-#     On non-release runs the key is still optional (unsigned
-#     version.json, warning only).
+#   - UPDATE_SIGNING_KEY: Ed25519 key signing version.json and
+#     SHA256SUMS-windows.txt; installed copies accept only signed
+#     updates. It lives in the GitHub environment `release-signing`
+#     (NOT a repository secret) with required reviewers, so every job
+#     that uses it waits for a reviewer's approval before it starts
+#     (P8-sexies, 2026-11-08, the maintainer's decision). Until the
+#     environment is created and the key moved into it, the jobs below
+#     still read the repository secret of the same name and run
+#     ungated — the workflow change alone protects nothing. REQUIRED
+#     on releases: a release build FAILS without it
+#     (docs/UPDATE-CHECKER.md §10) instead of shipping version.json
+#     with an empty signature. On non-release runs the key is still
+#     optional (unsigned version.json, warning only).
+#     Consequence the maintainer accepted: EVERY run of a job that
+#     consumes the key — tag runs AND main-push runs — pauses for
+#     review, because the gate is at job level and cannot be scoped
+#     to the signing step (see docs/UPDATE-CHECKER.md §15).
 #   - AMO_JWT_ISSUER / AMO_JWT_SECRET: <redacted>
 #     per version; otherwise the unsigned path is skipped with a warning
 #     (the Linux workflow already ships the .xpi).
@@ -34,12 +62,22 @@ on:
       - "README.md"
       - "docs/**"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to announce (without the leading v)"
+        required: true
+        default: "1.1.2"
+      extension_approved_in_both_stores:
+        description: "The 1.1.2 extension is approved in the Chrome Web Store AND AMO"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
-  # Ezoo Download's own small ffmpeg (tools/ffmpeg/build.sh): built from the
+  # Ezoo Download Manager's own small ffmpeg (tools/ffmpeg/build.sh): built from the
   # official sources, both checked (exact commit / SHA-256), kept in the cache
   # until the script or a version changes. Same job as build.yml (shared cache).
   ffmpeg:
@@ -93,9 +131,26 @@ jobs:
   windows:
     needs: ffmpeg
     runs-on: windows-latest
+    # Signing key comes from the `release-signing` environment
+    # (required reviewers): this job waits for a reviewer's approval
+    # before it starts, on tag runs AND on main-push runs, because the
+    # gate is at job level (P8-sexies; see §15 of
+    # docs/UPDATE-CHECKER.md). Until the environment exists with the
+    # key moved into it, the repository secret of the same name is
+    # used instead and the job runs ungated.
+    environment: release-signing
     steps:
       # actions pinned to exact commits (a moved tag can't change the build)
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Manual dispatch is main-only: a dispatch from any other ref
+      # fails here, before any build or signing step runs. (Dispatch
+      # can no longer publish — see the publish step below — but a
+      # branch build must not consume the release signing keys.)
+      - name: Guard manual dispatch to main
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_name }}" -ne "main") { throw "workflow_dispatch is restricted to main (got ref '${{ github.ref_name }}')" }
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
@@ -108,7 +163,7 @@ jobs:
         with:
           name: ffmpeg-test
           path: ffmpeg-test
-      - name: Check our ffmpeg (everything Ezoo Download asks of it)
+      - name: Check our ffmpeg (everything Ezoo Download Manager asks of it)
         shell: pwsh
         run: |
           $ff = "ffmpeg-out/ffmpeg.exe"; $t = "ffmpeg-test"
@@ -186,7 +241,7 @@ jobs:
           # Required on releases (a missing key fails the build there);
           # optional on non-release runs (unsigned version.json, warning).
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-          IS_RELEASE: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
+          IS_RELEASE: ${{ github.ref_type == 'tag' }}
         run: |
           $version = ([regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"([^"]+)"')).Groups[1].Value
           if ("${{ github.ref_type }}" -eq "tag") {
@@ -275,9 +330,15 @@ jobs:
           [IO.File]::WriteAllText("$PWD/dist/version.json", $json)
           Get-Content dist/version.json
           Compress-Archive -Path dist/EzooDownload-Setup.exe, dist/version.json -DestinationPath EzooDownload-windows.zip -Force
-          # checksums for the release (sha256sum-style, like the Linux workflow)
+          # checksums for the release (sha256sum-style, like the Linux workflow).
+          # version.json is NOT listed here: it is published later, only
+          # after the extension is approved in both stores (see the
+          # publish-updater-manifest job). The manifest is authenticated
+          # by its own Ed25519 signature, never by this file, so the
+          # sums file stays valid without it — and it must not be
+          # re-uploaded later with --clobber to add the entry.
           $sums = @()
-          foreach ($f in @("dist/EzooDownload-Setup.exe", "dist/version.json")) {
+          foreach ($f in @("dist/EzooDownload-Setup.exe")) {
             $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
             $sums += "$h  $(Split-Path $f -Leaf)"
           }
@@ -305,11 +366,12 @@ jobs:
             dist/*
           retention-days: 30
       # Upload the Windows setup to the release (created by the Linux
-      # workflow on tags; already exists when dispatched manually).
-      # Waits for the release to appear, then uploads with --clobber so
-      # re-runs replace the files instead of failing. Never deletes.
+      # workflow on tags). Tag-only: a manual dispatch never publishes.
+      # Waits for the release to appear, then uploads WITHOUT --clobber,
+      # so a re-run fails loudly if the files already exist instead of
+      # silently replacing a published release. Never deletes.
       - name: Publish Windows setup to the release
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -325,9 +387,145 @@ jobs:
             Write-Host "::warning::release v$env:VERSION was not created; the Windows setup stays in the run artifacts only"
             exit 0
           }
-          $files = @("dist/EzooDownload-Setup.exe", "dist/version.json", "dist/SHA256SUMS-windows.txt", "dist/ffmpeg.exe")
+          # version.json is deliberately NOT uploaded here: the release
+          # publishes its files first, and the updater manifest is
+          # published later by the publish-updater-manifest dispatch,
+          # only after the 1.1.2 extension is approved in both stores
+          # (Chrome Web Store + AMO). Until then installed copies see
+          # no update (the missing manifest is a silent fail).
+          # The Firefox .xpi + firefox-updates.json are published by
+          # the Linux workflow, not here (its `gh release create`
+          # uploads all of dist/*); do not add them — a second upload
+          # of the same asset name fails without --clobber.
+          $files = @("dist/EzooDownload-Setup.exe", "dist/SHA256SUMS-windows.txt", "dist/ffmpeg.exe")
           if (Test-Path dist/SHA256SUMS-windows.txt.sig) { $files += "dist/SHA256SUMS-windows.txt.sig" }
-          if (Test-Path dist/ezoo-download-firefox-$extVersion.xpi) { $files += "dist/ezoo-download-firefox-$extVersion.xpi", "dist/firefox-updates.json" }
-          gh release upload "v$env:VERSION" @files --repo "${{ github.repository }}" --clobber
+          gh release upload "v$env:VERSION" @files --repo "${{ github.repository }}"
           if ($LASTEXITCODE -ne 0) { throw "could not upload the Windows setup to the release" }
           Write-Host "Windows setup published to v$env:VERSION"
+
+  # Publish the updater manifest (version.json) to an existing release.
+  # This is the SECOND half of a release, run by hand ONLY after the
+  # 1.1.2 browser extension is approved in BOTH stores (Chrome Web
+  # Store + AMO). The tag release publishes every file EXCEPT
+  # version.json, so installed copies see no update until this job
+  # runs: a release without the manifest asset is a silent fail in
+  # the updater (selfupdate.rs), never an offer and never an error.
+  # The manifest is derived from the PUBLISHED Setup.exe (downloaded
+  # from the release and hashed here) — never from a rebuild — so the
+  # sha256 in version.json always matches the file users download.
+  # It never replaces anything: if version.json is already in the
+  # release the job fails instead of overwriting it (no --clobber).
+  # SECURITY (P8-sexies, 2026-11-08, the maintainer's decision):
+  # this job runs under the `release-signing` environment with
+  # required reviewers, so it cannot run at all — from main or from
+  # any branch — until a reviewer approves it, and the production
+  # signing key is handed to it only after that approval. The
+  # `extension_approved_in_both_stores` checkbox is only a human
+  # confirmation; it is NOT a guard. Before signing, the job verifies
+  # the published Setup.exe against the release's own signed
+  # checksums (SHA256SUMS-windows.txt + .sig) and refuses to sign
+  # anything on any mismatch — see the verification step below.
+  publish-updater-manifest:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    # The signing key comes from the `release-signing` environment
+    # (required reviewers). Until the environment is created and the
+    # key moved into it, the repository secret of the same name is
+    # used instead and the job runs ungated — the `environment:`
+    # line alone protects nothing.
+    environment: release-signing
+    steps:
+      - name: "Guard: main only, both stores must have approved the extension"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then echo "::error::this dispatch runs from main only (got '${{ github.ref_name }}')"; exit 1; fi
+          if [ "${{ inputs.extension_approved_in_both_stores }}" != "true" ]; then
+            echo "::error::refusing: the 1.1.2 extension must be approved in the Chrome Web Store AND AMO first — set extension_approved_in_both_stores=true only after both approvals"
+            exit 1
+          fi
+          VERSION="${{ inputs.version }}"
+          gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null || { echo "::error::release v$VERSION does not exist"; exit 1; }
+          if gh release view "v$VERSION" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | grep -qx "version.json"; then
+            echo "::error::version.json is already in release v$VERSION — refusing to replace it"
+            exit 1
+          fi
+      # the signing tool comes from the release tree itself
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: v${{ inputs.version }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      # FIX 2 (P8-sexies): verify WHAT is signed before signing it.
+      # The release's own checksums (SHA256SUMS-windows.txt, signed
+      # with the same key at tag time) are the trust anchor: if the
+      # Setup.exe asset were replaced after publishing, its hash
+      # would no longer match the signed sums, and this step fails
+      # the job before anything is signed. It refuses on ANY of:
+      # sums file missing, .sig missing, .sig invalid, hash
+      # mismatch, or the Setup.exe entry missing from the sums
+      # file. The .sig is verified with the program's own logic
+      # (crates/engine/examples/verify_sums.rs, the same
+      # selfupdate::sums_signature_ok the updater uses), so a
+      # tampered sums file can never bless a tampered Setup.exe.
+      # `gh release download` fails when a pattern matches no
+      # asset, so a missing sums file or .sig fails this step too.
+      - name: Verify the published Setup.exe against its signed checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          rm -f EzooDownload-Setup.exe SHA256SUMS-windows.txt SHA256SUMS-windows.txt.sig version.json
+          gh release download "v$VERSION" --repo "${{ github.repository }}" -p "EzooDownload-Setup.exe" -p "SHA256SUMS-windows.txt" -p "SHA256SUMS-windows.txt.sig" -D .
+          # (1) the sums file's Ed25519 signature must verify against
+          # the public key built into the program (primary or
+          # emergency key). This example is built from the checked-out
+          # tag, so a tag predating P8-sexies fails closed here
+          # instead of signing blind.
+          cargo run --quiet --release -p swiftget-engine --example verify_sums -- "$VERSION" SHA256SUMS-windows.txt SHA256SUMS-windows.txt.sig \
+            || { echo "::error::SHA256SUMS-windows.txt signature does not verify — refusing to sign anything"; exit 1; }
+          # (2) the downloaded Setup.exe must match the entry the
+          # signed sums file carries for it. The sums file covers
+          # the Setup.exe only (P8-quinquies).
+          HASH="$(sha256sum EzooDownload-Setup.exe | awk '{print $1}')"
+          WANT="$(awk '$2 == "EzooDownload-Setup.exe" {print $1}' SHA256SUMS-windows.txt | head -1)"
+          if [ -z "$WANT" ]; then echo "::error::SHA256SUMS-windows.txt has no entry for EzooDownload-Setup.exe — refusing to sign anything"; exit 1; fi
+          if [ "$HASH" != "$WANT" ]; then echo "::error::EzooDownload-Setup.exe does not match its signed checksum ($HASH != $WANT) — the published asset may have been replaced; refusing to sign anything"; exit 1; fi
+          echo "Setup.exe verified against its signed checksums (sha256 $HASH)"
+          echo "VERIFIED_SHA256=$HASH" >> "$GITHUB_ENV"
+      - name: Build and upload version.json to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then echo "::error::UPDATE_SIGNING_KEY is not set: refusing to ship an unsigned version.json"; exit 1; fi
+          # EzooDownload-Setup.exe was downloaded and verified against
+          # its signed checksums in the previous step; it is NOT
+          # re-downloaded here, so the signed hash is the hash of the
+          # verified file. Recompute it and check it against the
+          # verified hash from the previous step.
+          test -f EzooDownload-Setup.exe || { echo "::error::verified Setup.exe is missing"; exit 1; }
+          HASH="$(sha256sum EzooDownload-Setup.exe | awk '{print $1}')"
+          if [ "$HASH" != "$VERIFIED_SHA256" ]; then echo "::error::Setup.exe changed between verification and signing — refusing to sign"; exit 1; fi
+          SIG="$(cargo run --quiet --release -p swiftget-engine --example sign_update -- "$VERSION" "$HASH")"
+          if [ ${#SIG} -ne 128 ]; then echo "::error::could not sign the release"; exit 1; fi
+          printf '{\n  "version": "%s",\n  "url": "https://github.com/%s/releases/download/v%s/EzooDownload-Setup.exe",\n  "sha256": "%s",\n  "sig": "%s"\n}\n' \
+            "$VERSION" "${{ github.repository }}" "$VERSION" "$HASH" "$SIG" > version.json
+          cat version.json
+          gh release upload "v$VERSION" version.json --repo "${{ github.repository }}"
+          echo "version.json published to v$VERSION — installed copies will be offered $VERSION on their next check"
+          # the public download URL should resolve once GitHub's CDN
+          # catches up; a delay here is a warning, not a failure —
+          # the upload itself was already verified above
+          for i in $(seq 1 10); do
+            CODE="$(curl -s -o /dev/null -w '%{http_code}' -L "https://github.com/${{ github.repository }}/releases/latest/download/version.json")"
+            if [ "$CODE" = "200" ]; then echo "releases/latest/download/version.json resolves (HTTP 200)"; exit 0; fi
+            echo "version.json not resolving yet (HTTP $CODE, attempt $i/10), waiting 30s..."
+            sleep 30
+          done
+          echo "::warning::version.json is in the release but releases/latest/download/version.json did not resolve within 5 minutes (CDN delay?) — check it by hand"

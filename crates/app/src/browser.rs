@@ -1,4 +1,4 @@
-//! "Add Ezoo Download to my browser": opens the browser on the right page
+//! "Add Ezoo Download Manager to my browser": opens the browser on the right page
 //! (its store page once the extension is published there, otherwise its
 //! extensions page with the folder path ready in the clipboard).
 
@@ -25,6 +25,12 @@ pub(crate) struct Browser {
     extensions_page: &'static str,
     store: &'static str,
     firefox: bool,
+    /// The disc colour on the browser card (crates/app/ui/dialogs.slint
+    /// `BrowserCard`): v1.1.2 EDM branding — the logo palette, one hue per
+    /// browser, kept distinct: Chrome EDM Green fill #2e8b47, Edge EDM Blue
+    /// dark #2f6699, Firefox amber-orange #c85a00 (amber family), Opera EDM
+    /// Red #c2453f, Brave orange-red #d63f14. The white globe reads >= 3:1
+    /// on every one of them; the old browser-brand tints are gone.
     tint: slint::Color,
 }
 
@@ -60,7 +66,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "chrome://extensions/",
             store: STORE_CHROME,
             firefox: false,
-            tint: rgb(0x1f, 0xa4, 0x63),
+            tint: rgb(0x2e, 0x8b, 0x47),
         },
         Browser {
             name: "Edge",
@@ -74,7 +80,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "edge://extensions/",
             store: STORE_EDGE,
             firefox: false,
-            tint: rgb(0x0c, 0x8c, 0xd8),
+            tint: rgb(0x2f, 0x66, 0x99),
         },
         Browser {
             name: "Firefox",
@@ -86,7 +92,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "about:debugging#/runtime/this-firefox",
             store: STORE_FIREFOX,
             firefox: true,
-            tint: rgb(0xe8, 0x6a, 0x10),
+            tint: rgb(0xc8, 0x5a, 0x00),
         },
         Browser {
             name: "Opera",
@@ -98,7 +104,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "opera://extensions",
             store: STORE_OPERA,
             firefox: false,
-            tint: rgb(0xd6, 0x1f, 0x2b),
+            tint: rgb(0xc2, 0x45, 0x3f),
         },
         Browser {
             name: "Brave",
@@ -119,7 +125,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "brave://extensions/",
             store: STORE_BRAVE,
             firefox: false,
-            tint: rgb(0xfb, 0x54, 0x2b),
+            tint: rgb(0xd6, 0x3f, 0x14),
         },
     ]
 }
@@ -139,7 +145,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "chrome://extensions/",
             store: STORE_CHROME,
             firefox: false,
-            tint: rgb(0x1f, 0xa4, 0x63),
+            tint: rgb(0x2e, 0x8b, 0x47),
         },
         Browser {
             name: "Edge",
@@ -150,7 +156,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "edge://extensions/",
             store: STORE_EDGE,
             firefox: false,
-            tint: rgb(0x0c, 0x8c, 0xd8),
+            tint: rgb(0x2f, 0x66, 0x99),
         },
         Browser {
             name: "Firefox",
@@ -162,7 +168,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "about:debugging#/runtime/this-firefox",
             store: STORE_FIREFOX,
             firefox: true,
-            tint: rgb(0xe8, 0x6a, 0x10),
+            tint: rgb(0xc8, 0x5a, 0x00),
         },
         Browser {
             name: "Opera",
@@ -173,7 +179,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "opera://extensions",
             store: STORE_OPERA,
             firefox: false,
-            tint: rgb(0xd6, 0x1f, 0x2b),
+            tint: rgb(0xc2, 0x45, 0x3f),
         },
         Browser {
             name: "Brave",
@@ -185,7 +191,7 @@ fn detect() -> Vec<Browser> {
             extensions_page: "brave://extensions/",
             store: STORE_BRAVE,
             firefox: false,
-            tint: rgb(0xfb, 0x54, 0x2b),
+            tint: rgb(0xd6, 0x3f, 0x14),
         },
     ]
 }
@@ -273,9 +279,44 @@ pub(crate) fn put_extension(dir: &Path, firefox: bool) -> bool {
     ok
 }
 
-/// The extension's folder next to the program (Firefox has its own copy),
-/// complete. Where the program's folder can't be written, a copy in the
-/// program's data folder is used.
+/// At start: the extension folders next to the program are complete
+/// (an extension loaded from them before an update gets the new files
+/// at once). Where the program's folder cannot be written (a .deb under
+/// /usr/share, a Flatpak), the copy in the program's data folder is
+/// completed instead — never the system copy, and nothing is ever
+/// deleted: unknown files in the folder are left alone.
+pub(crate) fn prepare_extension_folders() {
+    std::thread::spawn(|| {
+        for firefox in [false, true] {
+            let _ = extension_dir(firefox);
+        }
+    });
+}
+
+/// Repair the extension folders now (the browser dialog's "Repair"
+/// button): rewrite every bundled file in the data-folder copy (and in
+/// the copy next to the program when it is writable). Unknown files are
+/// left alone — a repair never deletes anything.
+pub(crate) fn repair_extension() -> bool {
+    let mut ok = true;
+    for firefox in [false, true] {
+        let mut done = extension_dir(firefox)
+            .map(|d| put_extension(&d, firefox))
+            .unwrap_or(false);
+        if !done {
+            // the loaded copy could not be written (a read-only system
+            // copy): complete the data-folder copy instead
+            let own = swiftget_engine::default_data_dir().join(if firefox {
+                "extension-firefox"
+            } else {
+                "extension"
+            });
+            done = put_extension(&own, firefox);
+        }
+        ok &= done;
+    }
+    ok
+}
 fn extension_dir(firefox: bool) -> Option<PathBuf> {
     let name = if firefox {
         "extension-firefox"
@@ -381,15 +422,15 @@ fn add(ui: &Ui, i: usize) {
     }
     if b.firefox {
         if let Some(xpi) = firefox_xpi() {
-            // the signed add-on: Firefox asks "Add Ezoo Download?" and keeps it
+            // the signed add-on: Firefox asks "Add Ezoo Download Manager?" and keeps it
             let _ = std::process::Command::new(&exe).arg(&xpi).spawn();
             d.set_folder(xpi.display().to_string().into());
-            d.set_steps(t("Firefox opened the Ezoo Download add-on.\n1. Click \"Add\" in the message Firefox shows.\n2. Then click \"OK\".\n\nThe add-on is signed by Mozilla, so it stays in Firefox after you close it and updates by itself.").into());
+            d.set_steps(t("Firefox opened the Ezoo Download Manager add-on.\n1. Click \"Add\" in the message Firefox shows.\n2. Then click \"OK\".\n\nThe add-on is signed by Mozilla, so it stays in Firefox after you close it and updates by itself.").into());
             return;
         }
     }
     let Some(dir) = extension_dir(b.firefox) else {
-        d.set_steps(t("The extension folder was not found next to EzooDownload.exe. Install Ezoo Download again.").into());
+        d.set_steps(t("The extension folder was not found next to EzooDownload.exe. Install Ezoo Download Manager again.").into());
         return;
     };
     let path = dir.display().to_string();
@@ -401,7 +442,7 @@ fn add(ui: &Ui, i: usize) {
     let steps = if b.firefox {
         t("Firefox opened its add-ons debugging page.\n1. Click \"Load Temporary Add-on…\".\n2. Paste the folder path (Ctrl+V, it is already copied) and open the file \"manifest.json\" in it.\n\nFirefox removes add-ons loaded this way when it closes. To keep it for good the extension must be signed by Mozilla (free) – ask for the signed version.")
     } else {
-        tf("{} opened its extensions page.\n1. Turn on \"Developer mode\" (a switch on that page).\n2. Click \"Load unpacked\".\n3. Paste the folder path (Ctrl+V – it is already copied) and click \"Select folder\".\n\nThat's all: the Ezoo Download icon appears next to the address bar. You do this only once.", &[&b.name])
+        tf("{} opened its extensions page.\n1. Turn on \"Developer mode\" (a switch on that page).\n2. Click \"Load unpacked\".\n3. Paste the folder path (Ctrl+V – it is already copied) and click \"Select folder\".\n\nThat's all: the Ezoo Download Manager icon appears next to the address bar. You do this only once.", &[&b.name])
     };
     d.set_steps(steps.into());
 }
@@ -446,6 +487,29 @@ pub(crate) fn wire(ui: &Ui, d: &BrowserDialog) {
                 if !f.is_empty() {
                     let _ = open::that_detached(f);
                 }
+            }
+        });
+    }
+    {
+        let w = d.as_weak();
+        d.on_repair(move || {
+            let ok = repair_extension();
+            if let Some(d) = w.upgrade() {
+                d.set_steps(
+                    t(if ok {
+                        "The extension files were repaired. If the browser still says files are missing, remove the extension and add it again from this folder."
+                    } else {
+                        "The extension files could not be repaired: the folder could not be written."
+                    })
+                    .into(),
+                );
+                // the folder shown may have moved to the data-folder copy
+                d.set_folder(
+                    extension_dir(false)
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default()
+                        .into(),
+                );
             }
         });
     }

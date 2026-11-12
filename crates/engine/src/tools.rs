@@ -1,9 +1,10 @@
-//! The helper programs that come with Ezoo Download: yt-dlp (finds the video
+//! The helper programs that come with Ezoo Download Manager: yt-dlp (finds the video
 //! links) and aria2 (torrents) from their GitHub releases, and our own small
 //! ffmpeg build (joins video + audio, MP3; built by tools/ffmpeg/build.sh). They live in the "tools" folder
-//! of the install folder. Once a day, silently, Ezoo Download checks for new
+//! of the install folder. Once a day, silently, Ezoo Download Manager checks for new
 //! versions and updates them, and puts them back if one went missing.
 
+use crate::http::SendOrdered;
 use crate::mux::hide_window;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -99,7 +100,7 @@ pub fn aria2_missing_message(
         return None;
     }
     if is_windows {
-        return Some("aria2c.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again");
+        return Some("aria2c.exe is missing. Ezoo Download Manager gets it by itself in a minute (internet needed), then try again");
     }
     if is_flatpak {
         return Some(
@@ -126,12 +127,31 @@ pub fn ffmpeg_missing_message(
         return None;
     }
     if is_windows {
-        return Some("ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download and could not be downloaded again (no internet, or an antivirus removes it): install Ezoo Download again, or allow ffmpeg.exe in the antivirus");
+        return Some("ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download Manager and could not be downloaded again (no internet, or an antivirus removes it): install Ezoo Download Manager again, or allow ffmpeg.exe in the antivirus");
     }
     if is_flatpak {
         return Some("ffmpeg is missing from this Flatpak build, so video and audio cannot be merged. Reinstall the Flatpak from the release, then try again.");
     }
     Some("ffmpeg is missing. Reinstall the Linux package (ffmpeg is bundled inside the .deb, .rpm and AppImage), or install ffmpeg with your system package manager, then try again.")
+}
+
+/// Message to show when the bundled ffmpeg CRASHES on a file (Q71)
+/// and no system ffmpeg is there to retry with. Pure, same shape as
+/// `ffmpeg_missing_message`; `how` is the crash ("signal 11" on
+/// Unix, "exit code 0xc0000005" on Windows). Unlike the missing
+/// message, the wording is new — no UI mapping exists for it yet,
+/// and it deliberately never contains "ffmpeg.exe is missing".
+/// - Windows: the bundled build crashed; reinstall or allow it.
+/// - Linux outside a Flatpak: install ffmpeg with the package manager.
+/// - Flatpak: no system ffmpeg is reachable from the sandbox.
+pub fn ffmpeg_crashed_message(is_windows: bool, is_flatpak: bool, how: &str) -> String {
+    if is_windows {
+        format!("The bundled ffmpeg crashed while handling this file ({how}). Reinstall Ezoo Download Manager, or allow ffmpeg.exe in the antivirus, then try again.")
+    } else if is_flatpak {
+        format!("The bundled ffmpeg crashed while handling this file ({how}). This Flatpak build cannot use a system ffmpeg — try the .deb, .rpm or AppImage build instead.")
+    } else {
+        format!("The bundled ffmpeg crashed while handling this file ({how}). Install ffmpeg with your system package manager (for example: sudo apt install ffmpeg on Debian/Ubuntu, or sudo dnf install ffmpeg on Fedora), then try again.")
+    }
 }
 
 /// Where new copies go: the install folder's "tools" when we may write
@@ -185,7 +205,7 @@ async fn get_text(client: &reqwest::Client, url: &str) -> anyhow::Result<String>
             reqwest::header::USER_AGENT,
             crate::config::DEFAULT_USER_AGENT,
         )
-        .send()
+        .send_ordered()
         .await?
         .error_for_status()?
         .text()
@@ -212,7 +232,7 @@ async fn download(
             reqwest::header::USER_AGENT,
             crate::config::DEFAULT_USER_AGENT,
         )
-        .send()
+        .send_ordered()
         .await?
         .error_for_status()?;
     use std::io::Write;
@@ -240,7 +260,9 @@ async fn download(
 }
 
 /// Put `new` in place of `target`, even if `target` is running right now
-/// (Windows lets us rename a running program, not delete it).
+/// (Windows lets us rename a running program, not delete it). On Unix
+/// the result must be runnable: a file downloaded from the internet
+/// has no execute bit, and without it the tool silently never runs (Q49).
 fn replace(new: &Path, target: &Path) -> anyhow::Result<()> {
     if target.exists() {
         let old = target.with_extension("old");
@@ -250,7 +272,23 @@ fn replace(new: &Path, target: &Path) -> anyhow::Result<()> {
         }
     }
     std::fs::rename(new, target)?;
+    make_executable(target);
     Ok(())
+}
+
+/// Mark a tool runnable on Unix (mode 0755). A no-op on Windows, and
+/// best-effort everywhere: a failure to set the bit is reported by the
+/// caller failing to run the tool, not by an error here.
+pub fn make_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
 }
 
 /// yt-dlp missing: get it. Present: `yt-dlp -U` (at most once a day).
@@ -277,6 +315,12 @@ async fn yt_dlp(client: &reqwest::Client, data_dir: &Path) {
             }
         }
         return;
+    }
+    // a bundled copy from an older version may have lost its execute
+    // bit when it was downloaded (Q49): heal it on every check, so
+    // the tool runs instead of failing silently
+    if let Some(tool) = bundled("yt-dlp") {
+        make_executable(&tool);
     }
     let stamp = data_dir.join("yt-dlp-updated");
     if !due(&stamp, Duration::from_secs(20 * 3600)) {
@@ -478,11 +522,11 @@ mod tests {
         // wording (ffmpeg — the UI maps it to its translation)
         assert_eq!(
             aria2_missing_message(true, false, false),
-            Some("aria2c.exe is missing. Ezoo Download gets it by itself in a minute (internet needed), then try again")
+            Some("aria2c.exe is missing. Ezoo Download Manager gets it by itself in a minute (internet needed), then try again")
         );
         assert_eq!(
             ffmpeg_missing_message(true, false, false),
-            Some("ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download and could not be downloaded again (no internet, or an antivirus removes it): install Ezoo Download again, or allow ffmpeg.exe in the antivirus")
+            Some("ffmpeg.exe is missing from the \"tools\" folder of Ezoo Download Manager and could not be downloaded again (no internet, or an antivirus removes it): install Ezoo Download Manager again, or allow ffmpeg.exe in the antivirus")
         );
         // Linux outside a Flatpak: install with the package manager,
         // never "the app gets it by itself"
@@ -503,6 +547,27 @@ mod tests {
     }
 
     #[test]
+    fn crashed_message_points_at_the_package_manager() {
+        // Linux: the bundled build crashed, install the system one
+        let m = ffmpeg_crashed_message(false, false, "signal 11");
+        assert!(m.contains("bundled ffmpeg crashed"), "{m}");
+        assert!(m.contains("signal 11"), "{m}");
+        assert!(m.contains("system package manager"), "{m}");
+        assert!(m.contains("sudo apt install ffmpeg"), "{m}");
+        // Flatpak: no system ffmpeg is reachable from the sandbox
+        let m = ffmpeg_crashed_message(false, true, "signal 11");
+        assert!(m.contains("bundled ffmpeg crashed"), "{m}");
+        assert!(m.contains("Flatpak"), "{m}");
+        assert!(!m.contains("package manager"), "{m}");
+        // Windows: same shape, and it must never trip the UI's
+        // missing-ffmpeg mapping ("ffmpeg.exe is missing")
+        let m = ffmpeg_crashed_message(true, false, "exit code 0xc0000005");
+        assert!(m.contains("bundled ffmpeg crashed"), "{m}");
+        assert!(m.contains("0xc0000005"), "{m}");
+        assert!(!m.contains("ffmpeg.exe is missing"), "{m}");
+    }
+
+    #[test]
     fn replace_and_find() {
         let dir = std::env::temp_dir().join(format!("ezoo-tools-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -515,6 +580,23 @@ mod tests {
         std::fs::write(&new, b"fresh").unwrap();
         replace(&new, &target).unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), b"fresh");
+        // Q49: a replaced tool is runnable on Unix, even though the
+        // downloaded file had no execute bit
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o755, "replaced tool is not executable: {mode:o}");
+            // and a copy that lost its bit is healed the same way
+            let lost = dir.join("lost-bit");
+            std::fs::write(&lost, b"x").unwrap();
+            std::fs::set_permissions(&lost, std::fs::Permissions::from_mode(0o644)).unwrap();
+            make_executable(&lost);
+            assert_eq!(
+                std::fs::metadata(&lost).unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

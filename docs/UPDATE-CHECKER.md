@@ -54,7 +54,15 @@ offered.
 A release published by the Linux workflow before the Windows
 workflow has uploaded `version.json` (same release, later upload)
 therefore yields no offer until the next check: the manifest asset
-is simply absent, which is a silent fail, not an error.
+is simply absent, which is a silent fail, not an error. Since
+P8-quinquies (2026-11-08, the maintainer's decision) this is the
+deliberate sequence, not just a race: the tag release publishes
+every file EXCEPT `version.json`, and the signed manifest is
+published later by the `publish-updater-manifest` dispatch job in
+`.github/workflows/windows-release.yml`, only after the 1.1.2
+extension is approved in BOTH stores (Chrome Web Store + AMO).
+Until that dispatch runs, installed copies see no update — see
+§14.
 
 ## 2. Endpoints and headers
 
@@ -272,20 +280,24 @@ two things are missing:
    }
    ```
 
-   The `version.json` writing, the `SHA256SUMS-windows.txt`
-   generation, and the `gh release upload` file list
-   (`EzooDownload-Setup.exe`, `version.json`,
-   `SHA256SUMS-windows.txt`) are unchanged. The Linux workflow
+   The `version.json` writing is unchanged (it is still produced
+   for the artifact-only `EzooDownload-windows.zip` and for the
+   later dispatch), but since P8-quinquies the manifest is NOT in
+   the `gh release upload` file list and NOT in
+   `SHA256SUMS-windows.txt` — the sums file covers the Setup.exe
+   only, because the manifest is authenticated by its own Ed25519
+   signature, never by the sums file (see §13). The Linux workflow
    needs no signing change, but must keep uploading
    `SHA256SUMS.txt` (it already does, via `dist/*`) and keep the
    AppImage asset name `EzooDownload-<version>-x86_64.AppImage`,
    which the checker selects by suffix.
 
-3. **Verify after the secret exists:** a tag build's `version.json`
-   carries a 128-hex `sig`, and an installed copy offers the update.
-   The `sign_update` example refuses to run unless the secret's key
-   matches the public key in `selfupdate.rs`, so a wrong secret
-   fails the build loudly instead of shipping a bad signature.
+3. **Verify after the secret exists:** a dispatch run's
+   `version.json` carries a 128-hex `sig`, and an installed copy
+   offers the update only after that dispatch. The `sign_update`
+   example refuses to run unless the secret's key matches the
+   public key in `selfupdate.rs`, so a wrong secret fails the
+   build loudly instead of shipping a bad signature.
 
 ## 11. Phase 8 note — signature reconciliation (no minisign)
 
@@ -297,7 +309,8 @@ dependency were introduced. The Flatpak bundle is covered by the
 release's `SHA256SUMS.txt` (the Linux workflow's checksum step
 now includes the `.flatpak`); Flatpak copies are notify-only
 (§8) and never consume the signed manifest for self-install.
-Full Flatpak + CI design: `docs/FLATPAK.md`.
+Full Flatpak + CI design was `docs/FLATPAK.md` (deleted in P8-bis,
+2026-11-08; the released v1.1.1 Flatpak stays notify-only per §8).
 
 ## 12. Phase 9 — signed checksums + offline emergency key (Q12/Q28/Q33)
 
@@ -392,7 +405,7 @@ links executed, no markup interpreted beyond bullet splitting).
 
 ### 13.3 Once-per-launch reminder (Q37, Q38, Q48)
 
-Amended 2026-11-02 12:43 by Tensi (4h re-reminder replaced by
+Amended 2026-11-02 12:43 by the maintainer (4h re-reminder replaced by
 once-per-launch) and decided 2026-11-02 14:34 (Q48): the notice is
 shown **at most once per program run for a given version** — including
 when a mid-run 24h check finds the update; it does not wait for the
@@ -445,6 +458,190 @@ path in muted small text (`package_short_label()`,
 the running package through the single helper `package_label()`
 ("AppImage" / "the .deb/.rpm package" / "the Flatpak" / "the Windows
 setup" / "this copy"), so no message can offer the wrong package
-again — the defect Tensi found testing 1.1.1 (a .deb install offered
+again — the defect found testing 1.1.1 on real hardware (a .deb install offered
 an AppImage) was that neither message named the package actually
 running.
+
+## 14. P8-quinquies — release/update split (2026-11-08, the maintainer's decision)
+
+The GitHub release and the updater announcement are two separate
+steps, because the 1.1.2 browser extension must be approved in
+BOTH stores (Chrome Web Store + AMO) before installed copies are
+offered the app update — otherwise users would update the app and
+lose a working extension for days to weeks while the stores
+review it.
+
+- **Tag release (P10):** publishes EVERY asset EXCEPT
+  `version.json`. The Windows jobs still write `dist/version.json`
+  (signed, `UPDATE_SIGNING_KEY` required on releases) and still
+  bundle it inside the artifact-only `EzooDownload-windows.zip`
+  — but it is NOT uploaded as a release asset by
+  `windows-release.yml` or by the legacy `build.yml` publish
+  step, and it is NOT listed in `SHA256SUMS-windows.txt` (the
+  manifest is authenticated by its own Ed25519 signature, never
+  by the sums file). The Linux workflow never produced
+  `version.json` and is unchanged.
+- **Updater behaviour while the manifest is absent:** a missing
+  `version.json` asset is a silent fail — the checker returns
+  `CheckOutcome::SilentFail`, the app shows nothing, offers
+  nothing, and logs nothing scary. This was already the code
+  behaviour (`selfupdate.rs`, module docs: "A release whose
+  manifest is missing or unsigned is never offered") and was
+  already covered by the `missing_manifest_or_sums_is_a_silent_fail`
+  test (no-asset case). P8-quinquies added
+  `manifest_asset_listed_but_404_is_a_silent_fail`
+  (`crates/engine/tests/update_checker.rs`): the release payload
+  lists a `version.json` asset whose download returns 404, and
+  the outcome is still `SilentFail` — so even a half-published
+  state (asset listed, file not yet resolvable) cannot produce a
+  broken offer. `releases/latest/download/version.json` returns
+  404 until the dispatch below runs, which is expected.
+- **Announcing the update (owner step, after both store
+  approvals):** Actions → `Windows release (Setup.exe + updater
+  files)` → Run workflow → `publish-updater-manifest`, on the
+  `main` branch, with `version` = `1.1.2` and
+  `extension_approved_in_both_stores` = `true`. The job:
+  (1) fails unless it runs from main and the approvals input is
+  true; (2) fails if the release does not exist or
+  `version.json` is already in it (it never replaces anything —
+  no `--clobber`); (3) checks out the `v<version>` tag,
+  downloads the PUBLISHED `EzooDownload-Setup.exe` from the
+  release, VERIFIES it against the release's own signed
+  checksums first (see §15), then hashes it, signs it with the
+  `sign_update` example (same key and guard as the release jobs —
+  a missing or mismatched `UPDATE_SIGNING_KEY` fails the job),
+  writes `version.json` with the same shape as before, and
+  uploads it to the existing release; (4) polls
+  `releases/latest/download/version.json` for up to 5 minutes
+  and reports whether it resolves (HTTP 200) — a delay is a
+  warning, not a failure. From that moment installed copies are
+  offered 1.1.2 on their next check.
+- **Manual install meanwhile:** 1.1.2 is installable by hand
+  from the release page (Setup.exe / .deb / .rpm / AppImage,
+  plus the three extension files — see
+  `docs/RELEASE-NOTES-112.md`). The extension files in the
+  release: Chrome `.crx` (signed with the original key),
+  `.zip` (unpacked load), Firefox `.xpi` (unsigned — standard
+  Firefox release refuses it; Developer Edition/Nightly or a
+  temporary load via `about:debugging` only; the signed AMO
+  version comes after store approval).
+
+## 15. P8-sexies — protected signing + verify-what-is-signed (2026-11-08, the maintainer's decision)
+
+Two holes in the dispatch job from §14, both closed in this
+batch. Neither changes what users see: the release is still
+published without `version.json`, and the manifest is still
+published only after both stores approve the extension.
+
+### 15.1 The signing key lives in a protected environment
+
+**The hole:** the `publish-updater-manifest` job had no
+`environment:`, so anyone with write access to the repository
+could run it from `main` and sign `Setup.exe` with the
+production key. The `extension_approved_in_both_stores`
+checkbox is only a human confirmation — it is not a guard.
+
+**The fix (workflow side):** every job that consumes
+`UPDATE_SIGNING_KEY` now references the GitHub environment
+`release-signing`:
+
+| Job | File | What it signs |
+| --- | --- | --- |
+| `publish-updater-manifest` (dispatch only) | `windows-release.yml` | `version.json` |
+| `windows` | `windows-release.yml` | `version.json` (into the zip) + `SHA256SUMS-windows.txt` |
+| `linux` | `linux-release.yml` | `SHA256SUMS.txt` |
+| `windows` | `build.yml` (legacy) | `version.json` (into the zip) |
+
+The secret reference itself is unchanged
+(`${{ secrets.UPDATE_SIGNING_KEY }}`): for a job that names
+the environment it resolves to the environment secret once
+the key is moved there. The other signing keys
+(`CRX_PRIVATE_KEY`, `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`)
+stay repository secrets and are not part of this change.
+
+**The owner step (repository settings — not in this tree):**
+1. Settings → Environments → New environment → name it
+   `release-signing`.
+2. Under Protection rules, add Required reviewers (the
+   maintainer; this repository is public, so required
+   reviewers work on the free plan). Do NOT turn on
+   "Prevent self-review" without thinking: it would stop the
+   maintainer approving his own dispatch runs.
+3. Add the environment secret `UPDATE_SIGNING_KEY` with the
+   SAME value as the repository secret (re-enter it — a
+   secret value cannot be copied by anyone who does not hold
+   it). Only after it is in place, delete the repository
+   secret of the same name.
+4. Do this after the squashed branch is pushed (P9) and BEFORE
+   the P10 tag: the tag run uses the workflow from the tag, which
+   references the environment; a tag run made while the
+   repository secret is deleted but the environment is not yet
+   set up fails closed (hard error, no unsigned release). P9
+   itself runs ungated on the repository secret if the move has
+   not happened yet — that is fine.
+
+**What the workflow change alone does NOT do:** an
+`environment:` line with no environment behind it protects
+nothing — GitHub creates the environment implicitly, without
+protection rules, and the job reads the repository secret
+and runs ungated. The protection exists only after the owner
+step above.
+
+**Consequence the maintainer accepted:** the gate is at job
+level — GitHub cannot scope an environment to a single step —
+so EVERY run of a job that consumes the key pauses for a
+reviewer's approval before its first step, and the key is
+handed to the job only after approval. That means tag runs
+pause (intended: no signing without a review) AND main-push
+runs pause (the `windows` and `linux` jobs run on every push
+to main; the legacy `build.yml` `windows` job runs on every
+push to any branch). Each job waits for its own review; a
+rejected review fails the run. No runner is allocated while
+a job waits (a run may wait up to 30 days). If that friction
+becomes unacceptable, the follow-up is to split signing out
+of the CI jobs into tag-only jobs — a workflow refactor, not
+done here.
+
+### 15.2 Verify what is signed, before signing it
+
+**The hole:** the dispatch job downloaded
+`EzooDownload-Setup.exe` from the published release, hashed
+it, and signed it blind. Had the asset been replaced after
+publishing, the replacement would have become trusted by the
+updater.
+
+**The fix:** before anything is signed, the job downloads
+`SHA256SUMS-windows.txt` and `SHA256SUMS-windows.txt.sig`
+from the SAME release and verifies them in two steps:
+
+1. **Signature:** the new
+   `crates/engine/examples/verify_sums.rs` checks the `.sig`
+   against the public key built into the program — the exact
+   `selfupdate::sums_signature_ok` the updater uses
+   (primary key or the offline emergency key). A tampered
+   sums file fails here, before any hash is trusted.
+2. **Hash:** the downloaded `Setup.exe` SHA-256 must equal
+   the entry the signed sums file carries for it. The sums
+   file covers the Setup.exe only (P8-quinquies).
+
+The job REFUSES — fails, signs nothing — on ANY of: sums
+file missing, `.sig` missing, `.sig` invalid, hash mismatch,
+or the Setup.exe entry missing from the sums file (a missing
+asset also fails the `gh release download` itself). The sign
+step then re-hashes the verified copy and checks it against
+the verified hash from the previous step, so the signed hash
+is provably the hash of the verified file. A tag predating
+P8-sexies fails closed too: the `verify_sums` example is
+built from the checked-out tag, so it is absent and the step
+errors instead of signing blind.
+
+**Proof (local, 2026-11-08):** the real published v1.1.1
+`SHA256SUMS-windows.txt` + `.sig` verify with the DEFAULT
+(built-in) keys for version `1.1.1` (exit 0) and correctly
+fail for `1.1.2` (the version is part of the signed
+message); a tampered sums file, a tampered signature, and a
+missing signature file all fail (exit 1). An independent
+OpenSSL-signed fixture verifies through the throwaway-key
+override `UPDATE_VERIFY_KEY` (exit 0) and fails without it
+(exit 1) and when tampered (exit 1). The override exists
+for tests only — the workflow never sets it.

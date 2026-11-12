@@ -165,6 +165,7 @@ fn make_job(
         user_agent: "test".into(),
         total_size: Some(total),
         resumable,
+        etag: None,
         part_path: part,
         connections,
         min_split: 64 * 1024,
@@ -186,7 +187,7 @@ async fn run_job(shared: Arc<Shared>, job: HttpJob, segs: Arc<Mutex<Vec<segments
 }
 
 fn tmpdir(tag: &str, port: u16) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("swiftget-adaptive-{tag}-{port}"));
+    let dir = std::env::temp_dir().join(format!("edm-adaptive-{tag}-{port}"));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -290,6 +291,47 @@ async fn rate_limit_retry_after_honoured() {
     assert!(
         r.min_target < 4,
         "concurrency was not halved after 429: {r:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// (b2) a server that answers 429 to every request: the download gives
+/// up after `rate_limit_give_up_after` consecutive 429s for the same
+/// part instead of waiting forever. The cap is 40 in production; the
+/// test overrides it to 3 so the case runs in seconds.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rate_limit_give_up_after_repeated_429s() {
+    let data = test_data(2 * 1024 * 1024 + 7);
+    let mut cfg = ServerCfg::fast(data.clone());
+    cfg.fail_429_first = AtomicU32::new(u32::MAX);
+    cfg.retry_after_secs = 0;
+    let (port, _) = serve(Arc::new(cfg)).await;
+    let url = format!("http://127.0.0.1:{port}/b.bin");
+    let shared = Arc::new(Shared::new(build_client().unwrap(), SpeedLimiter::new(0)));
+    let dir = tmpdir("ratelimit-giveup", port);
+    let part = dir.join("out.sgpart");
+    let mut job_cfg = test_cfg();
+    job_cfg.rate_limit_give_up_after = 3;
+    let job = make_job(url, data.len() as u64, true, 4, job_cfg, None, part.clone());
+    let started = Instant::now();
+    let result = http_download::run(
+        shared,
+        job,
+        Arc::new(Mutex::new(Vec::new())),
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+    )
+    .await;
+    let elapsed = started.elapsed();
+    let err = result.expect_err("a server that 429s every request must fail, not hang");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("429"),
+        "the give-up error must name the 429: {msg}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(20),
+        "it gave up far too slowly ({elapsed:?}) — the cap did not bite"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }

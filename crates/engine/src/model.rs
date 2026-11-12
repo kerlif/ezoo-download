@@ -56,6 +56,107 @@ pub enum DownloadKind {
     Torrent,
 }
 
+/// What a download does after the data is all here (its second bar).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    /// the picture and the sound into one file
+    Join,
+    /// a stream into an MP4 file
+    ToMp4,
+    /// the sound into an MP3 file
+    ToMp3,
+    /// the file to its folder on another disk
+    Move,
+    /// the part of a video cut out
+    Cut,
+}
+
+impl Step {
+    pub fn from_code(c: u8) -> Option<Step> {
+        Some(match c {
+            1 => Step::Join,
+            2 => Step::ToMp4,
+            3 => Step::ToMp3,
+            4 => Step::Move,
+            5 => Step::Cut,
+            _ => return None,
+        })
+    }
+    pub fn code(self) -> u8 {
+        match self {
+            Step::Join => 1,
+            Step::ToMp4 => 2,
+            Step::ToMp3 => 3,
+            Step::Move => 4,
+            Step::Cut => 5,
+        }
+    }
+}
+
+/// A part of a video: from `start` to `end` seconds. `exact` re-encodes
+/// (frame-accurate); otherwise the cut is a stream copy and starts at the
+/// nearest keyframe at or before `start`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Clip {
+    pub start: f64,
+    pub end: f64,
+    pub exact: bool,
+}
+
+/// Longest part: a day. Shortest: half a second (shorter cuts are
+/// usually a typo, and ffmpeg's stream copy of them is often empty).
+pub const CLIP_MAX_END: f64 = 24.0 * 3600.0;
+pub const CLIP_MIN_LEN: f64 = 0.5;
+
+impl Clip {
+    /// Checked construction: an invalid part is an error here, never a
+    /// silent whole-file download further down the line.
+    pub fn new(start: f64, end: f64, exact: bool) -> Result<Clip, String> {
+        let c = Clip { start, end, exact };
+        c.validate()?;
+        Ok(c)
+    }
+
+    /// Re-check a part read back from disk or from the extension: the
+    /// same rules as construction, so a stored part cannot smuggle an
+    /// invalid range into a run.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.start.is_finite() || !self.end.is_finite() {
+            return Err("the start and end times must be numbers".into());
+        }
+        if self.start < 0.0 {
+            return Err("the start time cannot be negative".into());
+        }
+        if self.end > CLIP_MAX_END {
+            return Err("the end time cannot be more than 24 hours".into());
+        }
+        if self.end - self.start < CLIP_MIN_LEN {
+            return Err("the part must be at least half a second long".into());
+        }
+        Ok(())
+    }
+
+    pub fn len(&self) -> f64 {
+        (self.end - self.start).max(0.0)
+    }
+}
+
+/// "movie.mp4" + 80..205s -> "movie [01-20 → 03-25].mp4": the file
+/// name says which part it is, so a cut never overwrites its source.
+pub fn clip_name(name: &str, clip: &Clip) -> String {
+    fn mmss(secs: f64) -> String {
+        let total = secs.max(0.0).round() as u64;
+        format!("{:02}-{:02}", total / 60, total % 60)
+    }
+    let (stem, ext) = crate::filename::split_ext(name);
+    let stem = if stem.is_empty() { "video" } else { stem };
+    if ext.is_empty() {
+        format!("{stem} [{} → {}]", mmss(clip.start), mmss(clip.end))
+    } else {
+        format!("{stem} [{} → {}].{ext}", mmss(clip.start), mmss(clip.end))
+    }
+}
+
 /// Extra request data, usually handed over by the browser extension so that
 /// downloads behind a login work exactly like in the browser.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,6 +248,8 @@ pub struct NewDownload {
     pub start: bool,
     /// torrents: the files to get, 1-based ("1,3,4"); None = all
     pub torrent_select: Option<String>,
+    /// cut only this part of the video (None = the whole file)
+    pub clip: Option<Clip>,
 }
 
 /// Persisted state of one download.
@@ -236,10 +339,18 @@ pub struct DownloadRecord {
     /// torrents: the files to get, 1-based ("1,3,4"); None = all
     #[serde(default)]
     pub torrent_select: Option<String>,
+    /// torrents: the .torrent file said it is private (`Some(true)`),
+    /// public (`Some(false)`), or nobody knows (`None` — a magnet
+    /// link). Only a known-public torrent gets the public trackers.
+    #[serde(default)]
+    pub torrent_private: Option<bool>,
     /// torrents: the files it writes, relative to `save_dir` (learnt while
     /// it runs; a magnet link only knows them then)
     #[serde(default)]
     pub torrent_files: Vec<String>,
+    /// cut only this part of the video (None = the whole file)
+    #[serde(default)]
+    pub clip: Option<Clip>,
 }
 
 impl DownloadRecord {
@@ -355,6 +466,8 @@ pub struct DownloadView {
     pub speed: f64,
     pub eta_secs: Option<u64>,
     pub active_connections: u32,
+    /// people sharing this torrent (torrents only, 0 otherwise)
+    pub seeders: u32,
     pub resumable: bool,
     pub parts_total: u32,
     pub parts_done: u32,
@@ -377,9 +490,14 @@ pub struct DownloadView {
     /// variant's own playlist (None = the best variant)
     pub quality_key: Option<String>,
     pub stream_variant_url: Option<String>,
+    /// the video page + quality the download came from (yt-dlp option
+    /// key, e.g. "1080p|MP4"): the AV1 tip reads the codec from it
+    pub source_key: Option<String>,
     pub queue_pos: u64,
     /// the connection dropped: waiting for the internet to come back
     pub waiting: bool,
+    /// after the data: what it does now and how far (0..1)
+    pub step: Option<(Step, f32)>,
 }
 
 impl DownloadView {

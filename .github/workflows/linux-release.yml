@@ -1,4 +1,4 @@
-name: Linux release (deb / AppImage / rpm / Flatpak + extensions)
+name: Linux release (deb / AppImage / rpm + extensions)
 
 # Linux packages and browser extensions, built directly after every source
 # update — no manual packaging step. The Windows setup keeps its own
@@ -10,16 +10,24 @@ name: Linux release (deb / AppImage / rpm / Flatpak + extensions)
 #     asset + SHA256SUMS.txt (the tag MUST match Cargo.toml's version)
 #   - workflow_dispatch: manual run, artifacts only
 #
-# The Flatpak bundle (EzooDownload-x86_64.flatpak) is built on every
-# run, lands in dist/ with the other Linux artifacts, is covered by
-# the same SHA256SUMS.txt, and reaches the release through the same
-# dist/* upload below. See packaging/flatpak/ + docs/FLATPAK.md
-# (Phase 8): runtime/SDK 26.08, offline vendored Cargo sources,
-# static ffmpeg + aria2 1.37.0 bundled by manifest modules,
-# yt-dlp fetched by the app itself.
+# Flatpak was deleted in P8-bis (2026-11-08, the maintainer's decision: "احذف
+# Flatpak الآن"): no Flatpak bundle is built or shipped in v1.1.2.
+# The packaging files (packaging/flatpak/) and docs/FLATPAK.md were
+# removed from the tree (copies kept in ~/workspace/ezoo/v112/
+# flatpak-backup-2026-11-08/); the released v1.1.1 Flatpak asset on
+# GitHub is untouched, and the app still detects a Flatpak install
+# at runtime (tools.rs: in_flatpak) for the copies already out there.
 #
 # Secrets (all optional; the build never fails for a missing one, it just
 # skips the signed artifact and says so):
+#   - UPDATE_SIGNING_KEY: Ed25519 key signing SHA256SUMS.txt on tag
+#     releases. It lives in the GitHub environment `release-signing`
+#     (NOT a repository secret) with required reviewers (P8-sexies,
+#     2026-11-08): this job waits for a reviewer's approval before
+#     it starts, on tag runs AND on main-push runs. Until the
+#     environment is created and the key moved into it, the
+#     repository secret of the same name is used instead and the job
+#     runs ungated — the workflow change alone protects nothing.
 #   - CRX_PRIVATE_KEY: the PEM private key that owns the Chrome extension
 #     id bilpkcfhiogfelpdfpgmnjkpblgmcbkd. With it, a signed .crx is
 #     produced; without it, only the unsigned .zip is shipped.
@@ -43,6 +51,16 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-24.04
+    # Signing key comes from the `release-signing` environment
+    # (required reviewers): this job waits for a reviewer's approval
+    # before it starts, on tag runs AND on main-push runs, because
+    # the gate is at job level (P8-sexies; see §15 of
+    # docs/UPDATE-CHECKER.md). The key is used only by the
+    # tag-only "Sign SHA256SUMS.txt" step; on non-tag runs the job
+    # still waits, it just never signs. Until the environment
+    # exists with the key moved into it, the repository secret of
+    # the same name is used instead and the job runs ungated.
+    environment: release-signing
     steps:
       # actions pinned to exact commits (a moved tag can't change the build),
       # same pins as the Windows workflow (build.yml)
@@ -55,43 +73,12 @@ jobs:
           # Depends (debian/control) + dpkg/rpm packaging tools. Slint's
           # Linux backends need fontconfig, freetype, xkbcommon, X11 and
           # xcb headers; the first CI run confirms the exact set.
-          # flatpak-builder is installed here too: the Flatpak step below
-          # must run before any cargo step restores/creates target/ or
-          # dist/, because the manifest's `type: dir, path: ../..`
-          # source copies the tree as-is. appstream provides
-          # appstreamcli for the metainfo validation step below.
+          # libsecret-1-dev (P8-bis: Secret Service storage) lives in
+          # universe on Ubuntu — the runners have it enabled by default.
           sudo apt-get install -y -q build-essential pkg-config libssl-dev \
             libfontconfig-dev libfreetype-dev libxkbcommon-dev libx11-dev \
             libxcb1-dev zlib1g-dev dpkg-dev rpm curl xz-utils zip file \
-            flatpak flatpak-builder appstream
-
-      # Flatpak (Phase 8): offline build from the vendored Cargo
-      # sources (packaging/flatpak/cargo-sources.json), then a
-      # single-file bundle into dist/. Runs before the Rust
-      # toolchain/cache steps on purpose (see above).
-      - name: Build the Flatpak bundle
-        # Non-blocking until the WP10 proof run succeeds: keep
-        # continue-on-error: true only until then (Phase 8 build).
-        # The --user flag (finding F1) fixes the system-install
-        # permission failure of CI rounds 1-2; the sudo --system
-        # remote line was deleted.
-        continue-on-error: true
-        run: |
-          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          mkdir -p dist
-          flatpak-builder --force-clean --user --install-deps-from=flathub \
-            --repo=flatpak-repo flatpak-build \
-            packaging/flatpak/io.github.kerlif.EzooDownload.yml
-          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
-            flatpak-repo dist/EzooDownload-x86_64.flatpak io.github.kerlif.EzooDownload
-          ls -la dist/EzooDownload-x86_64.flatpak
-
-      # Metainfo validation (WP5: appstreamcli is not installed in the
-      # local VM, so this step is the proof). Blocking: a bad metainfo
-      # must fail the run before any release is made.
-      - name: Validate the Flatpak metainfo
-        run: |
-          appstreamcli validate --no-net packaging/flatpak/io.github.kerlif.EzooDownload.metainfo.xml
+            libsecret-1-dev
 
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -109,7 +96,7 @@ jobs:
             TAG="${{ github.ref_name }}"
             [ "$TAG" = "v$VERSION" ] || { echo "::error::Tag $TAG does not match version $VERSION in Cargo.toml"; exit 1; }
           fi
-          echo "Building Ezoo Download $VERSION for Linux"
+          echo "Building Ezoo Download Manager $VERSION for Linux"
 
       - name: Run extension tests
         run: |
@@ -203,10 +190,7 @@ jobs:
         run: |
           gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1 \
             && { echo "v$VERSION is already released"; exit 0; }
-          NOTES="Ezoo Download $VERSION for Linux: .deb, AppImage, .rpm (ffmpeg bundled inside) plus the Chrome (.crx/.zip) and Firefox (.xpi) extensions."
-          if ls dist/*.flatpak >/dev/null 2>&1; then
-            NOTES="$NOTES Also includes the Flatpak bundle (EzooDownload-x86_64.flatpak)."
-          fi
+          NOTES="Ezoo Download Manager $VERSION for Linux: .deb, AppImage, .rpm (ffmpeg bundled inside) plus the Chrome (.crx/.zip) and Firefox (.xpi) extensions."
           gh release create "v$VERSION" dist/* --repo "${{ github.repository }}" \
-            --target "${{ github.sha }}" --title "Ezoo Download $VERSION (Linux)" \
+            --target "${{ github.sha }}" --title "Ezoo Download Manager $VERSION (Linux)" \
             --notes "$NOTES"
